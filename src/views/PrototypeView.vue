@@ -103,6 +103,11 @@ function handleHover(payload: { name: string; sigla: string; value: number } | n
       </header>
 
       <section class="map-shell">
+        <div v-if="hoverInfo" class="map-hover">
+          <strong>{{ hoverInfo.name }}</strong>
+          <span class="map-hover-value">{{ hoverInfo.value.toLocaleString('pt-BR') }}</span>
+          <small>{{ hoverInfo.sigla }}</small>
+        </div>
         <KpiCard
           class="kpi kpi-tl"
           :title="kpis.cards[0].title"
@@ -216,7 +221,7 @@ function handleHover(payload: { name: string; sigla: string; value: number } | n
 }
 
 .map-center{
-  width: min(920px, 100%);
+  width: 100%;
   margin: 0 auto;
   position: relative;
   z-index: 1;
@@ -227,6 +232,42 @@ function handleHover(payload: { name: string; sigla: string; value: number } | n
   grid-template-columns: minmax(0, 1fr) 220px;
   gap: 16px;
   align-items: center;
+}
+
+.map-hover{
+  position: absolute;
+  top: 16px;
+  left: 50%;
+  transform: translateX(-50%);
+  min-width: 190px;
+  padding: 12px 14px;
+  border-radius: 14px;
+  border: 1px solid rgba(15, 23, 42, 0.08);
+  background: rgba(255,255,255,0.96);
+  box-shadow: 0 18px 36px rgba(15, 23, 42, 0.18);
+  display: grid;
+  gap: 4px;
+  text-align: center;
+  pointer-events: none;
+  z-index: 4;
+}
+
+.map-hover strong{
+  font-size: 13px;
+  color: rgba(15, 23, 42, 0.78);
+}
+
+.map-hover-value{
+  font-size: 20px;
+  font-weight: 600;
+  color: rgba(15, 23, 42, 0.95);
+}
+
+.map-hover small{
+  font-size: 11px;
+  color: rgba(15, 23, 42, 0.5);
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
 }
 
 .map-panel{
