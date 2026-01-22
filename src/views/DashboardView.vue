@@ -47,6 +47,9 @@ const totalBrasil = computed(() =>
 )
 
 const kpis = computed(() => store.getKpisForScope())
+const mapDataset = computed(() =>
+  store.path.some((node) => node.id === 'MG') ? 'mg' : 'br'
+)
 
 const mapTitle = computed(() => {
   const label = store.current.label
@@ -200,6 +203,7 @@ const displayPower = computed(() => {
               :items="store.itemsForCurrentLevel"
               :title="mapTitle"
               :values-by-uf="valuesByUf"
+              :dataset="mapDataset"
               @select="handleSelect"
               @hover="handleHover"
               @background="handleBackground"

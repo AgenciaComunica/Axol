@@ -1,10 +1,16 @@
 <script setup lang="ts">
-import { onBeforeUnmount, onMounted, ref } from 'vue'
+import { onBeforeUnmount, onMounted, ref, watch } from 'vue'
 import { BrazilMap3D, type StateSelect } from '@/lib/BrazilMap3D'
 
 type MapItem = { id: string; name: string; qty: number; sigla?: string }
 
-const props = defineProps<{ level: string; items: unknown[]; title: string; valuesByUf: Record<string, number> }>()
+const props = defineProps<{
+  level: string
+  items: unknown[]
+  title: string
+  valuesByUf: Record<string, number>
+  dataset: 'br' | 'mg'
+}>()
 
 const emit = defineEmits<{
   (e: 'select', item: MapItem): void
@@ -15,6 +21,50 @@ const emit = defineEmits<{
 const containerRef = ref<HTMLDivElement | null>(null)
 const lastHover = ref<StateSelect | null>(null)
 let mapInstance: BrazilMap3D | null = null
+
+async function loadMap() {
+  if (!containerRef.value) return
+  mapInstance?.dispose()
+  mapInstance = null
+  const url =
+    props.dataset === 'mg'
+      ? new URL('../assets/states/MG_Municipios_2024.geojson', import.meta.url)
+      : new URL('../assets/brasil-estados.geojson', import.meta.url)
+  try {
+    const response = await fetch(url)
+    const raw = await response.json()
+    const geojson =
+      props.dataset === 'mg'
+        ? {
+            ...raw,
+            features: (raw.features || []).map((feature: any) => ({
+              ...feature,
+              properties: {
+                ...feature.properties,
+                nome: feature.properties?.NM_MUN || feature.properties?.nome || '',
+                sigla: feature.properties?.CD_MUN || feature.properties?.sigla || '',
+              },
+            })),
+          }
+        : raw
+    if (!containerRef.value) return
+    const options =
+      props.dataset === 'mg'
+        ? { hoverInset: 0.001, hoverLift: 0.25, hitboxOpacity: 0.45 }
+        : { hoverInset: 0.001, hoverLift: 1.2, hitboxOpacity: 0 }
+    mapInstance = new BrazilMap3D(
+      containerRef.value,
+      geojson as any,
+      handleSelect,
+      handleHover,
+      handleClear,
+      props.valuesByUf,
+      options
+    )
+  } catch {
+    // Keep canvas empty if GeoJSON fails to load.
+  }
+}
 
 function handleSelect(payload: StateSelect) {
   emit('select', { id: payload.sigla, name: payload.name, qty: payload.value, sigla: payload.sigla })
@@ -40,25 +90,15 @@ function handleMouseMove(event: MouseEvent) {
 }
 
 onMounted(() => {
-  if (!containerRef.value) return
-  const url = new URL('../assets/brasil-estados.geojson', import.meta.url)
-  fetch(url)
-    .then((response) => response.json())
-    .then((geojson) => {
-      if (!containerRef.value) return
-      mapInstance = new BrazilMap3D(
-        containerRef.value,
-        geojson as any,
-        handleSelect,
-        handleHover,
-        handleClear,
-        props.valuesByUf
-      )
-    })
-    .catch(() => {
-      // Keep canvas empty if GeoJSON fails to load.
-    })
+  loadMap()
 })
+
+watch(
+  () => props.dataset,
+  () => {
+    loadMap()
+  }
+)
 
 onBeforeUnmount(() => {
   mapInstance?.dispose()

@@ -50,6 +50,9 @@ export class BrazilMap3D {
   private onHover?: (payload: StateSelect) => void
   private onClear?: () => void
   private valueByUf: Record<string, number>
+  private hoverInset: number
+  private hoverLift: number
+  private hitboxOpacity: number
   private mapBounds: THREE.Box3 | null = null
 
   constructor(
@@ -58,13 +61,17 @@ export class BrazilMap3D {
     onSelect: (payload: StateSelect) => void,
     onHover?: (payload: StateSelect) => void,
     onClear?: () => void,
-    valueByUf: Record<string, number> = {}
+    valueByUf: Record<string, number> = {},
+    options: { hoverInset?: number; hoverLift?: number; hitboxOpacity?: number } = {}
   ) {
     this.container = container
     this.onSelect = onSelect
     this.onHover = onHover
     this.onClear = onClear
     this.valueByUf = valueByUf
+    this.hoverInset = options.hoverInset ?? 0.2
+    this.hoverLift = options.hoverLift ?? 1.2
+    this.hitboxOpacity = options.hitboxOpacity ?? 0
 
     this.scene = new THREE.Scene()
 
@@ -180,7 +187,7 @@ export class BrazilMap3D {
     if (!mesh) return
     const group = mesh.userData.stateGroup as StateGroup | undefined
     if (!group) return
-    group.userData.targetZ = active ? group.userData.baseZ + 1.2 : group.userData.baseZ
+    group.userData.targetZ = active ? group.userData.baseZ + this.hoverLift : group.userData.baseZ
     group.userData.targetColor = active ? group.userData.hoverColor : group.userData.baseColor
     if (active && this.hoveredGroup !== group) {
       this.hoveredGroup = group
@@ -220,7 +227,7 @@ export class BrazilMap3D {
     const baseColor = new THREE.Color('#fcfcfd')
     const hoverColor = new THREE.Color('#f1f3f6')
     const borderColor = new THREE.Color('#6b6b6b')
-    const hoverInset = 0.2
+    const hoverInset = this.hoverInset
     const expandStates = new Set(['DF'])
 
     data.features.forEach((feature) => {
@@ -265,7 +272,7 @@ export class BrazilMap3D {
         const hitMaterial = new THREE.MeshBasicMaterial({
           color: new THREE.Color('#1d4ed8'),
           transparent: true,
-          opacity: 0,
+          opacity: this.hitboxOpacity,
           depthWrite: false,
           depthTest: false,
         })
