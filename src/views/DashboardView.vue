@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { computed, ref } from 'vue'
+import { computed, onMounted, ref, watch } from 'vue'
 import SideMenu from '@/components/SideMenu.vue'
 import Map3DMock from '@/components/Map3DMock.vue'
 import KpiCard from '@/components/KpiCard.vue'
@@ -12,6 +12,43 @@ const pinnedItem = ref<MapItem | null>(null)
 const hoverPos = ref({ x: 0, y: 0 })
 const pinnedPos = ref<{ x: number; y: number } | null>(null)
 const mapShellRef = ref<HTMLElement | null>(null)
+const stateMenuOpen = ref(false)
+const cityMenuOpen = ref(false)
+const municipiosMG = ref<MapItem[]>([])
+const stateQuery = ref('')
+const cityQuery = ref('')
+const stateMenuRef = ref<HTMLElement | null>(null)
+const cityMenuRef = ref<HTMLElement | null>(null)
+
+const stateOptions: MapItem[] = [
+  { id: 'AC', name: 'Acre', qty: 1 },
+  { id: 'AL', name: 'Alagoas', qty: 1 },
+  { id: 'AP', name: 'Amapa', qty: 1 },
+  { id: 'AM', name: 'Amazonas', qty: 1 },
+  { id: 'BA', name: 'Bahia', qty: 1 },
+  { id: 'CE', name: 'Ceara', qty: 1 },
+  { id: 'DF', name: 'Distrito Federal', qty: 1 },
+  { id: 'ES', name: 'Espirito Santo', qty: 1 },
+  { id: 'GO', name: 'Goias', qty: 1 },
+  { id: 'MA', name: 'Maranhao', qty: 1 },
+  { id: 'MT', name: 'Mato Grosso', qty: 1 },
+  { id: 'MS', name: 'Mato Grosso do Sul', qty: 1 },
+  { id: 'MG', name: 'Minas Gerais', qty: 1 },
+  { id: 'PA', name: 'Para', qty: 1 },
+  { id: 'PB', name: 'Paraiba', qty: 1 },
+  { id: 'PR', name: 'Parana', qty: 1 },
+  { id: 'PE', name: 'Pernambuco', qty: 1 },
+  { id: 'PI', name: 'Piaui', qty: 1 },
+  { id: 'RJ', name: 'Rio de Janeiro', qty: 1 },
+  { id: 'RN', name: 'Rio Grande do Norte', qty: 1 },
+  { id: 'RS', name: 'Rio Grande do Sul', qty: 1 },
+  { id: 'RO', name: 'Rondonia', qty: 1 },
+  { id: 'RR', name: 'Roraima', qty: 1 },
+  { id: 'SC', name: 'Santa Catarina', qty: 1 },
+  { id: 'SP', name: 'Sao Paulo', qty: 1 },
+  { id: 'SE', name: 'Sergipe', qty: 1 },
+  { id: 'TO', name: 'Tocantins', qty: 1 },
+]
 
 const valuesByUf: Record<string, number> = {
   AC: 96,
@@ -50,6 +87,18 @@ const kpis = computed(() => store.getKpisForScope())
 const mapDataset = computed(() =>
   store.path.some((node) => node.id === 'MG') ? 'mg' : 'br'
 )
+const stateNode = computed(() => store.path.find((node) => node.level === 'estado') || null)
+const cityNode = computed(() => store.path.find((node) => node.level === 'cidade') || null)
+const filteredStates = computed(() => {
+  const q = stateQuery.value.trim().toLowerCase()
+  if (!q) return stateOptions
+  return stateOptions.filter((state) => state.name.toLowerCase().includes(q))
+})
+const filteredMunicipios = computed(() => {
+  const q = cityQuery.value.trim().toLowerCase()
+  if (!q) return municipiosMG.value
+  return municipiosMG.value.filter((item) => item.name.toLowerCase().includes(q))
+})
 
 const mapTitle = computed(() => {
   const label = store.current.label
@@ -85,6 +134,12 @@ function handleBackground() {
   pinnedPos.value = null
 }
 
+function handleCloseCard() {
+  pinnedInfo.value = null
+  pinnedItem.value = null
+  pinnedPos.value = null
+}
+
 function handleMove(payload: { x: number; y: number }) {
   const rect = mapShellRef.value?.getBoundingClientRect()
   if (!rect) return
@@ -96,7 +151,11 @@ const displayPos = computed(() => pinnedPos.value ?? hoverPos.value)
 
 function handleExpand() {
   if (!pinnedItem.value) return
-  store.drillDown(pinnedItem.value)
+  if (store.level === 'brasil') {
+    store.jumpToState(pinnedItem.value)
+  } else {
+    store.drillDown(pinnedItem.value)
+  }
   pinnedInfo.value = null
   pinnedItem.value = null
   pinnedPos.value = null
@@ -111,6 +170,74 @@ const displayPower = computed(() => {
   const base = 8 + (displayInfo.value.value % 7)
   return `${base.toFixed(1)} MVA`
 })
+
+function toggleStateMenu() {
+  stateMenuOpen.value = !stateMenuOpen.value
+  cityMenuOpen.value = false
+}
+
+function toggleCityMenu() {
+  cityMenuOpen.value = !cityMenuOpen.value
+  stateMenuOpen.value = false
+}
+
+function goBrasil() {
+  store.goToLevel(0)
+  stateMenuOpen.value = false
+  cityMenuOpen.value = false
+}
+
+function selectState(state: MapItem) {
+  store.jumpToState(state)
+  stateMenuOpen.value = false
+  cityMenuOpen.value = false
+  stateQuery.value = ''
+}
+
+function selectMunicipio(municipio: MapItem) {
+  store.jumpToCity(municipio)
+  cityMenuOpen.value = false
+  cityQuery.value = ''
+}
+
+function handleOutsideClick(event: MouseEvent) {
+  const target = event.target as Node | null
+  const stateEl = stateMenuRef.value
+  const cityEl = cityMenuRef.value
+  if (stateEl && target && stateEl.contains(target)) return
+  if (cityEl && target && cityEl.contains(target)) return
+  stateMenuOpen.value = false
+  cityMenuOpen.value = false
+}
+
+watch(
+  () => stateMenuOpen.value || cityMenuOpen.value,
+  (open) => {
+    if (open) {
+      document.addEventListener('click', handleOutsideClick)
+    } else {
+      document.removeEventListener('click', handleOutsideClick)
+    }
+  }
+)
+
+onMounted(async () => {
+  try {
+    const url = new URL('../assets/states/MG_Municipios_2024.geojson', import.meta.url)
+    const response = await fetch(url)
+    const data = await response.json()
+    const list = (data.features || []).map((feature: any) => ({
+      id: String(feature.properties?.CD_MUN || ''),
+      name: String(feature.properties?.NM_MUN || ''),
+      qty: 1,
+    }))
+    municipiosMG.value = list
+      .filter((item) => item.id && item.name)
+      .sort((a, b) => a.name.localeCompare(b.name))
+  } catch {
+    municipiosMG.value = []
+  }
+})
 </script>
 
 <template>
@@ -123,16 +250,55 @@ const displayPower = computed(() => {
       </div>
       <header class="topbar">
         <div class="breadcrumbs">
-          <button
-            v-for="(crumb, index) in store.path"
-            :key="crumb.id"
-            type="button"
-            class="crumb"
-            :class="{ active: index === store.path.length - 1 }"
-            @click="store.goToLevel(index)"
-          >
-            {{ crumb.label }}
+          <button type="button" class="crumb" :class="{ active: !stateNode }" @click="goBrasil">
+            Brasil
           </button>
+          <div ref="stateMenuRef" class="crumb-select">
+            <button type="button" class="crumb crumb-select-trigger" @click="toggleStateMenu">
+              {{ stateNode?.label || 'Estado' }}
+              <span class="crumb-chev">⌄</span>
+            </button>
+            <div v-if="stateMenuOpen" class="crumb-menu">
+              <input
+                v-model="stateQuery"
+                class="crumb-search"
+                type="search"
+                placeholder="Buscar estado"
+              />
+              <button
+                v-for="state in filteredStates"
+                :key="state.id"
+                type="button"
+                class="crumb-menu-item"
+                @click="selectState(state)"
+              >
+                {{ state.name }}
+              </button>
+            </div>
+          </div>
+          <div v-if="stateNode && stateNode.id === 'MG'" ref="cityMenuRef" class="crumb-select">
+            <button type="button" class="crumb crumb-select-trigger" @click="toggleCityMenu">
+              {{ cityNode?.label || 'Municipio' }}
+              <span class="crumb-chev">⌄</span>
+            </button>
+            <div v-if="cityMenuOpen" class="crumb-menu">
+              <input
+                v-model="cityQuery"
+                class="crumb-search"
+                type="search"
+                placeholder="Buscar municipio"
+              />
+              <button
+                v-for="municipio in filteredMunicipios"
+                :key="municipio.id"
+                type="button"
+                class="crumb-menu-item"
+                @click="selectMunicipio(municipio)"
+              >
+                {{ municipio.name }}
+              </button>
+            </div>
+          </div>
         </div>
       </header>
 
@@ -143,6 +309,15 @@ const displayPower = computed(() => {
           :class="{ pinned: pinnedInfo }"
           :style="{ left: `${displayPos.x + 16}px`, top: `${displayPos.y - 12}px` }"
         >
+          <button
+            v-if="pinnedInfo"
+            type="button"
+            class="map-hover-close"
+            aria-label="Fechar"
+            @click.stop="handleCloseCard"
+          >
+            ✕
+          </button>
           <div class="map-hover-head">
             <div>
               <strong>{{ displayInfo.name }} - {{ displayInfo.sigla }}</strong>
@@ -172,7 +347,7 @@ const displayPower = computed(() => {
         </div>
         <KpiCard
           class="kpi kpi-tl"
-          title="Brasil"
+          :title="stateNode?.label || 'Brasil'"
           value="Estado geral"
           :subtitle="kpis.cards[0].subtitle"
           :rows="kpis.cards[0].rows"
@@ -260,6 +435,67 @@ const displayPower = computed(() => {
   justify-content: flex-end;
 }
 
+.crumb-select{
+  position: relative;
+}
+
+.crumb-select-trigger{
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.crumb-chev{
+  font-size: 10px;
+  color: rgba(15, 23, 42, 0.45);
+}
+
+.crumb-menu{
+  position: absolute;
+  top: calc(100% + 6px);
+  right: 0;
+  min-width: 200px;
+  max-height: 260px;
+  overflow: auto;
+  border-radius: 14px;
+  border: 1px solid rgba(15, 23, 42, 0.08);
+  background: rgba(255,255,255,0.98);
+  box-shadow: 0 16px 32px rgba(15, 23, 42, 0.14);
+  padding: 6px;
+  display: grid;
+  gap: 4px;
+  z-index: 10;
+}
+
+.crumb-search{
+  border: 1px solid rgba(15, 23, 42, 0.12);
+  background: rgba(255,255,255,0.9);
+  border-radius: 10px;
+  padding: 6px 10px;
+  font-size: 12px;
+  color: rgba(15, 23, 42, 0.7);
+}
+
+.crumb-search:focus{
+  outline: none;
+  border-color: rgba(42, 54, 77, 0.4);
+  box-shadow: 0 0 0 2px rgba(42, 54, 77, 0.12);
+}
+
+.crumb-menu-item{
+  border: none;
+  background: transparent;
+  text-align: left;
+  padding: 6px 10px;
+  border-radius: 10px;
+  font-size: 12px;
+  color: rgba(15, 23, 42, 0.7);
+  cursor: pointer;
+}
+.crumb-menu-item:hover{
+  background: rgba(15, 23, 42, 0.06);
+}
+
 .crumb{
   border: 1px solid rgba(15, 23, 42, 0.08);
   background: rgba(255,255,255,0.8);
@@ -315,6 +551,28 @@ const displayPower = computed(() => {
   gap: 12px;
   pointer-events: none;
   z-index: 4;
+}
+
+.map-hover-close{
+  position: absolute;
+  top: 10px;
+  right: 10px;
+  width: 28px;
+  height: 28px;
+  border-radius: 999px;
+  border: 1px solid rgba(15, 23, 42, 0.08);
+  background: rgba(255,255,255,0.95);
+  color: rgba(15, 23, 42, 0.7);
+  display: grid;
+  place-items: center;
+  cursor: pointer;
+  box-shadow: 0 6px 14px rgba(15, 23, 42, 0.12);
+  transition: transform 0.15s ease, box-shadow 0.15s ease;
+}
+
+.map-hover-close:hover{
+  transform: translateY(-1px);
+  box-shadow: 0 8px 18px rgba(15, 23, 42, 0.18);
 }
 
 .map-hover.pinned{

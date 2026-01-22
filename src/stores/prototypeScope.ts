@@ -147,6 +147,20 @@ export const usePrototypeScopeStore = defineStore('prototypeScope', () => {
     path.value = [...path.value, { level: nextLevel, label: item.name, id: item.id }]
   }
 
+  function jumpToState(item: MapItem) {
+    path.value = [{ level: 'brasil', label: 'Brasil', id: 'BR' }, { level: 'estado', label: item.name, id: item.id }]
+  }
+
+  function jumpToCity(item: MapItem) {
+    const stateNode = path.value.find((node) => node.level === 'estado')
+    if (!stateNode) return
+    path.value = [
+      { level: 'brasil', label: 'Brasil', id: 'BR' },
+      { level: 'estado', label: stateNode.label, id: stateNode.id },
+      { level: 'cidade', label: item.name, id: item.id },
+    ]
+  }
+
   function goToLevel(index: number) {
     path.value = path.value.slice(0, index + 1)
   }
@@ -230,6 +244,8 @@ export const usePrototypeScopeStore = defineStore('prototypeScope', () => {
     itemsForCurrentLevel,
     selectedTransformer,
     drillDown,
+    jumpToState,
+    jumpToCity,
     goToLevel,
     selectTransformer,
     clearSelection,
