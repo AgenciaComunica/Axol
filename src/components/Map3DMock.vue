@@ -9,8 +9,11 @@ const props = defineProps<{ level: string; items: unknown[]; title: string; valu
 const emit = defineEmits<{
   (e: 'select', item: MapItem): void
   (e: 'hover', payload: StateSelect | null): void
+  (e: 'background'): void
+  (e: 'move', payload: { x: number; y: number }): void
 }>()
 const containerRef = ref<HTMLDivElement | null>(null)
+const lastHover = ref<StateSelect | null>(null)
 let mapInstance: BrazilMap3D | null = null
 
 function handleSelect(payload: StateSelect) {
@@ -18,11 +21,22 @@ function handleSelect(payload: StateSelect) {
 }
 
 function handleHover(payload: StateSelect) {
+  lastHover.value = payload
   emit('hover', payload)
 }
 
 function handleClear() {
+  lastHover.value = null
   emit('hover', null)
+}
+
+function handleBackgroundClick() {
+  if (lastHover.value) return
+  emit('background')
+}
+
+function handleMouseMove(event: MouseEvent) {
+  emit('move', { x: event.clientX, y: event.clientY })
 }
 
 onMounted(() => {
@@ -53,7 +67,7 @@ onBeforeUnmount(() => {
 </script>
 
 <template>
-  <div class="map">
+  <div class="map" @click="handleBackgroundClick" @mousemove="handleMouseMove">
     <div ref="containerRef" class="map-canvas" aria-label="Mapa 3D do Brasil"></div>
   </div>
 </template>

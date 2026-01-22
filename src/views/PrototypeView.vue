@@ -3,12 +3,14 @@ import { computed, ref } from 'vue'
 import SideMenu from '@/components/SideMenu.vue'
 import Map3DMock from '@/components/Map3DMock.vue'
 import KpiCard from '@/components/KpiCard.vue'
-import TransformerModal from '@/components/TransformerModal.vue'
 import { usePrototypeScopeStore, type MapItem } from '@/stores/prototypeScope'
 
 const store = usePrototypeScopeStore()
-const modalOpen = ref(false)
 const hoverInfo = ref<{ name: string; sigla: string; value: number } | null>(null)
+const pinnedInfo = ref<{ name: string; sigla: string; value: number } | null>(null)
+const hoverPos = ref({ x: 0, y: 0 })
+const pinnedPos = ref<{ x: number; y: number } | null>(null)
+const mapShellRef = ref<HTMLElement | null>(null)
 
 const valuesByUf: Record<string, number> = {
   AC: 96,
@@ -64,22 +66,42 @@ const mapTitle = computed(() => {
 })
 
 function handleSelect(item: MapItem) {
+  pinnedInfo.value = { name: item.name, sigla: item.sigla || '', value: item.qty }
+  pinnedPos.value = { ...hoverPos.value }
   if (store.level === 'bairro') {
     store.selectTransformer(item)
-    modalOpen.value = true
     return
   }
   store.drillDown(item)
 }
 
-function closeModal() {
-  modalOpen.value = false
-  store.clearSelection()
-}
-
 function handleHover(payload: { name: string; sigla: string; value: number } | null) {
   hoverInfo.value = payload
 }
+
+function handleBackground() {
+  pinnedInfo.value = null
+  pinnedPos.value = null
+}
+
+function handleMove(payload: { x: number; y: number }) {
+  const rect = mapShellRef.value?.getBoundingClientRect()
+  if (!rect) return
+  hoverPos.value = { x: payload.x - rect.left, y: payload.y - rect.top }
+}
+
+const displayInfo = computed(() => pinnedInfo.value ?? hoverInfo.value)
+const displayPos = computed(() => pinnedPos.value ?? hoverPos.value)
+const displayTension = computed(() => {
+  if (!displayInfo.value) return ''
+  const base = 69 + (displayInfo.value.value % 4) * 23
+  return `${base} kV`
+})
+const displayPower = computed(() => {
+  if (!displayInfo.value) return ''
+  const base = 8 + (displayInfo.value.value % 7)
+  return `${base.toFixed(1)} MVA`
+})
 </script>
 
 <template>
@@ -87,6 +109,9 @@ function handleHover(payload: { name: string; sigla: string; value: number } | n
     <SideMenu />
 
     <div class="content">
+      <div class="brand-header">
+        <img src="@/assets/logo-axol.png" alt="Axol" class="brand-logo" />
+      </div>
       <header class="topbar">
         <div class="breadcrumbs">
           <button
@@ -102,16 +127,37 @@ function handleHover(payload: { name: string; sigla: string; value: number } | n
         </div>
       </header>
 
-      <section class="map-shell">
-        <div v-if="hoverInfo" class="map-hover">
-          <strong>{{ hoverInfo.name }}</strong>
-          <span class="map-hover-value">{{ hoverInfo.value.toLocaleString('pt-BR') }}</span>
-          <small>{{ hoverInfo.sigla }}</small>
+      <section ref="mapShellRef" class="map-shell">
+        <div v-if="displayInfo" class="map-hover" :style="{ left: `${displayPos.x + 16}px`, top: `${displayPos.y - 12}px` }">
+          <div class="map-hover-head">
+            <div>
+              <strong>{{ displayInfo.name }} - {{ displayInfo.sigla }}</strong>
+            </div>
+          </div>
+          <div class="map-hover-table">
+            <div class="map-hover-row">
+              <span>Status</span>
+              <b>Operacional</b>
+            </div>
+            <div class="map-hover-row">
+              <span>Potência</span>
+              <b>18 MVA</b>
+            </div>
+            <div class="map-hover-row">
+              <span>Nível de tensão</span>
+              <b>138 kV</b>
+            </div>
+            <div class="map-hover-row">
+              <span>Óleo</span>
+              <b>Adequado</b>
+            </div>
+          </div>
+          <button v-if="pinnedInfo" type="button" class="map-hover-action">Ampliar</button>
         </div>
         <KpiCard
           class="kpi kpi-tl"
-          :title="kpis.cards[0].title"
-          :value="kpis.cards[0].value"
+          title="Brasil"
+          value="Estado geral"
           :subtitle="kpis.cards[0].subtitle"
           :rows="kpis.cards[0].rows"
         />
@@ -146,20 +192,14 @@ function handleHover(payload: { name: string; sigla: string; value: number } | n
               :values-by-uf="valuesByUf"
               @select="handleSelect"
               @hover="handleHover"
+              @background="handleBackground"
+              @move="handleMove"
             />
-            <aside class="map-panel">
-              <strong>{{ hoverInfo?.name || 'Brasil' }}</strong>
-              <span class="map-panel-value">{{
-                hoverInfo ? hoverInfo.value.toLocaleString('pt-BR') : totalBrasil.toLocaleString('pt-BR')
-              }}</span>
-              <small>Transformadores</small>
-            </aside>
           </div>
         </div>
       </section>
     </div>
 
-    <TransformerModal :open="modalOpen" :transformer="store.selectedTransformer" @close="closeModal" />
   </div>
 </template>
 
@@ -176,6 +216,17 @@ function handleHover(payload: { name: string; sigla: string; value: number } | n
   padding: 90px 24px 60px;
   display: grid;
   gap: 24px;
+}
+
+.brand-header{
+  display: flex;
+  justify-content: center;
+}
+
+.brand-logo{
+  width: 180px;
+  height: auto;
+  object-fit: contain;
 }
 
 .topbar{
@@ -229,27 +280,31 @@ function handleHover(payload: { name: string; sigla: string; value: number } | n
 
 .map-row{
   display: grid;
-  grid-template-columns: minmax(0, 1fr) 220px;
+  grid-template-columns: minmax(0, 1fr);
   gap: 16px;
   align-items: center;
 }
 
 .map-hover{
   position: absolute;
-  top: 16px;
-  left: 50%;
-  transform: translateX(-50%);
-  min-width: 190px;
-  padding: 12px 14px;
-  border-radius: 14px;
+  transform: translateY(-100%);
+  min-width: 260px;
+  padding: 16px;
+  border-radius: 18px;
   border: 1px solid rgba(15, 23, 42, 0.08);
   background: rgba(255,255,255,0.96);
-  box-shadow: 0 18px 36px rgba(15, 23, 42, 0.18);
+  box-shadow: 0 20px 40px rgba(15, 23, 42, 0.16);
   display: grid;
-  gap: 4px;
-  text-align: center;
+  gap: 12px;
   pointer-events: none;
   z-index: 4;
+}
+
+.map-hover-head{
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
 }
 
 .map-hover strong{
@@ -258,7 +313,7 @@ function handleHover(payload: { name: string; sigla: string; value: number } | n
 }
 
 .map-hover-value{
-  font-size: 20px;
+  font-size: 22px;
   font-weight: 600;
   color: rgba(15, 23, 42, 0.95);
 }
@@ -270,32 +325,43 @@ function handleHover(payload: { name: string; sigla: string; value: number } | n
   letter-spacing: 0.06em;
 }
 
-.map-panel{
-  border-radius: 18px;
-  border: 1px solid rgba(15, 23, 42, 0.08);
-  background: rgba(255,255,255,0.9);
-  box-shadow: 0 12px 30px rgba(15, 23, 42, 0.08);
-  padding: 16px;
+.map-hover-table{
   display: grid;
   gap: 6px;
-  text-align: left;
+  border-radius: 14px;
+  background: rgba(15, 23, 42, 0.04);
+  padding: 10px 12px;
 }
 
-.map-panel strong{
+.map-hover-row{
+  display: grid;
+  grid-template-columns: 1fr auto;
+  gap: 12px;
+  align-items: center;
+}
+
+.map-hover-row span{
+  font-size: 12px;
+  color: rgba(15, 23, 42, 0.6);
+}
+
+.map-hover-row b{
   font-size: 13px;
-  color: rgba(15, 23, 42, 0.75);
-}
-
-.map-panel-value{
-  font-size: 26px;
-  font-weight: 600;
   color: rgba(15, 23, 42, 0.9);
 }
 
-.map-panel small{
+.map-hover-action{
+  border: none;
+  background: #2a364d;
+  color: #ffffff;
+  border-radius: 10px;
+  padding: 10px 14px;
   font-size: 12px;
-  color: rgba(15, 23, 42, 0.55);
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
 }
+
 
 .kpi{
   position: absolute;
