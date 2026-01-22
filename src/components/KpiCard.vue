@@ -111,7 +111,7 @@ onMounted(() => {
 
 .body{
   overflow: hidden;
-  padding: 0 14px;
+  padding: 0 14px 12px;
   display: grid;
   gap: 8px;
   transition: max-height 0.22s ease, opacity 0.2s ease;

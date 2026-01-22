@@ -8,6 +8,7 @@ import { usePrototypeScopeStore, type MapItem } from '@/stores/prototypeScope'
 const store = usePrototypeScopeStore()
 const hoverInfo = ref<{ name: string; sigla: string; value: number } | null>(null)
 const pinnedInfo = ref<{ name: string; sigla: string; value: number } | null>(null)
+const pinnedItem = ref<MapItem | null>(null)
 const hoverPos = ref({ x: 0, y: 0 })
 const pinnedPos = ref<{ x: number; y: number } | null>(null)
 const mapShellRef = ref<HTMLElement | null>(null)
@@ -67,12 +68,8 @@ const mapTitle = computed(() => {
 
 function handleSelect(item: MapItem) {
   pinnedInfo.value = { name: item.name, sigla: item.sigla || '', value: item.qty }
+  pinnedItem.value = item
   pinnedPos.value = { ...hoverPos.value }
-  if (store.level === 'bairro') {
-    store.selectTransformer(item)
-    return
-  }
-  store.drillDown(item)
 }
 
 function handleHover(payload: { name: string; sigla: string; value: number } | null) {
@@ -81,6 +78,7 @@ function handleHover(payload: { name: string; sigla: string; value: number } | n
 
 function handleBackground() {
   pinnedInfo.value = null
+  pinnedItem.value = null
   pinnedPos.value = null
 }
 
@@ -92,6 +90,11 @@ function handleMove(payload: { x: number; y: number }) {
 
 const displayInfo = computed(() => pinnedInfo.value ?? hoverInfo.value)
 const displayPos = computed(() => pinnedPos.value ?? hoverPos.value)
+
+function handleExpand() {
+  if (!pinnedItem.value) return
+  store.drillDown(pinnedItem.value)
+}
 const displayTension = computed(() => {
   if (!displayInfo.value) return ''
   const base = 69 + (displayInfo.value.value % 4) * 23
@@ -128,7 +131,12 @@ const displayPower = computed(() => {
       </header>
 
       <section ref="mapShellRef" class="map-shell">
-        <div v-if="displayInfo" class="map-hover" :style="{ left: `${displayPos.x + 16}px`, top: `${displayPos.y - 12}px` }">
+        <div
+          v-if="displayInfo"
+          class="map-hover"
+          :class="{ pinned: pinnedInfo }"
+          :style="{ left: `${displayPos.x + 16}px`, top: `${displayPos.y - 12}px` }"
+        >
           <div class="map-hover-head">
             <div>
               <strong>{{ displayInfo.name }} - {{ displayInfo.sigla }}</strong>
@@ -152,7 +160,9 @@ const displayPower = computed(() => {
               <b>Adequado</b>
             </div>
           </div>
-          <button v-if="pinnedInfo" type="button" class="map-hover-action">Ampliar</button>
+          <button v-if="pinnedInfo" type="button" class="map-hover-action" @click.stop="handleExpand">
+            Ampliar
+          </button>
         </div>
         <KpiCard
           class="kpi kpi-tl"
@@ -298,6 +308,10 @@ const displayPower = computed(() => {
   gap: 12px;
   pointer-events: none;
   z-index: 4;
+}
+
+.map-hover.pinned{
+  pointer-events: auto;
 }
 
 .map-hover-head{
