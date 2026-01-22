@@ -97,6 +97,9 @@ const displayPos = computed(() => pinnedPos.value ?? hoverPos.value)
 function handleExpand() {
   if (!pinnedItem.value) return
   store.drillDown(pinnedItem.value)
+  pinnedInfo.value = null
+  pinnedItem.value = null
+  pinnedPos.value = null
 }
 const displayTension = computed(() => {
   if (!displayInfo.value) return ''
@@ -378,6 +381,14 @@ const displayPower = computed(() => {
   font-weight: 600;
   text-transform: uppercase;
   letter-spacing: 0.06em;
+  cursor: pointer;
+  box-shadow: 0 10px 20px rgba(42, 54, 77, 0.25);
+  transition: transform 0.15s ease, box-shadow 0.15s ease;
+}
+
+.map-hover-action:hover{
+  transform: translateY(-1px);
+  box-shadow: 0 12px 24px rgba(42, 54, 77, 0.32);
 }
 
 
