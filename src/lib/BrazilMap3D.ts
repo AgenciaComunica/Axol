@@ -15,7 +15,21 @@ type GeoJson = {
   features: GeoJsonFeature[]
 }
 
-export type StateSelect = { name: string; sigla: string; value: number }
+export type TransformerInfo = {
+  id: string
+  status: string
+  power: string
+  voltage: string
+  oil: string
+  location: string
+}
+
+export type StateSelect = {
+  name: string
+  sigla: string
+  value: number
+  transformers?: TransformerInfo[]
+}
 
 type StateMesh = THREE.Mesh<THREE.ExtrudeGeometry, THREE.MeshStandardMaterial>
 type StateGroup = THREE.Group & {
@@ -342,11 +356,18 @@ export class BrazilMap3D {
   }
 
   setMarkers(
-    markers: { id: string; name: string; value: number; x?: number; y?: number }[],
-    options?: { color?: string; size?: number }
+    markers: {
+      id: string
+      name: string
+      value: number
+      x?: number
+      y?: number
+      transformers?: TransformerInfo[]
+    }[],
+    options?: { color?: string; size?: number; iconUrl?: string }
   ) {
     if (!this.mapGroup) return
-    const { color = '#1d4ed8', size = 0.6 } = options || {}
+    const { color = '#1d4ed8', size = 0.6, iconUrl } = options || {}
 
     this.markerMeshes.forEach((mesh) => {
       this.mapGroup?.remove(mesh)
@@ -371,22 +392,56 @@ export class BrazilMap3D {
     const min = bounds.min
     const max = bounds.max
 
-    markers.forEach((marker) => {
-      const sprite = this.createMarkerSprite(marker.value, color)
-      sprite.scale.set(size, size, 1)
-      const pos = (marker as { x?: number; y?: number })
-      const x = typeof pos.x === 'number' ? pos.x : min.x + Math.random() * sizeVec.x
-      const y = typeof pos.y === 'number' ? pos.y : min.y + Math.random() * sizeVec.y
-      sprite.position.set(x, y, 0.8)
-      sprite.userData.markerData = {
-        name: marker.name,
-        sigla: marker.id,
-        value: marker.value,
-      }
-      this.mapGroup?.add(sprite)
-      this.meshes.push(sprite as unknown as StateMesh)
-      this.markerMeshes.push(sprite)
-    })
+    const buildMarkers = (spriteFactory: (marker: (typeof markers)[number]) => THREE.Sprite) => {
+      markers.forEach((marker) => {
+        const sprite = spriteFactory(marker)
+        sprite.scale.set(size, size, 1)
+        const pos = (marker as { x?: number; y?: number })
+        const x = typeof pos.x === 'number' ? pos.x : min.x + Math.random() * sizeVec.x
+        const y = typeof pos.y === 'number' ? pos.y : min.y + Math.random() * sizeVec.y
+        sprite.position.set(x, y, 0.01)
+        sprite.renderOrder = 10
+        if (sprite.material instanceof THREE.SpriteMaterial) {
+          sprite.material.depthTest = false
+          sprite.material.depthWrite = false
+        }
+        sprite.userData.markerData = {
+          name: marker.name,
+          sigla: marker.id,
+          value: marker.value,
+          transformers: marker.transformers,
+        }
+        if (marker.value > 1) {
+          const countSprite = this.createCountSprite(marker.value, '#2a364d')
+          countSprite.scale.set(size * 0.6, size * 0.6, 1)
+          countSprite.position.set(x, y + size * 0.7, 0.02)
+          countSprite.renderOrder = 11
+          this.mapGroup?.add(countSprite)
+          this.markerMeshes.push(countSprite)
+        }
+        this.mapGroup?.add(sprite)
+        this.meshes.push(sprite as unknown as StateMesh)
+        this.markerMeshes.push(sprite)
+      })
+    }
+
+    if (iconUrl) {
+      const loader = new THREE.TextureLoader()
+      loader.load(
+        iconUrl,
+        (texture) => {
+          texture.minFilter = THREE.LinearFilter
+          const material = new THREE.SpriteMaterial({ map: texture, transparent: true, depthWrite: false })
+          buildMarkers(() => new THREE.Sprite(material.clone()))
+        },
+        undefined,
+        () => {
+          // No fallback marker when icon fails to load.
+        }
+      )
+    } else {
+      buildMarkers((marker) => this.createMarkerSprite(marker.value, color))
+    }
   }
 
   fitToView(padding = 1.2) {
@@ -405,7 +460,25 @@ export class BrazilMap3D {
     this.controls.target.copy(center)
     this.camera.position.copy(center).add(dir.multiplyScalar(distance))
     this.camera.updateProjectionMatrix()
+    this.controls.minDistance = distance * 0.9
+    this.controls.maxDistance = distance * 1.0
     this.controls.update()
+    const panBounds = box.clone().expandByScalar(maxDim * 0.02)
+    this.setPanBounds(panBounds)
+  }
+
+  setZoomLimits(min: number, max: number) {
+    this.controls.minDistance = min
+    this.controls.maxDistance = max
+    this.controls.update()
+  }
+
+  setPanBounds(bounds: THREE.Box3) {
+    this.mapBounds = bounds
+  }
+
+  setPanEnabled(enabled: boolean) {
+    this.controls.enablePan = enabled
   }
 
   private createMarkerSprite(value: number, color: string) {
@@ -422,6 +495,30 @@ export class BrazilMap3D {
       ctx.fill()
       ctx.fillStyle = '#ffffff'
       ctx.font = '600 42px Arial'
+      ctx.textAlign = 'center'
+      ctx.textBaseline = 'middle'
+      ctx.fillText(String(value), size / 2, size / 2)
+    }
+    const texture = new THREE.CanvasTexture(canvas)
+    texture.minFilter = THREE.LinearFilter
+    const material = new THREE.SpriteMaterial({ map: texture, transparent: true, depthWrite: false })
+    return new THREE.Sprite(material)
+  }
+
+  private createCountSprite(value: number, color: string) {
+    const size = 96
+    const canvas = document.createElement('canvas')
+    canvas.width = size
+    canvas.height = size
+    const ctx = canvas.getContext('2d')
+    if (ctx) {
+      ctx.clearRect(0, 0, size, size)
+      ctx.fillStyle = color
+      ctx.beginPath()
+      ctx.arc(size / 2, size / 2, size * 0.36, 0, Math.PI * 2)
+      ctx.fill()
+      ctx.fillStyle = '#ffffff'
+      ctx.font = '700 36px Arial'
       ctx.textAlign = 'center'
       ctx.textBaseline = 'middle'
       ctx.fillText(String(value), size / 2, size / 2)

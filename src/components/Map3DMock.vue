@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import { onBeforeUnmount, onMounted, ref, watch } from 'vue'
-import { BrazilMap3D, type StateSelect } from '@/lib/BrazilMap3D'
+import { BrazilMap3D, type StateSelect, type TransformerInfo } from '@/lib/BrazilMap3D'
 
 type MapItem = { id: string; name: string; qty: number; sigla?: string }
 
@@ -12,7 +12,6 @@ const props = defineProps<{
   dataset: 'br' | 'mg'
   munCode?: string | null
   munFile?: string | null
-  transformersCount?: number | null
 }>()
 
 const emit = defineEmits<{
@@ -20,6 +19,7 @@ const emit = defineEmits<{
   (e: 'hover', payload: StateSelect | null): void
   (e: 'background'): void
   (e: 'move', payload: { x: number; y: number }): void
+  (e: 'marker', payload: StateSelect): void
 }>()
 const containerRef = ref<HTMLDivElement | null>(null)
 const lastHover = ref<StateSelect | null>(null)
@@ -70,90 +70,83 @@ async function loadMap() {
     )
     if (props.munCode) {
       mapInstance.fitToView(1.1)
+      mapInstance.setZoomLimits(20, 180)
+    } else if (props.dataset === 'mg') {
+      mapInstance.setZoomLimits(50, 220)
     }
-    if (props.munCode && props.transformersCount) {
-      const markers = buildSectorMarkers(geojson, props.transformersCount ?? null)
-      mapInstance.setMarkers(markers, { color: '#2563eb', size: 1.1 })
+    if (props.munCode === '3106200') {
+      const bounds = geojsonBounds(geojson)
+      if (bounds) {
+        const iconUrl = new URL('../assets/img/transformer_8265902.svg', import.meta.url).toString()
+        const maxDim = Math.max(bounds.maxX - bounds.minX, bounds.maxY - bounds.minY)
+        const size = Math.min(0.06, Math.max(0.004, maxDim * 0.001))
+        const posA = {
+          x: bounds.minX + (bounds.maxX - bounds.minX) * 0.32,
+          y: bounds.minY + (bounds.maxY - bounds.minY) * 0.58,
+        }
+        const posB = {
+          x: bounds.minX + (bounds.maxX - bounds.minX) * 0.68,
+          y: bounds.minY + (bounds.maxY - bounds.minY) * 0.42,
+        }
+        const single = createTransformer(
+          'TR-0001',
+          'Operacional',
+          '18 MVA',
+          '138 kV',
+          'Adequado',
+          'R. Monte Líbano, 121 - Padre Eustáquio, Belo Horizonte - MG, 30730-450'
+        )
+        const cluster = [
+          createTransformer(
+            'TR-0002',
+            'Operacional',
+            '12 MVA',
+            '69 kV',
+            'Adequado',
+            'Praça Bagatelle, 204 - Aeroporto, Belo Horizonte - MG, 31270-705'
+          ),
+          createTransformer(
+            'TR-0003',
+            'Manutencao',
+            '22 MVA',
+            '138 kV',
+            'Reclassificacao',
+            'Praça Bagatelle, 204 - Aeroporto, Belo Horizonte - MG, 31270-705'
+          ),
+        ]
+        mapInstance.setMarkers(
+          [
+            {
+              id: 'BH',
+              name: 'Transformadores',
+              value: cluster.length,
+              x: posA.x,
+              y: posA.y,
+              transformers: cluster,
+            },
+            {
+              id: 'TR-0001',
+              name: 'Transformador',
+              value: 1,
+              x: posB.x,
+              y: posB.y,
+              transformers: [single],
+            },
+          ],
+          { color: '#2a364d', size, iconUrl }
+        )
+      }
     }
   } catch {
     // Keep canvas empty if GeoJSON fails to load.
   }
 }
 
-function buildSectorMarkers(geojson: any, total: number | null) {
-  const features = geojson?.features || []
-  const markers = []
-  for (let i = 0; i < features.length; i += 1) {
-    const feature = features[i]
-    const centroid = geometryCentroid(feature?.geometry)
-    if (!centroid) continue
-    const count = 1 + (i % 3)
-    markers.push({
-      id: `TR-${String(i + 1).padStart(4, '0')}`,
-      name: `Transformador ${String(i + 1).padStart(4, '0')}`,
-      value: count,
-      x: centroid.x,
-      y: centroid.y,
-    })
-    if (typeof total === 'number' && total > 0 && markers.length >= total) break
-  }
-  return markers
-}
-
-function geometryCentroid(geometry: any) {
-  if (!geometry) return null
-  const type = geometry.type
-  const coords = geometry.coordinates
-  if (type === 'Polygon') return polygonCentroid(coords?.[0])
-  if (type === 'MultiPolygon') {
-    let totalArea = 0
-    let cx = 0
-    let cy = 0
-    for (const polygon of coords || []) {
-      const ring = polygon?.[0]
-      const centroid = polygonCentroid(ring)
-      const area = polygonArea(ring)
-      if (!centroid) continue
-      totalArea += area
-      cx += centroid.x * area
-      cy += centroid.y * area
-    }
-    if (!totalArea) return null
-    return { x: cx / totalArea, y: cy / totalArea }
-  }
-  return null
-}
-
-function polygonArea(ring: number[][]) {
-  if (!ring || ring.length < 3) return 0
-  let area = 0
-  for (let i = 0; i < ring.length - 1; i += 1) {
-    const [x1, y1] = ring[i]
-    const [x2, y2] = ring[i + 1]
-    area += x1 * y2 - x2 * y1
-  }
-  return Math.abs(area) / 2
-}
-
-function polygonCentroid(ring: number[][]) {
-  if (!ring || ring.length < 3) return null
-  let area = 0
-  let cx = 0
-  let cy = 0
-  for (let i = 0; i < ring.length - 1; i += 1) {
-    const [x1, y1] = ring[i]
-    const [x2, y2] = ring[i + 1]
-    const cross = x1 * y2 - x2 * y1
-    area += cross
-    cx += (x1 + x2) * cross
-    cy += (y1 + y2) * cross
-  }
-  area *= 0.5
-  if (area === 0) return { x: ring[0][0], y: ring[0][1] }
-  return { x: cx / (6 * area), y: cy / (6 * area) }
-}
-
 function handleSelect(payload: StateSelect) {
+  if (payload.transformers?.length) {
+    emit('marker', payload)
+    return
+  }
   emit('select', { id: payload.sigla, name: payload.name, qty: payload.value, sigla: payload.sigla })
 }
 
@@ -176,12 +169,50 @@ function handleMouseMove(event: MouseEvent) {
   emit('move', { x: event.clientX, y: event.clientY })
 }
 
+function createTransformer(
+  id: string,
+  status: string,
+  power: string,
+  voltage: string,
+  oil: string,
+  location: string
+): TransformerInfo {
+  return { id, status, power, voltage, oil, location }
+}
+
+function geojsonBounds(geojson: any) {
+  const features = geojson?.features || []
+  let minX = Infinity
+  let minY = Infinity
+  let maxX = -Infinity
+  let maxY = -Infinity
+  const pushCoord = (coord: number[]) => {
+    if (coord.length < 2) return
+    const [x, y] = coord
+    if (x < minX) minX = x
+    if (y < minY) minY = y
+    if (x > maxX) maxX = x
+    if (y > maxY) maxY = y
+  }
+  const walk = (coords: any) => {
+    if (!coords) return
+    if (typeof coords[0] === 'number') {
+      pushCoord(coords)
+      return
+    }
+    for (const item of coords) walk(item)
+  }
+  features.forEach((feature: any) => walk(feature?.geometry?.coordinates))
+  if (!isFinite(minX) || !isFinite(minY)) return null
+  return { minX, minY, maxX, maxY }
+}
+
 onMounted(() => {
   loadMap()
 })
 
 watch(
-  () => [props.dataset, props.munCode, props.transformersCount],
+  () => [props.dataset, props.munCode, props.munFile],
   () => {
     loadMap()
   }

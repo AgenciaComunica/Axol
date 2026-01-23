@@ -4,22 +4,33 @@ import SideMenu from '@/components/SideMenu.vue'
 import Map3DMock from '@/components/Map3DMock.vue'
 import KpiCard from '@/components/KpiCard.vue'
 import { usePrototypeScopeStore, type MapItem } from '@/stores/prototypeScope'
+import type { StateSelect } from '@/lib/BrazilMap3D'
 
 const store = usePrototypeScopeStore()
-const hoverInfo = ref<{ name: string; sigla: string; value: number } | null>(null)
-const pinnedInfo = ref<{ name: string; sigla: string; value: number } | null>(null)
+const hoverInfo = ref<StateSelect | null>(null)
+const pinnedInfo = ref<StateSelect | null>(null)
 const pinnedItem = ref<MapItem | null>(null)
 const hoverPos = ref({ x: 0, y: 0 })
 const pinnedPos = ref<{ x: number; y: number } | null>(null)
 const mapShellRef = ref<HTMLElement | null>(null)
 const stateMenuOpen = ref(false)
 const cityMenuOpen = ref(false)
+const transformerMenuOpen = ref(false)
 const municipiosMG = ref<MapItem[]>([])
 const setoresIndex = ref<{ cd_mun: string; nm_mun: string; total_setores: number; file?: string }[]>([])
+const transformerOptions = ref<
+  { id: string; status: string; power: string; voltage: string; oil: string; location: string }[]
+>([])
+const selectedTransformer = ref<
+  { id: string; status: string; power: string; voltage: string; oil: string; location: string } | null
+>(null)
+const transformerModalOpen = ref(false)
 const stateQuery = ref('')
 const cityQuery = ref('')
+const transformerQuery = ref('')
 const stateMenuRef = ref<HTMLElement | null>(null)
 const cityMenuRef = ref<HTMLElement | null>(null)
+const transformerMenuRef = ref<HTMLElement | null>(null)
 
 const stateOptions: MapItem[] = [
   { id: 'AC', name: 'Acre', qty: 1 },
@@ -107,6 +118,11 @@ const filteredMunicipios = computed(() => {
   if (!q) return municipiosMG.value
   return municipiosMG.value.filter((item) => item.name.toLowerCase().includes(q))
 })
+const filteredTransformers = computed(() => {
+  const q = transformerQuery.value.trim().toLowerCase()
+  if (!q) return transformerOptions.value
+  return transformerOptions.value.filter((item) => item.id.toLowerCase().includes(q))
+})
 
 const mapTitle = computed(() => {
   const label = store.current.label
@@ -132,7 +148,13 @@ function handleSelect(item: MapItem) {
   pinnedPos.value = { ...hoverPos.value }
 }
 
-function handleHover(payload: { name: string; sigla: string; value: number } | null) {
+function handleMarker(payload: StateSelect) {
+  pinnedInfo.value = payload
+  pinnedItem.value = null
+  pinnedPos.value = { ...hoverPos.value }
+}
+
+function handleHover(payload: StateSelect | null) {
   hoverInfo.value = payload
 }
 
@@ -146,6 +168,27 @@ function handleCloseCard() {
   pinnedInfo.value = null
   pinnedItem.value = null
   pinnedPos.value = null
+}
+
+function openTransformerModal(transformer: {
+  id: string
+  status: string
+  power: string
+  voltage: string
+  oil: string
+  location: string
+}) {
+  selectedTransformer.value = transformer
+  transformerModalOpen.value = true
+}
+
+function transformerMapsLink(address: string) {
+  return `https://www.google.com/maps/search/?api=1&query=${encodeURIComponent(address)}`
+}
+
+function closeTransformerModal() {
+  transformerModalOpen.value = false
+  selectedTransformer.value = null
 }
 
 function handleMove(payload: { x: number; y: number }) {
@@ -168,6 +211,24 @@ function handleExpand() {
   pinnedItem.value = null
   pinnedPos.value = null
 }
+
+function selectTransformer(transformer: {
+  id: string
+  status: string
+  power: string
+  voltage: string
+  oil: string
+  location: string
+}) {
+  pinnedInfo.value = {
+    name: 'Transformador',
+    sigla: transformer.id,
+    value: 1,
+    transformers: [transformer],
+  }
+  pinnedItem.value = null
+  pinnedPos.value = { ...hoverPos.value }
+}
 const displayTension = computed(() => {
   if (!displayInfo.value) return ''
   const base = 69 + (displayInfo.value.value % 4) * 23
@@ -182,23 +243,33 @@ const displayPower = computed(() => {
 function toggleStateMenu() {
   stateMenuOpen.value = !stateMenuOpen.value
   cityMenuOpen.value = false
+  transformerMenuOpen.value = false
 }
 
 function toggleCityMenu() {
   cityMenuOpen.value = !cityMenuOpen.value
   stateMenuOpen.value = false
+  transformerMenuOpen.value = false
+}
+
+function toggleTransformerMenu() {
+  transformerMenuOpen.value = !transformerMenuOpen.value
+  stateMenuOpen.value = false
+  cityMenuOpen.value = false
 }
 
 function goBrasil() {
   store.goToLevel(0)
   stateMenuOpen.value = false
   cityMenuOpen.value = false
+  transformerMenuOpen.value = false
 }
 
 function selectState(state: MapItem) {
   store.jumpToState(state)
   stateMenuOpen.value = false
   cityMenuOpen.value = false
+  transformerMenuOpen.value = false
   stateQuery.value = ''
 }
 
@@ -212,14 +283,17 @@ function handleOutsideClick(event: MouseEvent) {
   const target = event.target as Node | null
   const stateEl = stateMenuRef.value
   const cityEl = cityMenuRef.value
+  const transformerEl = transformerMenuRef.value
   if (stateEl && target && stateEl.contains(target)) return
   if (cityEl && target && cityEl.contains(target)) return
+  if (transformerEl && target && transformerEl.contains(target)) return
   stateMenuOpen.value = false
   cityMenuOpen.value = false
+  transformerMenuOpen.value = false
 }
 
 watch(
-  () => stateMenuOpen.value || cityMenuOpen.value,
+  () => stateMenuOpen.value || cityMenuOpen.value || transformerMenuOpen.value,
   (open) => {
     if (open) {
       document.addEventListener('click', handleOutsideClick)
@@ -253,6 +327,33 @@ onMounted(async () => {
   } catch {
     setoresIndex.value = []
   }
+
+  transformerOptions.value = [
+    {
+      id: 'TR-0001',
+      status: 'Operacional',
+      power: '18 MVA',
+      voltage: '138 kV',
+      oil: 'Adequado',
+      location: 'R. Monte Líbano, 121 - Padre Eustáquio, Belo Horizonte - MG, 30730-450',
+    },
+    {
+      id: 'TR-0002',
+      status: 'Operacional',
+      power: '12 MVA',
+      voltage: '69 kV',
+      oil: 'Adequado',
+      location: 'Praça Bagatelle, 204 - Aeroporto, Belo Horizonte - MG, 31270-705',
+    },
+    {
+      id: 'TR-0003',
+      status: 'Manutencao',
+      power: '22 MVA',
+      voltage: '138 kV',
+      oil: 'Reclassificacao',
+      location: 'Praça Bagatelle, 204 - Aeroporto, Belo Horizonte - MG, 31270-705',
+    },
+  ]
 })
 </script>
 
@@ -315,14 +416,37 @@ onMounted(async () => {
               </button>
             </div>
           </div>
+          <div v-if="munCode" ref="transformerMenuRef" class="crumb-select">
+            <button type="button" class="crumb crumb-select-trigger" @click="toggleTransformerMenu">
+              Transformadores
+              <span class="crumb-chev">⌄</span>
+            </button>
+            <div v-if="transformerMenuOpen" class="crumb-menu">
+              <input
+                v-model="transformerQuery"
+                class="crumb-search"
+                type="search"
+                placeholder="Buscar transformador"
+              />
+              <button
+                v-for="transformer in filteredTransformers"
+                :key="transformer.id"
+                type="button"
+                class="crumb-menu-item"
+                @click="openTransformerModal(transformer)"
+              >
+                {{ transformer.id }}
+              </button>
+            </div>
+          </div>
         </div>
       </header>
 
       <section ref="mapShellRef" class="map-shell">
         <div
-          v-if="displayInfo && !munCode"
+          v-if="displayInfo"
           class="map-hover"
-          :class="{ pinned: pinnedInfo }"
+          :class="{ pinned: pinnedInfo, interactive: displayInfo.transformers?.length }"
           :style="{ left: `${displayPos.x + 16}px`, top: `${displayPos.y - 12}px` }"
         >
           <button
@@ -339,29 +463,44 @@ onMounted(async () => {
               <strong>{{ displayInfo.name }} - {{ displayInfo.sigla }}</strong>
             </div>
           </div>
-          <template v-if="isTransformerView && pinnedInfo">
-            <div class="map-hover-transformer">
-              <div class="map-hover-iframe">
-                <iframe title="Transformador 3D" src="about:blank"></iframe>
+          <template v-if="displayInfo.transformers?.length">
+            <div v-if="displayInfo.transformers.length === 1" class="map-hover-table">
+              <div class="map-hover-row">
+                <span>Status</span>
+                <b>{{ displayInfo.transformers[0].status }}</b>
               </div>
-              <div class="map-hover-table">
-                <div class="map-hover-row">
-                  <span>Status</span>
-                  <b>Operacional</b>
-                </div>
-                <div class="map-hover-row">
-                  <span>Potência</span>
-                  <b>18 MVA</b>
-                </div>
-                <div class="map-hover-row">
-                  <span>Nível de tensão</span>
-                  <b>138 kV</b>
-                </div>
-                <div class="map-hover-row">
-                  <span>Óleo</span>
-                  <b>Adequado</b>
-                </div>
+              <div class="map-hover-row">
+                <span>Potência</span>
+                <b>{{ displayInfo.transformers[0].power }}</b>
               </div>
+              <div class="map-hover-row">
+                <span>Nível de tensão</span>
+                <b>{{ displayInfo.transformers[0].voltage }}</b>
+              </div>
+              <div class="map-hover-row">
+                <span>Óleo</span>
+                <b>{{ displayInfo.transformers[0].oil }}</b>
+              </div>
+              <button
+                type="button"
+                class="map-hover-action"
+                @click.stop="openTransformerModal(displayInfo.transformers[0])"
+              >
+                Ampliar
+              </button>
+            </div>
+            <div v-else class="map-hover-list">
+              <div class="map-hover-list-head">Transformadores</div>
+              <button
+                v-for="transformer in displayInfo.transformers"
+                :key="transformer.id"
+                type="button"
+                class="map-hover-list-item"
+                @click.stop="selectTransformer(transformer)"
+              >
+                <span>{{ transformer.id }}</span>
+                <span class="map-hover-plus">+</span>
+              </button>
             </div>
           </template>
           <template v-else>
@@ -427,8 +566,8 @@ onMounted(async () => {
               :dataset="mapDataset"
               :mun-code="munCode"
               :mun-file="munFile"
-              :transformers-count="0"
               @select="handleSelect"
+              @marker="handleMarker"
               @hover="handleHover"
               @background="handleBackground"
               @move="handleMove"
@@ -438,6 +577,45 @@ onMounted(async () => {
       </section>
     </div>
 
+    <div v-if="transformerModalOpen && selectedTransformer" class="transformer-modal">
+      <div class="transformer-modal-card">
+        <button type="button" class="transformer-modal-close" @click="closeTransformerModal">✕</button>
+        <div class="transformer-modal-media">
+          <iframe title="Transformador 3D" src="about:blank"></iframe>
+        </div>
+        <div class="transformer-modal-info">
+          <h3>{{ selectedTransformer.id }}</h3>
+          <div class="transformer-modal-row">
+            <span>Status</span>
+            <b>{{ selectedTransformer.status }}</b>
+          </div>
+          <div class="transformer-modal-row">
+            <span>Potência</span>
+            <b>{{ selectedTransformer.power }}</b>
+          </div>
+          <div class="transformer-modal-row">
+            <span>Nível de tensão</span>
+            <b>{{ selectedTransformer.voltage }}</b>
+          </div>
+          <div class="transformer-modal-row">
+            <span>Óleo</span>
+            <b>{{ selectedTransformer.oil }}</b>
+          </div>
+          <div class="transformer-modal-row">
+            <span>Localização</span>
+            <b>
+              <a
+                :href="transformerMapsLink(selectedTransformer.location)"
+                target="_blank"
+                rel="noopener"
+              >
+                {{ selectedTransformer.location }}
+              </a>
+            </b>
+          </div>
+        </div>
+      </div>
+    </div>
   </div>
 </template>
 
@@ -627,6 +805,10 @@ onMounted(async () => {
   pointer-events: auto;
 }
 
+.map-hover.interactive{
+  pointer-events: auto;
+}
+
 .map-hover-head{
   display: flex;
   align-items: center;
@@ -658,6 +840,45 @@ onMounted(async () => {
   border-radius: 14px;
   background: rgba(15, 23, 42, 0.04);
   padding: 10px 12px;
+}
+
+.map-hover-list{
+  display: grid;
+  gap: 6px;
+  border-radius: 14px;
+  background: rgba(15, 23, 42, 0.04);
+  padding: 10px 12px;
+}
+
+.map-hover-list-head{
+  font-size: 12px;
+  color: rgba(15, 23, 42, 0.6);
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+}
+
+.map-hover-list-item{
+  border: 1px solid rgba(15, 23, 42, 0.08);
+  background: #ffffff;
+  border-radius: 10px;
+  padding: 6px 10px;
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  cursor: pointer;
+  font-size: 12px;
+  color: rgba(15, 23, 42, 0.75);
+}
+
+.map-hover-plus{
+  width: 18px;
+  height: 18px;
+  border-radius: 6px;
+  background: rgba(42, 54, 77, 0.12);
+  display: grid;
+  place-items: center;
+  font-weight: 700;
+  color: rgba(42, 54, 77, 0.8);
 }
 
 .map-hover-transformer{
@@ -733,6 +954,77 @@ onMounted(async () => {
   .kpi{ width: 200px; }
 }
 
+.transformer-modal{
+  position: fixed;
+  inset: 0;
+  background: rgba(15, 23, 42, 0.4);
+  display: grid;
+  place-items: center;
+  z-index: 50;
+  padding: 24px;
+}
+
+.transformer-modal-card{
+  width: min(820px, 92vw);
+  background: #ffffff;
+  border-radius: 18px;
+  box-shadow: 0 24px 60px rgba(15, 23, 42, 0.25);
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
+  gap: 16px;
+  padding: 20px;
+  position: relative;
+}
+
+.transformer-modal-close{
+  position: absolute;
+  top: 12px;
+  right: 12px;
+  border: none;
+  background: rgba(15, 23, 42, 0.08);
+  border-radius: 999px;
+  width: 28px;
+  height: 28px;
+  cursor: pointer;
+}
+
+.transformer-modal-media{
+  border-radius: 12px;
+  overflow: hidden;
+  background: rgba(15, 23, 42, 0.06);
+  min-height: 220px;
+}
+
+.transformer-modal-media iframe{
+  width: 100%;
+  height: 100%;
+  border: none;
+  display: block;
+}
+
+.transformer-modal-info{
+  display: grid;
+  gap: 10px;
+}
+
+.transformer-modal-info h3{
+  margin: 0;
+  font-size: 16px;
+  color: rgba(15, 23, 42, 0.9);
+}
+
+.transformer-modal-row{
+  display: flex;
+  justify-content: space-between;
+  gap: 12px;
+  font-size: 13px;
+  color: rgba(15, 23, 42, 0.7);
+}
+
+.transformer-modal-row b{
+  color: rgba(15, 23, 42, 0.9);
+}
+
 @media (max-width: 900px){
   .topbar{ flex-direction: column; align-items: flex-start; }
   .map-shell{
@@ -756,6 +1048,9 @@ onMounted(async () => {
     max-width: min(320px, 90vw);
   }
   .map-hover-transformer{
+    grid-template-columns: 1fr;
+  }
+  .transformer-modal-card{
     grid-template-columns: 1fr;
   }
 }
