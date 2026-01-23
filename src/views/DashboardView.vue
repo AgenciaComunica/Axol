@@ -9,6 +9,8 @@ const store = usePrototypeScopeStore()
 const hoverInfo = ref<{ name: string; sigla: string; value: number } | null>(null)
 const pinnedInfo = ref<{ name: string; sigla: string; value: number } | null>(null)
 const pinnedItem = ref<MapItem | null>(null)
+const hoverPos = ref({ x: 0, y: 0 })
+const pinnedPos = ref<{ x: number; y: number } | null>(null)
 const mapShellRef = ref<HTMLElement | null>(null)
 const stateMenuOpen = ref(false)
 const cityMenuOpen = ref(false)
@@ -127,6 +129,7 @@ const mapTitle = computed(() => {
 function handleSelect(item: MapItem) {
   pinnedInfo.value = { name: item.name, sigla: item.sigla || '', value: item.qty }
   pinnedItem.value = item
+  pinnedPos.value = { ...hoverPos.value }
 }
 
 function handleHover(payload: { name: string; sigla: string; value: number } | null) {
@@ -136,14 +139,23 @@ function handleHover(payload: { name: string; sigla: string; value: number } | n
 function handleBackground() {
   pinnedInfo.value = null
   pinnedItem.value = null
+  pinnedPos.value = null
 }
 
 function handleCloseCard() {
   pinnedInfo.value = null
   pinnedItem.value = null
+  pinnedPos.value = null
+}
+
+function handleMove(payload: { x: number; y: number }) {
+  const rect = mapShellRef.value?.getBoundingClientRect()
+  if (!rect) return
+  hoverPos.value = { x: payload.x - rect.left, y: payload.y - rect.top }
 }
 
 const displayInfo = computed(() => pinnedInfo.value ?? hoverInfo.value)
+const displayPos = computed(() => pinnedPos.value ?? hoverPos.value)
 
 function handleExpand() {
   if (!pinnedItem.value) return
@@ -154,6 +166,7 @@ function handleExpand() {
   }
   pinnedInfo.value = null
   pinnedItem.value = null
+  pinnedPos.value = null
 }
 const displayTension = computed(() => {
   if (!displayInfo.value) return ''
@@ -306,7 +319,12 @@ onMounted(async () => {
       </header>
 
       <section ref="mapShellRef" class="map-shell">
-        <div v-if="displayInfo && !munCode" class="map-hover" :class="{ pinned: pinnedInfo }">
+        <div
+          v-if="displayInfo && !munCode"
+          class="map-hover"
+          :class="{ pinned: pinnedInfo }"
+          :style="{ left: `${displayPos.x + 16}px`, top: `${displayPos.y - 12}px` }"
+        >
           <button
             v-if="pinnedInfo"
             type="button"
@@ -413,6 +431,7 @@ onMounted(async () => {
               @select="handleSelect"
               @hover="handleHover"
               @background="handleBackground"
+              @move="handleMove"
             />
           </div>
         </div>
@@ -569,7 +588,7 @@ onMounted(async () => {
   position: absolute;
   top: 12px;
   left: 50%;
-  transform: translateX(-50%);
+  transform: translateY(-100%);
   min-width: 260px;
   padding: 16px;
   border-radius: 18px;
@@ -731,6 +750,9 @@ onMounted(async () => {
   .map-row{ grid-template-columns: 1fr; }
   .map-center{ order: 1; }
   .map-hover{
+    position: static;
+    transform: none;
+    margin: 0 auto 6px;
     max-width: min(320px, 90vw);
   }
   .map-hover-transformer{
