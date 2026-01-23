@@ -44,7 +44,6 @@ npm run dev
    - **Build Command:** `npm run build`
    - **Output Directory:** `dist`
 5. Clique em **Deploy** para gerar a URL pública.
-6. Copie a URL exibida no painel do projeto (ex.: `https://nome-do-projeto.vercel.app`).
 
 ### Type-Check, Compile and Minify for Production
 
