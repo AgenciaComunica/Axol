@@ -53,6 +53,9 @@ export class BrazilMap3D {
   private hoverInset: number
   private hoverLift: number
   private hitboxOpacity: number
+  private hoverPolygonsEnabled: boolean
+  private mapGroup: THREE.Group | null = null
+  private markerMeshes: THREE.Object3D[] = []
   private mapBounds: THREE.Box3 | null = null
 
   constructor(
@@ -62,7 +65,12 @@ export class BrazilMap3D {
     onHover?: (payload: StateSelect) => void,
     onClear?: () => void,
     valueByUf: Record<string, number> = {},
-    options: { hoverInset?: number; hoverLift?: number; hitboxOpacity?: number } = {}
+    options: {
+      hoverInset?: number
+      hoverLift?: number
+      hitboxOpacity?: number
+      hoverPolygonsEnabled?: boolean
+    } = {}
   ) {
     this.container = container
     this.onSelect = onSelect
@@ -72,6 +80,7 @@ export class BrazilMap3D {
     this.hoverInset = options.hoverInset ?? 0.2
     this.hoverLift = options.hoverLift ?? 1.2
     this.hitboxOpacity = options.hitboxOpacity ?? 0
+    this.hoverPolygonsEnabled = options.hoverPolygonsEnabled ?? true
 
     this.scene = new THREE.Scene()
 
@@ -174,6 +183,11 @@ export class BrazilMap3D {
 
   private handleClick = () => {
     if (!this.hovered) return
+    const marker = this.hovered.userData.markerData as StateSelect | undefined
+    if (marker) {
+      this.onSelect(marker)
+      return
+    }
     const group = this.hovered.userData.stateGroup as StateGroup | undefined
     if (!group) return
     const name = String(group.userData.name || '')
@@ -185,6 +199,15 @@ export class BrazilMap3D {
 
   private setHover(mesh: StateMesh | null, active: boolean) {
     if (!mesh) return
+    const marker = mesh.userData.markerData as StateSelect | undefined
+    if (marker) {
+      if (active) {
+        this.onHover?.(marker)
+      } else {
+        this.onClear?.()
+      }
+      return
+    }
     const group = mesh.userData.stateGroup as StateGroup | undefined
     if (!group) return
     group.userData.targetZ = active ? group.userData.baseZ + this.hoverLift : group.userData.baseZ
@@ -258,7 +281,7 @@ export class BrazilMap3D {
         mesh.userData.stateGroup = stateGroup
         stateGroup.add(mesh)
         const border = this.createBorder(shape, borderColor)
-        border.position.z = 0.2
+        border.position.z = 0.005
         mesh.add(border)
 
       })
@@ -266,7 +289,7 @@ export class BrazilMap3D {
       group.add(stateGroup)
       this.stateGroups.push(stateGroup)
 
-      if (shapes.length) {
+      if (shapes.length && this.hoverPolygonsEnabled) {
         const centroid = this.featureCentroid(feature)
         const inset = expandStates.has(sigla) ? -0.2 : hoverInset
         const hitMaterial = new THREE.MeshBasicMaterial({
@@ -309,12 +332,104 @@ export class BrazilMap3D {
     group.position.z = 0
 
     this.scene.add(group)
+    this.mapGroup = group
     this.controls.target.set(0, 0, 0)
     this.controls.update()
 
     const bounds = new THREE.Box3().setFromObject(group)
     bounds.expandByScalar(6)
     this.mapBounds = bounds
+  }
+
+  setMarkers(
+    markers: { id: string; name: string; value: number; x?: number; y?: number }[],
+    options?: { color?: string; size?: number }
+  ) {
+    if (!this.mapGroup) return
+    const { color = '#1d4ed8', size = 0.6 } = options || {}
+
+    this.markerMeshes.forEach((mesh) => {
+      this.mapGroup?.remove(mesh)
+      const index = this.meshes.indexOf(mesh as StateMesh)
+      if (index >= 0) this.meshes.splice(index, 1)
+      if (mesh instanceof THREE.Mesh) {
+        mesh.geometry.dispose()
+        if (mesh.material instanceof THREE.Material) mesh.material.dispose()
+      }
+      if (mesh instanceof THREE.Sprite) {
+        if (mesh.material instanceof THREE.SpriteMaterial) {
+          if (mesh.material.map) mesh.material.map.dispose()
+          mesh.material.dispose()
+        }
+      }
+    })
+    this.markerMeshes = []
+
+    const bounds = new THREE.Box3().setFromObject(this.mapGroup)
+    const sizeVec = new THREE.Vector3()
+    bounds.getSize(sizeVec)
+    const min = bounds.min
+    const max = bounds.max
+
+    markers.forEach((marker) => {
+      const sprite = this.createMarkerSprite(marker.value, color)
+      sprite.scale.set(size, size, 1)
+      const pos = (marker as { x?: number; y?: number })
+      const x = typeof pos.x === 'number' ? pos.x : min.x + Math.random() * sizeVec.x
+      const y = typeof pos.y === 'number' ? pos.y : min.y + Math.random() * sizeVec.y
+      sprite.position.set(x, y, 0.8)
+      sprite.userData.markerData = {
+        name: marker.name,
+        sigla: marker.id,
+        value: marker.value,
+      }
+      this.mapGroup?.add(sprite)
+      this.meshes.push(sprite as unknown as StateMesh)
+      this.markerMeshes.push(sprite)
+    })
+  }
+
+  fitToView(padding = 1.2) {
+    if (!this.mapGroup) return
+    const box = new THREE.Box3().setFromObject(this.mapGroup)
+    const size = new THREE.Vector3()
+    const center = new THREE.Vector3()
+    box.getSize(size)
+    box.getCenter(center)
+    const maxDim = Math.max(size.x, size.y)
+    const fov = THREE.MathUtils.degToRad(this.camera.fov)
+    const distance = (maxDim / 2 / Math.tan(fov / 2)) * padding
+    const dir = new THREE.Vector3()
+      .subVectors(this.camera.position, this.controls.target)
+      .normalize()
+    this.controls.target.copy(center)
+    this.camera.position.copy(center).add(dir.multiplyScalar(distance))
+    this.camera.updateProjectionMatrix()
+    this.controls.update()
+  }
+
+  private createMarkerSprite(value: number, color: string) {
+    const size = 128
+    const canvas = document.createElement('canvas')
+    canvas.width = size
+    canvas.height = size
+    const ctx = canvas.getContext('2d')
+    if (ctx) {
+      ctx.clearRect(0, 0, size, size)
+      ctx.fillStyle = color
+      ctx.beginPath()
+      ctx.arc(size / 2, size / 2, size * 0.4, 0, Math.PI * 2)
+      ctx.fill()
+      ctx.fillStyle = '#ffffff'
+      ctx.font = '600 42px Arial'
+      ctx.textAlign = 'center'
+      ctx.textBaseline = 'middle'
+      ctx.fillText(String(value), size / 2, size / 2)
+    }
+    const texture = new THREE.CanvasTexture(canvas)
+    texture.minFilter = THREE.LinearFilter
+    const material = new THREE.SpriteMaterial({ map: texture, transparent: true, depthWrite: false })
+    return new THREE.Sprite(material)
   }
 
   private featureToShapes(feature: GeoJsonFeature) {

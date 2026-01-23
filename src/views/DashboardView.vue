@@ -13,6 +13,7 @@ const mapShellRef = ref<HTMLElement | null>(null)
 const stateMenuOpen = ref(false)
 const cityMenuOpen = ref(false)
 const municipiosMG = ref<MapItem[]>([])
+const setoresIndex = ref<{ cd_mun: string; nm_mun: string; total_setores: number; file?: string }[]>([])
 const stateQuery = ref('')
 const cityQuery = ref('')
 const stateMenuRef = ref<HTMLElement | null>(null)
@@ -87,6 +88,13 @@ const mapDataset = computed(() =>
 )
 const stateNode = computed(() => store.path.find((node) => node.level === 'estado') || null)
 const cityNode = computed(() => store.path.find((node) => node.level === 'cidade') || null)
+const munCode = computed(() => (stateNode.value?.id === 'MG' ? cityNode.value?.id || null : null))
+const munFile = computed(() => {
+  if (!munCode.value) return null
+  const entry = setoresIndex.value.find((item) => item.cd_mun === munCode.value)
+  return entry?.file || null
+})
+const isTransformerView = computed(() => Boolean(munCode.value))
 const filteredStates = computed(() => {
   const q = stateQuery.value.trim().toLowerCase()
   if (!q) return stateOptions
@@ -224,6 +232,14 @@ onMounted(async () => {
   } catch {
     municipiosMG.value = []
   }
+
+  try {
+    const urlIndex = new URL('../assets/cities/setores-mg/index.json', import.meta.url)
+    const response = await fetch(urlIndex)
+    setoresIndex.value = await response.json()
+  } catch {
+    setoresIndex.value = []
+  }
 })
 </script>
 
@@ -290,7 +306,7 @@ onMounted(async () => {
       </header>
 
       <section ref="mapShellRef" class="map-shell">
-        <div v-if="displayInfo" class="map-hover" :class="{ pinned: pinnedInfo }">
+        <div v-if="displayInfo && !munCode" class="map-hover" :class="{ pinned: pinnedInfo }">
           <button
             v-if="pinnedInfo"
             type="button"
@@ -305,27 +321,54 @@ onMounted(async () => {
               <strong>{{ displayInfo.name }} - {{ displayInfo.sigla }}</strong>
             </div>
           </div>
-          <div class="map-hover-table">
-            <div class="map-hover-row">
-              <span>Status</span>
-              <b>Operacional</b>
+          <template v-if="isTransformerView && pinnedInfo">
+            <div class="map-hover-transformer">
+              <div class="map-hover-iframe">
+                <iframe title="Transformador 3D" src="about:blank"></iframe>
+              </div>
+              <div class="map-hover-table">
+                <div class="map-hover-row">
+                  <span>Status</span>
+                  <b>Operacional</b>
+                </div>
+                <div class="map-hover-row">
+                  <span>Potência</span>
+                  <b>18 MVA</b>
+                </div>
+                <div class="map-hover-row">
+                  <span>Nível de tensão</span>
+                  <b>138 kV</b>
+                </div>
+                <div class="map-hover-row">
+                  <span>Óleo</span>
+                  <b>Adequado</b>
+                </div>
+              </div>
             </div>
-            <div class="map-hover-row">
-              <span>Potência</span>
-              <b>18 MVA</b>
+          </template>
+          <template v-else>
+            <div class="map-hover-table">
+              <div class="map-hover-row">
+                <span>Status</span>
+                <b>Operacional</b>
+              </div>
+              <div class="map-hover-row">
+                <span>Potência</span>
+                <b>18 MVA</b>
+              </div>
+              <div class="map-hover-row">
+                <span>Nível de tensão</span>
+                <b>138 kV</b>
+              </div>
+              <div class="map-hover-row">
+                <span>Óleo</span>
+                <b>Adequado</b>
+              </div>
             </div>
-            <div class="map-hover-row">
-              <span>Nível de tensão</span>
-              <b>138 kV</b>
-            </div>
-            <div class="map-hover-row">
-              <span>Óleo</span>
-              <b>Adequado</b>
-            </div>
-          </div>
-          <button v-if="pinnedInfo" type="button" class="map-hover-action" @click.stop="handleExpand">
-            Ampliar
-          </button>
+            <button v-if="pinnedInfo" type="button" class="map-hover-action" @click.stop="handleExpand">
+              Ampliar
+            </button>
+          </template>
         </div>
         <KpiCard
           class="kpi kpi-tl"
@@ -364,6 +407,9 @@ onMounted(async () => {
               :title="mapTitle"
               :values-by-uf="valuesByUf"
               :dataset="mapDataset"
+              :mun-code="munCode"
+              :mun-file="munFile"
+              :transformers-count="0"
               @select="handleSelect"
               @hover="handleHover"
               @background="handleBackground"
@@ -595,6 +641,26 @@ onMounted(async () => {
   padding: 10px 12px;
 }
 
+.map-hover-transformer{
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
+  gap: 12px;
+}
+
+.map-hover-iframe{
+  border-radius: 12px;
+  overflow: hidden;
+  background: rgba(15, 23, 42, 0.08);
+  min-height: 160px;
+}
+
+.map-hover-iframe iframe{
+  width: 100%;
+  height: 100%;
+  border: none;
+  display: block;
+}
+
 .map-hover-row{
   display: grid;
   grid-template-columns: 1fr auto;
@@ -666,6 +732,9 @@ onMounted(async () => {
   .map-center{ order: 1; }
   .map-hover{
     max-width: min(320px, 90vw);
+  }
+  .map-hover-transformer{
+    grid-template-columns: 1fr;
   }
 }
 </style>
