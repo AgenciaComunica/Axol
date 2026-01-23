@@ -1,13 +1,3 @@
-{
-  "explorer.fileNesting.enabled": true,
-  "explorer.fileNesting.patterns": {
-    "tsconfig.json": "tsconfig.*.json, env.d.ts",
-    "vite.config.*": "jsconfig*, vitest.config.*, cypress.config.*, playwright.config.*",
-    "package.json": "package-lock.json, pnpm*, .yarnrc*, yarn*, .eslint*, eslint*, .oxlint*, oxlint*, .prettier*, prettier*, .editorconfig"
-  },
-  "editor.codeActionsOnSave": {
-    "source.fixAll": "explicit"
-  },
-  "editor.formatOnSave": true,
-  "editor.defaultFormatter": "prettier.prettier-vscode"
-}
+version https://git-lfs.github.com/spec/v1
+oid sha256:97a068d7fe400d784c59db963dac18f618c466ea84b683bc662fb15e8b430679
+size 522
