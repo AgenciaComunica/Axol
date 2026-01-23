@@ -35,15 +35,12 @@ npm install
 npm run dev
 ```
 
-### Deploy na Vercel (opção 1)
+### Deploy no GitHub Pages
 
 1. Suba este repositório no GitHub.
-2. Acesse https://vercel.com e clique em **New Project**.
-3. Conecte o repositório e selecione este projeto.
-4. Configure o deploy:
-   - **Build Command:** `npm run build`
-   - **Output Directory:** `dist`
-5. Clique em **Deploy** para gerar a URL pública.
+2. Garanta que a branch `main` seja a padrão.
+3. Faça um push para `main` para acionar o workflow de deploy.
+4. Acesse o site em `https://SEU_USUARIO.github.io/axol/`.
 
 ### Type-Check, Compile and Minify for Production
 
