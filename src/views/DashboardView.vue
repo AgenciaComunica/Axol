@@ -13,6 +13,7 @@ const pinnedItem = ref<MapItem | null>(null)
 const hoverPos = ref({ x: 0, y: 0 })
 const pinnedPos = ref<{ x: number; y: number } | null>(null)
 const mapShellRef = ref<HTMLElement | null>(null)
+const mapShellOffset = ref({ x: 0, y: 0 })
 const stateMenuOpen = ref(false)
 const cityMenuOpen = ref(false)
 const transformerMenuOpen = ref(false)
@@ -195,10 +196,15 @@ function handleMove(payload: { x: number; y: number }) {
   const rect = mapShellRef.value?.getBoundingClientRect()
   if (!rect) return
   hoverPos.value = { x: payload.x - rect.left, y: payload.y - rect.top }
+  mapShellOffset.value = { x: rect.left, y: rect.top }
 }
 
 const displayInfo = computed(() => pinnedInfo.value ?? hoverInfo.value)
 const displayPos = computed(() => pinnedPos.value ?? hoverPos.value)
+const mapHoverStyle = computed(() => ({
+  left: `${displayPos.value.x + mapShellOffset.value.x + 16}px`,
+  top: `${displayPos.value.y + mapShellOffset.value.y - 12}px`,
+}))
 
 function handleExpand() {
   if (!pinnedItem.value) return
@@ -443,11 +449,60 @@ onMounted(async () => {
       </header>
 
       <section ref="mapShellRef" class="map-shell">
+        <KpiCard
+          class="kpi kpi-tl"
+          :title="stateNode?.label || 'Brasil'"
+          value="Estado geral"
+          :subtitle="kpis.cards[0].subtitle"
+          :rows="kpis.cards[0].rows"
+        />
+        <KpiCard
+          class="kpi kpi-tr"
+          :title="kpis.cards[1].title"
+          :value="kpis.cards[1].value"
+          :subtitle="kpis.cards[1].subtitle"
+          :rows="kpis.cards[1].rows"
+        />
+        <KpiCard
+          class="kpi kpi-bl"
+          :title="kpis.cards[2].title"
+          :value="kpis.cards[2].value"
+          :subtitle="kpis.cards[2].subtitle"
+          :rows="kpis.cards[2].rows"
+        />
+        <KpiCard
+          class="kpi kpi-br"
+          :title="kpis.cards[3].title"
+          :value="kpis.cards[3].value"
+          :subtitle="kpis.cards[3].subtitle"
+          :rows="kpis.cards[3].rows"
+        />
+
+        <div class="map-center">
+          <div class="map-row">
+            <Map3DMock
+              :level="store.level"
+              :items="store.itemsForCurrentLevel"
+              :title="mapTitle"
+              :values-by-uf="valuesByUf"
+              :dataset="mapDataset"
+              :mun-code="munCode"
+              :mun-file="munFile"
+              @select="handleSelect"
+              @marker="handleMarker"
+              @hover="handleHover"
+              @background="handleBackground"
+              @move="handleMove"
+            />
+          </div>
+        </div>
+      </section>
+
+      <div v-if="displayInfo" class="map-hover-overlay">
         <div
-          v-if="displayInfo"
           class="map-hover"
           :class="{ pinned: pinnedInfo, interactive: displayInfo.transformers?.length }"
-          :style="{ left: `${displayPos.x + 16}px`, top: `${displayPos.y - 12}px` }"
+          :style="mapHoverStyle"
         >
           <button
             v-if="pinnedInfo"
@@ -527,54 +582,7 @@ onMounted(async () => {
             </button>
           </template>
         </div>
-        <KpiCard
-          class="kpi kpi-tl"
-          :title="stateNode?.label || 'Brasil'"
-          value="Estado geral"
-          :subtitle="kpis.cards[0].subtitle"
-          :rows="kpis.cards[0].rows"
-        />
-        <KpiCard
-          class="kpi kpi-tr"
-          :title="kpis.cards[1].title"
-          :value="kpis.cards[1].value"
-          :subtitle="kpis.cards[1].subtitle"
-          :rows="kpis.cards[1].rows"
-        />
-        <KpiCard
-          class="kpi kpi-bl"
-          :title="kpis.cards[2].title"
-          :value="kpis.cards[2].value"
-          :subtitle="kpis.cards[2].subtitle"
-          :rows="kpis.cards[2].rows"
-        />
-        <KpiCard
-          class="kpi kpi-br"
-          :title="kpis.cards[3].title"
-          :value="kpis.cards[3].value"
-          :subtitle="kpis.cards[3].subtitle"
-          :rows="kpis.cards[3].rows"
-        />
-
-        <div class="map-center">
-          <div class="map-row">
-            <Map3DMock
-              :level="store.level"
-              :items="store.itemsForCurrentLevel"
-              :title="mapTitle"
-              :values-by-uf="valuesByUf"
-              :dataset="mapDataset"
-              :mun-code="munCode"
-              :mun-file="munFile"
-              @select="handleSelect"
-              @marker="handleMarker"
-              @hover="handleHover"
-              @background="handleBackground"
-              @move="handleMove"
-            />
-          </div>
-        </div>
-      </section>
+      </div>
     </div>
 
     <div v-if="transformerModalOpen && selectedTransformer" class="transformer-modal">
@@ -637,6 +645,8 @@ onMounted(async () => {
 .brand-header{
   display: flex;
   justify-content: center;
+  position: relative;
+  z-index: 3;
 }
 
 .brand-logo{
@@ -650,6 +660,7 @@ onMounted(async () => {
   align-items: center;
   justify-content: flex-end;
   gap: 20px;
+  position: relative;
 }
 
 .breadcrumbs{
@@ -657,6 +668,7 @@ onMounted(async () => {
   flex-wrap: wrap;
   gap: 8px;
   justify-content: flex-end;
+  z-index: 2;
 }
 
 .crumb-select{
@@ -745,7 +757,7 @@ onMounted(async () => {
   background: transparent;
   box-shadow: none;
   padding: 60px 80px;
-  z-index: 0;
+  z-index: 1;
 }
 
 .map-center{
@@ -776,7 +788,14 @@ onMounted(async () => {
   display: grid;
   gap: 12px;
   pointer-events: none;
-  z-index: 4;
+  z-index:20;
+}
+
+.map-hover-overlay{
+  position: fixed;
+  inset: 0;
+  z-index: 200;
+  pointer-events: none;
 }
 
 .map-hover-close{
@@ -948,6 +967,30 @@ onMounted(async () => {
 .kpi-tr{ top: 12px; right: 12px; }
 .kpi-bl{ bottom: 12px; left: 12px; }
 .kpi-br{ bottom: 12px; right: 12px; }
+
+@media (min-width: 901px){
+  .map-shell{
+    position: fixed;
+    inset: 0;
+    width: 100vw;
+    height: 100vh;
+    padding: 0;
+    border-radius: 0;
+    min-height: 100vh;
+  }
+  .map-center,
+  .map-row{
+    width: 100%;
+    height: 100%;
+  }
+  .kpi-tl{ top: 250px; left: 250px; }
+  .kpi-tr{ top: 250px; right: 250px; }
+  .kpi-bl{ bottom: 250px; left: 250px; }
+  .kpi-br{ bottom: 250px; right: 250px; }
+  .map-hover{
+    position: fixed;
+  }
+}
 
 @media (max-width: 1100px){
   .map-shell{ padding: 50px 40px; }
