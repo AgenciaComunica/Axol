@@ -71,8 +71,11 @@ async function loadMap() {
     if (props.munCode) {
       mapInstance.fitToView(1.1)
       mapInstance.setZoomLimits(20, 180)
-    } else if (props.dataset === 'mg') {
-      mapInstance.setZoomLimits(50, 220)
+    } else {
+      mapInstance.fitToView(1.35)
+      if (props.dataset === 'mg') {
+        mapInstance.setZoomLimits(50, 220)
+      }
     }
     if (props.munCode === '3106200') {
       const bounds = geojsonBounds(geojson)
@@ -248,5 +251,12 @@ onBeforeUnmount(() => {
 
 @media (max-width: 900px){
   .map{ height: 420px; }
+}
+
+@media (min-width: 901px){
+  .map{
+    width: 100vw;
+    height: 100vh;
+  }
 }
 </style>

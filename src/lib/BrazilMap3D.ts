@@ -411,14 +411,6 @@ export class BrazilMap3D {
           value: marker.value,
           transformers: marker.transformers,
         }
-        if (marker.value > 1) {
-          const countSprite = this.createCountSprite(marker.value, '#2a364d')
-          countSprite.scale.set(size * 0.6, size * 0.6, 1)
-          countSprite.position.set(x, y + size * 0.7, 0.02)
-          countSprite.renderOrder = 11
-          this.mapGroup?.add(countSprite)
-          this.markerMeshes.push(countSprite)
-        }
         this.mapGroup?.add(sprite)
         this.meshes.push(sprite as unknown as StateMesh)
         this.markerMeshes.push(sprite)
@@ -463,7 +455,11 @@ export class BrazilMap3D {
     this.controls.minDistance = distance * 0.9
     this.controls.maxDistance = distance * 1.0
     this.controls.update()
-    const panBounds = box.clone().expandByScalar(maxDim * 0.02)
+    const shrink = maxDim * 0.12
+    const panBounds = box.clone().expandByScalar(-shrink)
+    if (panBounds.min.x > panBounds.max.x || panBounds.min.y > panBounds.max.y) {
+      panBounds.copy(box)
+    }
     this.setPanBounds(panBounds)
   }
 
