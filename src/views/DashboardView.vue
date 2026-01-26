@@ -673,6 +673,7 @@ onMounted(async () => {
   gap: 8px;
   justify-content: flex-end;
   z-index: 2;
+  position: relative;
 }
 
 .crumb-select{
@@ -1088,12 +1089,33 @@ onMounted(async () => {
 }
 
 @media (max-width: 900px){
-  .topbar{ flex-direction: column; align-items: flex-start; }
+  .topbar{
+    flex-direction: column;
+    align-items: flex-start;
+    z-index: 8;
+  }
+  .breadcrumbs{
+    width: 100%;
+    justify-content: center;
+    gap: 6px;
+    text-align: center;
+    z-index: 8;
+  }
+  .crumb{
+    white-space: nowrap;
+  }
+  .crumb-menu{
+    left: 50%;
+    right: auto;
+    transform: translateX(-50%);
+  }
   .map-shell{
     padding: 24px;
     display: flex;
     flex-direction: column;
     gap: 16px;
+    position: relative;
+    z-index: 1;
   }
   .kpi{
     position: static;
@@ -1104,9 +1126,11 @@ onMounted(async () => {
   .map-row{ grid-template-columns: 1fr; }
   .map-center{ order: 1; }
   .map-hover{
-    position: static;
-    transform: none;
-    margin: 0 auto 6px;
+    position: fixed;
+    top: 170px !important;
+    left: 50% !important;
+    transform: translate(-50%, 0) !important;
+    margin: 0;
     max-width: min(320px, 90vw);
   }
   .map-hover-transformer{
