@@ -181,6 +181,9 @@ function openTransformerModal(transformer: {
 }) {
   selectedTransformer.value = transformer
   transformerModalOpen.value = true
+  pinnedInfo.value = null
+  pinnedItem.value = null
+  pinnedPos.value = null
 }
 
 function transformerMapsLink(address: string) {
@@ -589,6 +592,7 @@ onMounted(async () => {
       <div class="transformer-modal-card">
         <button type="button" class="transformer-modal-close" @click="closeTransformerModal">✕</button>
         <div class="transformer-modal-media">
+          <div class="transformer-modal-placeholder">Iframe aqui</div>
           <iframe title="Transformador 3D" src="about:blank"></iframe>
         </div>
         <div class="transformer-modal-info">
@@ -1036,6 +1040,21 @@ onMounted(async () => {
   overflow: hidden;
   background: rgba(15, 23, 42, 0.06);
   min-height: 220px;
+  display: grid;
+  place-items: center;
+  position: relative;
+}
+
+.transformer-modal-placeholder{
+  position: absolute;
+  inset: 0;
+  display: grid;
+  place-items: center;
+  font-size: 12px;
+  text-transform: uppercase;
+  letter-spacing: 0.2em;
+  color: rgba(15, 23, 42, 0.55);
+  pointer-events: none;
 }
 
 .transformer-modal-media iframe{
