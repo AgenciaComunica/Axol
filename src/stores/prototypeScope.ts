@@ -2,7 +2,7 @@ import { defineStore } from 'pinia'
 import { computed, ref } from 'vue'
 
 type Level = 'brasil' | 'regiao' | 'estado' | 'cidade' | 'bairro'
-export type MapItem = { id: string; name: string; qty: number }
+export type MapItem = { id: string; name: string; qty: number; sigla?: string }
 
 type PathNode = { level: Level; label: string; id: string }
 
@@ -68,7 +68,7 @@ const data = {
       { id: 'TR-01288', name: 'TR-01288', qty: 1 },
     ],
   },
-} as const
+}
 
 const transformerDetails: Record<string, TransformerDetails> = {
   'TR-00921': {
