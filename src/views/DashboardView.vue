@@ -181,6 +181,9 @@ function openTransformerModal(transformer: {
 }) {
   selectedTransformer.value = transformer
   transformerModalOpen.value = true
+  pinnedInfo.value = null
+  pinnedItem.value = null
+  pinnedPos.value = null
 }
 
 function transformerMapsLink(address: string) {
@@ -589,6 +592,7 @@ onMounted(async () => {
       <div class="transformer-modal-card">
         <button type="button" class="transformer-modal-close" @click="closeTransformerModal">✕</button>
         <div class="transformer-modal-media">
+          <div class="transformer-modal-placeholder">Iframe aqui</div>
           <iframe title="Transformador 3D" src="about:blank"></iframe>
         </div>
         <div class="transformer-modal-info">
@@ -669,6 +673,7 @@ onMounted(async () => {
   gap: 8px;
   justify-content: flex-end;
   z-index: 2;
+  position: relative;
 }
 
 .crumb-select{
@@ -1036,6 +1041,21 @@ onMounted(async () => {
   overflow: hidden;
   background: rgba(15, 23, 42, 0.06);
   min-height: 220px;
+  display: grid;
+  place-items: center;
+  position: relative;
+}
+
+.transformer-modal-placeholder{
+  position: absolute;
+  inset: 0;
+  display: grid;
+  place-items: center;
+  font-size: 12px;
+  text-transform: uppercase;
+  letter-spacing: 0.2em;
+  color: rgba(15, 23, 42, 0.55);
+  pointer-events: none;
 }
 
 .transformer-modal-media iframe{
@@ -1069,12 +1089,33 @@ onMounted(async () => {
 }
 
 @media (max-width: 900px){
-  .topbar{ flex-direction: column; align-items: flex-start; }
+  .topbar{
+    flex-direction: column;
+    align-items: flex-start;
+    z-index: 8;
+  }
+  .breadcrumbs{
+    width: 100%;
+    justify-content: center;
+    gap: 6px;
+    text-align: center;
+    z-index: 8;
+  }
+  .crumb{
+    white-space: nowrap;
+  }
+  .crumb-menu{
+    left: 50%;
+    right: auto;
+    transform: translateX(-50%);
+  }
   .map-shell{
     padding: 24px;
     display: flex;
     flex-direction: column;
     gap: 16px;
+    position: relative;
+    z-index: 1;
   }
   .kpi{
     position: static;
@@ -1085,9 +1126,11 @@ onMounted(async () => {
   .map-row{ grid-template-columns: 1fr; }
   .map-center{ order: 1; }
   .map-hover{
-    position: static;
-    transform: none;
-    margin: 0 auto 6px;
+    position: fixed;
+    top: 170px !important;
+    left: 50% !important;
+    transform: translate(-50%, 0) !important;
+    margin: 0;
     max-width: min(320px, 90vw);
   }
   .map-hover-transformer{

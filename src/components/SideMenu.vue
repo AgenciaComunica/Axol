@@ -10,6 +10,7 @@ function toggleMenu() {
 
 <template>
   <div class="side-menu">
+    <div class="menu-backdrop" :class="{ open }" @click="toggleMenu"></div>
     <button class="menu-btn" :class="{ open }" type="button" @click="toggleMenu">
       <div v-if="!open" class="hamburger" aria-hidden="true">
         <span></span>
@@ -20,6 +21,10 @@ function toggleMenu() {
     </button>
 
     <div class="dropdown" :class="{ open }">
+      <div class="mobile-menu-head">
+        <span class="mobile-menu-title">MENU</span>
+        <button class="mobile-menu-close" type="button" @click="toggleMenu">✕</button>
+      </div>
       <button class="item" type="button">Visao Geral</button>
       <button class="item" type="button">Alertas</button>
       <button class="item" type="button">Relatorios</button>
@@ -97,4 +102,78 @@ function toggleMenu() {
   transition: background 0.15s ease, transform 0.15s ease, border-color 0.15s ease;
 }
 .item:hover{ background: rgba(15, 23, 42, 0.06); border-color: rgba(15, 23, 42, 0.08); transform: translateY(-1px); }
+
+.mobile-menu-head{
+  display: none;
+}
+
+.menu-backdrop{
+  position: fixed;
+  inset: 0;
+  background: rgba(15, 23, 42, 0.35);
+  opacity: 0;
+  pointer-events: none;
+  transition: opacity 0.2s ease;
+}
+.menu-backdrop.open{
+  opacity: 1;
+  pointer-events: auto;
+}
+
+@media (max-width: 900px){
+  .side-menu{
+    top: 16px;
+    left: 16px;
+    z-index: 60;
+  }
+  .dropdown{
+    position: fixed;
+    top: 0;
+    right: 0;
+    bottom: 0;
+    width: min(86vw, 360px);
+    margin: 0;
+    border-radius: 18px 0 0 18px;
+    padding: 18px 20px 20px;
+    gap: 5px;
+    background: rgba(255,255,255,0.96);
+    backdrop-filter: blur(10px);
+    transform: translateX(20px);
+    display: flex;
+    flex-direction: column;
+    align-items: stretch;
+    justify-content: flex-start;
+  }
+  .dropdown.open{
+    transform: translateX(0);
+  }
+  .mobile-menu-head{
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    margin-bottom: 10px;
+  }
+  .mobile-menu-title{
+    font-size: 12px;
+    letter-spacing: 0.3em;
+    font-weight: 600;
+    color: rgba(15, 23, 42, 0.7);
+  }
+  .mobile-menu-close{
+    width: 36px;
+    height: 36px;
+    border-radius: 999px;
+    border: 1px solid rgba(15, 23, 42, 0.14);
+    background: rgba(255,255,255,0.7);
+    cursor: pointer;
+    display: grid;
+    place-items: center;
+  }
+  .item{
+    text-align: center;
+    font-size: 14px;
+    padding: 8px 12px;
+    height: 38px;
+  }
+}
 </style>

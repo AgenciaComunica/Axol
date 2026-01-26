@@ -68,13 +68,16 @@ async function loadMap() {
       props.valuesByUf,
       options
     )
+    const isMobile = window.matchMedia('(max-width: 900px)').matches
     if (props.munCode) {
       mapInstance.fitToView(1.1)
-      mapInstance.setZoomLimits(20, 180)
+      mapInstance.setZoomLimits(isMobile ? 8 : 20, isMobile ? 200 : 180)
     } else {
       mapInstance.fitToView(1.35)
       if (props.dataset === 'mg') {
-        mapInstance.setZoomLimits(50, 220)
+        mapInstance.setZoomLimits(isMobile ? 30 : 50, isMobile ? 240 : 220)
+      } else if (isMobile) {
+        mapInstance.setZoomLimits(24, 260)
       }
     }
     if (props.munCode === '3106200') {
@@ -250,7 +253,7 @@ onBeforeUnmount(() => {
 }
 
 @media (max-width: 900px){
-  .map{ height: 420px; }
+  .map{ height: 340px; }
 }
 
 @media (min-width: 901px){
