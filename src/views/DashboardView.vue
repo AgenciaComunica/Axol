@@ -147,7 +147,6 @@ const transformerMarkers = computed(() =>
     .map((item) => ({
       id: item.id,
       position: { lat: item.lat as number, lng: item.lng as number },
-      label: 'T',
     }))
 )
 
@@ -165,6 +164,28 @@ function handleMarker(payload: StateSelect) {
 
 function handleHover(payload: StateSelect | null) {
   hoverInfo.value = payload
+}
+
+function handleMarkerHover(payload: { id: string; clientX: number; clientY: number }) {
+  const transformer = transformerOptions.value.find((item) => item.id === payload.id)
+  if (!transformer) return
+  const rect = mapShellRef.value?.getBoundingClientRect()
+  if (!rect) return
+  hoverInfo.value = {
+    name: transformer.substation || transformer.location || transformer.id,
+    sigla: transformer.id,
+    value: 0,
+    transformers: [transformer],
+  }
+  hoverPos.value = { x: payload.clientX - rect.left, y: payload.clientY - rect.top }
+  mapShellOffset.value = { x: rect.left, y: rect.top }
+}
+
+function handleMarkerLeave(id: string) {
+  const current = hoverInfo.value?.transformers?.[0]?.id
+  if (current === id) {
+    hoverInfo.value = null
+  }
 }
 
 function handleBackground() {
@@ -740,7 +761,7 @@ watch(
                 placeholder="Pesquisar endereço"
                 aria-label="Pesquisar endereço"
                 @focus="searchSuggestOpen = searchSuggestions.length > 0"
-                @blur="setTimeout(() => (searchSuggestOpen = false), 120)"
+                @blur="window.setTimeout(() => (searchSuggestOpen = false), 120)"
               />
               <div v-if="searchSuggestOpen" class="search-suggest">
                 <div
@@ -807,6 +828,8 @@ watch(
               @update:center="mapCenter = $event"
               @update:zoom="mapZoom = $event"
               @markerClick="handleMapMarkerClick"
+              @markerHover="handleMarkerHover"
+              @markerLeave="handleMarkerLeave"
               @ready="handleMapReady"
             />
           </div>
@@ -851,13 +874,6 @@ watch(
                 <span>Óleo</span>
                 <b>{{ displayInfo.transformers[0].oil }}</b>
               </div>
-              <button
-                type="button"
-                class="map-hover-action"
-                @click.stop="openTransformerModal(displayInfo.transformers[0])"
-              >
-                Ampliar
-              </button>
             </div>
             <div v-else class="map-hover-list">
               <div class="map-hover-list-head">Transformadores</div>
@@ -904,8 +920,7 @@ watch(
       <div class="transformer-modal-card">
         <button type="button" class="transformer-modal-close" @click="closeTransformerModal">✕</button>
         <div class="transformer-modal-media">
-          <div class="transformer-modal-placeholder">Iframe aqui</div>
-          <iframe title="Transformador 3D" src="about:blank"></iframe>
+          <img class="transformer-modal-image" src="@/assets/Trafo_3D.svg" alt="Transformador 3D" />
         </div>
         <div class="transformer-modal-info">
           <h3>{{ selectedTransformer.id }}</h3>
@@ -970,7 +985,7 @@ watch(
             </b>
           </div>
           <button type="button" class="transformer-modal-action" @click="openViewer3D">
-            Ver em 3D / Ampliar
+            Ampliar 3D
           </button>
         </div>
       </div>
@@ -978,8 +993,11 @@ watch(
 
     <div v-if="viewerOpen" class="viewer-overlay">
       <div class="viewer-frame">
-        <button type="button" class="viewer-close" @click="closeViewer3D">Fechar</button>
+        <button type="button" class="viewer-close" @click="closeViewer3D">✕</button>
+        <img class="viewer-placeholder" src="@/assets/Trafo_3D.svg" alt="Transformador 3D" />
+        <img class="viewer-watermark" src="@/assets/logo_siaro.png" alt="Siaro" />
         <iframe
+          v-if="false"
           ref="viewerFrameRef"
           class="viewer-iframe"
           title="Viewer 3D"
@@ -1348,16 +1366,19 @@ watch(
   gap: 16px;
   z-index: 3;
   align-items: start;
+  pointer-events: none;
 }
 
 .kpi-col{
   display: grid;
   gap: 16px;
   align-content: start;
+  pointer-events: none;
 }
 
 .kpi{
   width: 220px;
+  pointer-events: auto;
 }
 
 @media (min-width: 901px){
@@ -1443,26 +1464,12 @@ watch(
   min-height: 220px;
   display: grid;
   place-items: center;
-  position: relative;
 }
 
-.transformer-modal-placeholder{
-  position: absolute;
-  inset: 0;
-  display: grid;
-  place-items: center;
-  font-size: 12px;
-  text-transform: uppercase;
-  letter-spacing: 0.2em;
-  color: rgba(15, 23, 42, 0.55);
-  pointer-events: none;
-}
-
-.transformer-modal-media iframe{
+.transformer-modal-image{
   width: 100%;
   height: 100%;
-  border: none;
-  display: block;
+  object-fit: contain;
 }
 
 .transformer-modal-info{
@@ -1526,17 +1533,18 @@ watch(
   z-index: 80;
   display: grid;
   place-items: center;
-  padding: 20px;
+  padding: 0;
 }
 
 .viewer-frame{
-  width: min(1100px, 96vw);
-  height: min(720px, 92vh);
+  width: 100%;
+  height: 100%;
   background: #ffffff;
-  border-radius: 20px;
+  border-radius: 0;
   overflow: hidden;
   position: relative;
   display: grid;
+  place-items: center;
 }
 
 .viewer-close{
@@ -1556,6 +1564,22 @@ watch(
   height: 100%;
   border: none;
   display: block;
+}
+
+.viewer-placeholder{
+  width: min(900px, 92%);
+  height: auto;
+  object-fit: contain;
+}
+
+.viewer-watermark{
+  position: absolute;
+  right: 24px;
+  bottom: 24px;
+  width: 120px;
+  height: auto;
+  opacity: 0.35;
+  pointer-events: none;
 }
 
 @media (max-width: 900px){
