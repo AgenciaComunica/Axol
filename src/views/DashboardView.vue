@@ -171,6 +171,11 @@ function handleMarkerHover(payload: { id: string; clientX: number; clientY: numb
   if (!transformer) return
   const rect = mapShellRef.value?.getBoundingClientRect()
   if (!rect) return
+  const isLocal = payload.clientX <= rect.width && payload.clientY <= rect.height
+  const clientX = isLocal ? rect.left + payload.clientX : payload.clientX
+  const clientY = isLocal ? rect.top + payload.clientY : payload.clientY
+  hoverPos.value = { x: clientX - rect.left, y: clientY - rect.top }
+  mapShellOffset.value = { x: rect.left, y: rect.top }
   hoverInfo.value = {
     name: transformer.substation || transformer.location || transformer.id,
     sigla: transformer.id,
@@ -445,11 +450,18 @@ function syncMapToBreadcrumb() {
 }
 
 const displayInfo = computed(() => pinnedInfo.value ?? hoverInfo.value)
-const displayPos = computed(() => pinnedPos.value ?? hoverPos.value)
-const mapHoverStyle = computed(() => ({
-  left: `${displayPos.value.x + mapShellOffset.value.x + 16}px`,
-  top: `${displayPos.value.y + mapShellOffset.value.y - 12}px`,
-}))
+const displayPos = computed(() =>
+  pinnedInfo.value && pinnedPos.value ? pinnedPos.value : hoverPos.value
+)
+const mapHoverStyle = computed(() => {
+  return {
+    left: '50%',
+    right: 'auto',
+    top: 'auto',
+    bottom: '32px',
+    transform: 'translateX(-50%)',
+  }
+})
 
 const viewerSrc = computed(() => {
   if (!selectedTransformer.value) return ''
@@ -1172,10 +1184,10 @@ watch(
 }
 
 .map-hover{
-  position: absolute;
-  top: 12px;
-  left: 50%;
-  transform: translateY(-100%);
+  position: fixed;
+  top: 0;
+  left: 0;
+  transform: none;
   min-width: 260px;
   padding: 16px;
   border-radius: 18px;

@@ -13,7 +13,7 @@ const pinSvg = encodeURIComponent(
 )
 const pinIconUrl = `data:image/svg+xml;utf8,${pinSvg}`
 
-function createMarkerContent() {
+function createMarkerContent(onEnter: (event: MouseEvent) => void, onLeave: () => void) {
   const wrapper = document.createElement('div')
   wrapper.style.position = 'relative'
   wrapper.style.width = '34px'
@@ -43,6 +43,8 @@ function createMarkerContent() {
 
   wrapper.appendChild(pin)
   wrapper.appendChild(icon)
+  wrapper.addEventListener('mouseenter', onEnter)
+  wrapper.addEventListener('mouseleave', onLeave)
   return wrapper
 }
 
@@ -106,11 +108,12 @@ function syncMarkers() {
       const instance = new googleMaps.marker.AdvancedMarkerElement({
         map,
         position: marker.position,
-        content: createMarkerContent(),
+        content: createMarkerContent(
+          (event) => handleHover(marker, event),
+          () => emit('markerLeave', marker.id)
+        ),
       })
       instance.addListener('gmp-click', () => emit('markerClick', marker.id))
-      instance.addListener('gmp-mouseover', (event: any) => handleHover(marker, event))
-      instance.addListener('gmp-mouseout', () => emit('markerLeave', marker.id))
       return instance
     }
     const instance = new googleMaps.Marker({
