@@ -66,10 +66,31 @@ const searchQuery = ref('')
 const searchError = ref('')
 const searchLoading = ref(false)
 const searchInputRef = ref<HTMLInputElement | null>(null)
-const searchAutocomplete = ref<any | null>(null)
 const mapInstance = ref<any | null>(null)
 const googleMapsRef = ref<any | null>(null)
 const mapsReady = ref(false)
+const searchSuggestions = ref<any[]>([])
+const searchSuggestOpen = ref(false)
+const searchSuggestLoading = ref(false)
+const searchSuggestSuppress = ref(false)
+let searchSuggestTimer: number | null = null
+let searchSuggestAbort: AbortController | null = null
+const searchSuggestAllowedTypes = new Set([
+  'country',
+  'state',
+  'city',
+  'town',
+  'municipality',
+  'village',
+  'suburb',
+  'neighbourhood',
+  'quarter',
+  'road',
+  'street',
+  'residential',
+  'living_street',
+  'hamlet',
+])
 const highlightRect = ref<any | null>(null)
 const transformerQuery = ref('')
 
@@ -185,15 +206,28 @@ function closeTransformerModal() {
   selectedTransformer.value = null
 }
 
-function handleSearch() {
-  const rawQuery = searchQuery.value.trim()
+function handleSearch(override?: unknown) {
+  const overrideQuery = typeof override === 'string' ? override : undefined
+  searchSuggestSuppress.value = true
+  clearSuggestions()
+  const rawQuery = String(overrideQuery ?? searchQuery.value ?? '').trim()
   const normalized = rawQuery.toLowerCase()
+  const queryParts = rawQuery.split(',').map((part) => part.trim()).filter(Boolean)
+  const filteredParts = queryParts.filter(
+    (part) => !/regi[aã]o/i.test(part) && !/brasil/i.test(part)
+  )
+  const baseQuery = (filteredParts[0] || queryParts[0] || rawQuery).trim()
   const statePrefix = normalized.startsWith('estado ')
     ? rawQuery.slice(7).trim()
     : normalized.startsWith('estado de ')
       ? rawQuery.slice(10).trim()
       : rawQuery
-  const query = statePrefix.trim()
+  const query = (normalized.startsWith('estado ') || normalized.startsWith('estado de '))
+    ? statePrefix.trim()
+    : baseQuery
+  const normalizedQuery = query.toLowerCase()
+  const isBrazilQuery =
+    normalizedQuery === 'brasil' || normalizedQuery === 'brazil' || normalizedQuery === 'br'
   if (!query) return
   let googleMaps = googleMapsRef.value || (window as any).google?.maps
   if (!googleMaps?.Geocoder && (window as any).google?.maps?.Geocoder) {
@@ -209,15 +243,16 @@ function handleSearch() {
   const url = new URL('https://nominatim.openstreetmap.org/search')
   url.searchParams.set('format', 'jsonv2')
   url.searchParams.set('polygon_geojson', '1')
-  if (normalized.startsWith('estado ')) {
+  if (isBrazilQuery) {
+    url.searchParams.set('country', 'Brazil')
+  } else if (normalized.startsWith('estado ')) {
     url.searchParams.set('state', query)
     url.searchParams.set('country', 'Brazil')
   } else if (normalized.startsWith('estado de ')) {
     url.searchParams.set('state', query)
     url.searchParams.set('country', 'Brazil')
   } else {
-    url.searchParams.set('city', query)
-    url.searchParams.set('country', 'Brazil')
+    url.searchParams.set('q', `${query}, Brazil`)
   }
   url.searchParams.set('limit', '1')
   url.searchParams.set('addressdetails', '1')
@@ -229,43 +264,94 @@ function handleSearch() {
         searchError.value = 'Endereço não encontrado.'
         return
       }
-      const result = results[0]
-      if (!result?.geojson) {
-        searchError.value = 'Limites administrativos indisponíveis.'
-        return
+      const allowedTypes = new Set([
+        'state',
+        'city',
+        'town',
+        'municipality',
+        'village',
+        'suburb',
+        'neighbourhood',
+        'quarter',
+        'road',
+        'street',
+        'residential',
+        'living_street',
+        'hamlet',
+      ])
+      if (isBrazilQuery) {
+        allowedTypes.add('country')
       }
+      const result =
+        results.find((item) =>
+          allowedTypes.has(String(item?.addresstype || item?.type || '').toLowerCase())
+        ) || results[0]
       const map = mapInstance.value
       map.data.forEach((feature: any) => map.data.remove(feature))
-      const geojson = {
-        type: 'FeatureCollection',
-        features: [{ type: 'Feature', properties: {}, geometry: result.geojson }],
-      }
-      map.data.addGeoJson(geojson)
-      map.data.setStyle({
-        fillColor: '#FF0000',
-        fillOpacity: 0.1,
-        strokeColor: '#FF0000',
-        strokeWeight: 2,
-      })
-      const bounds = new googleMaps.LatLngBounds()
-      const extendCoords = (coords: any) => {
-        if (!coords) return
-        if (typeof coords[0] === 'number') {
-          bounds.extend(new googleMaps.LatLng(coords[1], coords[0]))
-          return
+      if (result?.geojson) {
+        const geojson = {
+          type: 'FeatureCollection',
+          features: [{ type: 'Feature', properties: {}, geometry: result.geojson }],
         }
-        coords.forEach((c: any) => extendCoords(c))
+        map.data.addGeoJson(geojson)
+        map.data.setStyle({
+          fillColor: '#f7cf29',
+          fillOpacity: 0.1,
+          strokeColor: '#f7cf29',
+          strokeWeight: 2,
+        })
+        const bounds = new googleMaps.LatLngBounds()
+        const extendCoords = (coords: any) => {
+          if (!coords) return
+          if (typeof coords[0] === 'number') {
+            bounds.extend(new googleMaps.LatLng(coords[1], coords[0]))
+            return
+          }
+          coords.forEach((c: any) => extendCoords(c))
+        }
+        extendCoords(result.geojson.coordinates)
+        if (!bounds.isEmpty()) {
+          map.fitBounds(bounds)
+        }
+        return
       }
-      extendCoords(result.geojson.coordinates)
-      if (!bounds.isEmpty()) {
+
+      const bbox = result?.boundingbox
+      if (Array.isArray(bbox) && bbox.length === 4) {
+        const bounds = new googleMaps.LatLngBounds(
+          new googleMaps.LatLng(Number(bbox[0]), Number(bbox[2])),
+          new googleMaps.LatLng(Number(bbox[1]), Number(bbox[3]))
+        )
         map.fitBounds(bounds)
+        searchError.value = ''
+        return
       }
+
+      searchError.value = 'Limites administrativos indisponíveis.'
     })
     .catch((err) => {
       searchLoading.value = false
       console.warn('[search] nominatim failed', err)
       searchError.value = 'Erro ao consultar limites.'
     })
+}
+
+function clearSuggestions() {
+  searchSuggestions.value = []
+  searchSuggestOpen.value = false
+}
+
+function handleSuggestSelect(suggestion: any) {
+  searchSuggestSuppress.value = true
+  const raw = searchQuery.value.trim()
+  const normalized = raw.toLowerCase()
+  if (normalized.startsWith('estado ') || normalized.startsWith('estado de ')) {
+    handleSearch(raw)
+  } else {
+    searchQuery.value = suggestion.display_name || raw
+    handleSearch(searchQuery.value)
+  }
+  clearSuggestions()
 }
 
 async function handleMapReady(googleMaps: any) {
@@ -277,21 +363,6 @@ async function handleMapReady(googleMaps: any) {
   if (!(mapInstance.value) && (window as any).__gm_map) {
     mapInstance.value = (window as any).__gm_map
   }
-  await nextTick()
-  const input = searchInputRef.value
-  if (!input || !googleMaps?.places?.Autocomplete) return
-  searchAutocomplete.value = new googleMaps.places.Autocomplete(input, {
-    fields: ['geometry', 'formatted_address'],
-    types: ['geocode'],
-  })
-  searchAutocomplete.value.addListener('place_changed', () => {
-    const place = searchAutocomplete.value.getPlace()
-    const loc = place?.geometry?.location
-    if (!loc) return
-    searchQuery.value = place.formatted_address || searchQuery.value
-    mapCenter.value = { lat: loc.lat(), lng: loc.lng() }
-    mapZoom.value = 12
-  })
 }
 
 function handleMove(payload: { x: number; y: number }) {
@@ -316,7 +387,7 @@ function highlightViewport(viewport: any, types: string[]) {
     highlightRect.value = null
   }
   const isCity = types.includes('locality') || types.includes('administrative_area_level_2')
-  const stroke = '#ea4335'
+  const stroke = '#f7cf29'
   highlightRect.value = new googleMaps.Rectangle({
     bounds: viewport,
     strokeColor: stroke,
@@ -604,6 +675,47 @@ watch(
   () => searchQuery.value,
   () => {
     if (searchError.value) searchError.value = ''
+    if (searchSuggestSuppress.value) {
+      searchSuggestSuppress.value = false
+      return
+    }
+    if (searchSuggestTimer) window.clearTimeout(searchSuggestTimer)
+    const q = searchQuery.value.trim()
+    if (q.length < 3) {
+      clearSuggestions()
+      return
+    }
+    searchSuggestTimer = window.setTimeout(() => {
+      if (searchSuggestAbort) searchSuggestAbort.abort()
+      searchSuggestAbort = new AbortController()
+      searchSuggestLoading.value = true
+      const url = new URL('https://nominatim.openstreetmap.org/search')
+      url.searchParams.set('format', 'jsonv2')
+      url.searchParams.set('q', q)
+      url.searchParams.set('limit', '5')
+      url.searchParams.set('addressdetails', '1')
+      url.searchParams.set('countrycodes', 'br')
+      fetch(url.toString(), { signal: searchSuggestAbort.signal, headers: { Accept: 'application/json' } })
+        .then((res) => res.json())
+        .then((results) => {
+          searchSuggestLoading.value = false
+          if (!Array.isArray(results)) {
+            clearSuggestions()
+            return
+          }
+          const filtered = results.filter((item) => {
+            const type = String(item?.addresstype || item?.type || '').toLowerCase()
+            return searchSuggestAllowedTypes.has(type)
+          })
+          searchSuggestions.value = filtered
+          searchSuggestOpen.value = filtered.length > 0
+        })
+        .catch((err) => {
+          if (err?.name === 'AbortError') return
+          searchSuggestLoading.value = false
+          clearSuggestions()
+        })
+    }, 250)
   }
 )
 
@@ -615,18 +727,33 @@ watch(
 
     <div class="content">
       <div class="brand-header">
-        <img src="@/assets/logo-axol.png" alt="Axol" class="brand-logo" />
+        <img src="@/assets/logo_siaro.png" alt="Siaro" class="brand-logo" />
       </div>
       <div class="search-under-logo">
         <div class="search-wrap">
           <form class="search-bar" @submit.prevent="handleSearch">
-            <input
-              v-model="searchQuery"
-              ref="searchInputRef"
-              type="search"
-              placeholder="Pesquisar endereço"
-              aria-label="Pesquisar endereço"
-            />
+            <div class="search-input-wrap">
+              <input
+                v-model="searchQuery"
+                ref="searchInputRef"
+                type="search"
+                placeholder="Pesquisar endereço"
+                aria-label="Pesquisar endereço"
+                @focus="searchSuggestOpen = searchSuggestions.length > 0"
+                @blur="setTimeout(() => (searchSuggestOpen = false), 120)"
+              />
+              <div v-if="searchSuggestOpen" class="search-suggest">
+                <div
+                  v-for="suggestion in searchSuggestions"
+                  :key="suggestion.place_id"
+                  class="search-suggest-item"
+                  @mousedown.prevent="handleSuggestSelect(suggestion)"
+                >
+                  {{ suggestion.display_name }}
+                </div>
+                <div v-if="searchSuggestLoading" class="search-suggest-loading">Carregando...</div>
+              </div>
+            </div>
             <button type="submit" :disabled="searchLoading || !mapsReady">
               {{ !mapsReady ? 'Carregando...' : searchLoading ? 'Buscando...' : 'Buscar' }}
             </button>
@@ -636,34 +763,40 @@ watch(
       </div>
 
       <section ref="mapShellRef" class="map-shell">
-        <KpiCard
-          class="kpi kpi-tl"
-          :title="stateNode?.label || 'Brasil'"
-          value="Estado geral"
-          :subtitle="kpis.cards[0].subtitle"
-          :rows="kpis.cards[0].rows"
-        />
-        <KpiCard
-          class="kpi kpi-tr"
-          :title="kpis.cards[1].title"
-          :value="kpis.cards[1].value"
-          :subtitle="kpis.cards[1].subtitle"
-          :rows="kpis.cards[1].rows"
-        />
-        <KpiCard
-          class="kpi kpi-bl"
-          :title="kpis.cards[2].title"
-          :value="kpis.cards[2].value"
-          :subtitle="kpis.cards[2].subtitle"
-          :rows="kpis.cards[2].rows"
-        />
-        <KpiCard
-          class="kpi kpi-br"
-          :title="kpis.cards[3].title"
-          :value="kpis.cards[3].value"
-          :subtitle="kpis.cards[3].subtitle"
-          :rows="kpis.cards[3].rows"
-        />
+        <div class="kpi-stack">
+          <div class="kpi-col">
+            <KpiCard
+              class="kpi"
+              :title="stateNode?.label || 'Brasil'"
+              value="Estado geral"
+              :subtitle="kpis.cards[0].subtitle"
+              :rows="kpis.cards[0].rows"
+            />
+            <KpiCard
+              class="kpi"
+              :title="kpis.cards[2].title"
+              :value="kpis.cards[2].value"
+              :subtitle="kpis.cards[2].subtitle"
+              :rows="kpis.cards[2].rows"
+            />
+          </div>
+          <div class="kpi-col">
+            <KpiCard
+              class="kpi"
+              :title="kpis.cards[1].title"
+              :value="kpis.cards[1].value"
+              :subtitle="kpis.cards[1].subtitle"
+              :rows="kpis.cards[1].rows"
+            />
+            <KpiCard
+              class="kpi"
+              :title="kpis.cards[3].title"
+              :value="kpis.cards[3].value"
+              :subtitle="kpis.cards[3].subtitle"
+              :rows="kpis.cards[3].rows"
+            />
+          </div>
+        </div>
 
         <div class="map-center">
           <div class="map-row">
@@ -868,7 +1001,7 @@ watch(
 .content{
   max-width: 1300px;
   margin: 0 auto;
-  padding: 90px 24px 60px;
+  padding: 45px 24px 60px;
   display: grid;
   gap: 24px;
 }
@@ -878,12 +1011,14 @@ watch(
   justify-content: center;
   position: relative;
   z-index: 3;
+  margin-top: -8px;
 }
 
 .brand-logo{
   width: 180px;
   height: auto;
   object-fit: contain;
+  padding: 0.5px;
 }
 
 .search-wrap{
@@ -904,10 +1039,15 @@ watch(
   min-width: 320px;
 }
 
+.search-input-wrap{
+  position: relative;
+  flex: 1;
+  min-width: 0;
+}
+
 .search-under-logo{
   display: flex;
   justify-content: center;
-  margin-top: 10px;
   position: relative;
   z-index: 6;
 }
@@ -917,7 +1057,8 @@ watch(
   background: transparent;
   padding: 6px 10px;
   font-size: 12px;
-  min-width: 240px;
+  width: 100%;
+  min-width: 0;
   color: rgba(15, 23, 42, 0.8);
 }
 
@@ -927,7 +1068,7 @@ watch(
 
 .search-bar button{
   border: none;
-  background: var(--color-accent, #2a364d);
+  background: var(--color-accent, #1e4e8b);
   color: #ffffff;
   padding: 6px 12px;
   border-radius: 999px;
@@ -944,6 +1085,47 @@ watch(
 .search-error{
   font-size: 11px;
   color: rgba(180, 20, 20, 0.8);
+}
+
+.search-suggest{
+  position: absolute;
+  top: calc(100% + 6px);
+  left: 0;
+  right: 0;
+  width: 100%;
+  box-sizing: border-box;
+  background: #ffffff;
+  border: 1px solid rgba(15, 23, 42, 0.12);
+  border-radius: 12px;
+  box-shadow: 0 16px 30px rgba(15, 23, 42, 0.12);
+  padding: 4px;
+  display: grid;
+  gap: 4px;
+  max-height: 240px;
+  overflow: auto;
+  z-index: 10;
+}
+
+.search-suggest-item{
+  background: transparent;
+  text-align: left;
+  padding: 6px 10px;
+  border-radius: 10px;
+  font-size: 12px;
+  color: rgba(15, 23, 42, 0.8);
+  cursor: pointer;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.search-suggest-item:hover{
+  background: rgba(15, 23, 42, 0.06);
+}
+
+.search-suggest-loading{
+  padding: 6px 10px;
+  font-size: 11px;
+  color: rgba(15, 23, 42, 0.5);
 }
 
 .map-shell{
@@ -1136,7 +1318,7 @@ watch(
 
 .map-hover-action{
   border: none;
-  background: #2a364d;
+  background: var(--color-accent, #1e4e8b);
   color: #ffffff;
   border-radius: 10px;
   padding: 10px 14px;
@@ -1155,15 +1337,28 @@ watch(
 }
 
 
-.kpi{
+.kpi-stack{
   position: absolute;
-  width: 220px;
+  top: 12px;
+  left: 12px;
+  right: 12px;
+  display: grid;
+  grid-template-columns: repeat(2, 220px);
+  justify-content: space-between;
+  gap: 16px;
   z-index: 3;
+  align-items: start;
 }
-.kpi-tl{ top: 12px; left: 12px; }
-.kpi-tr{ top: 12px; right: 12px; }
-.kpi-bl{ bottom: 12px; left: 12px; }
-.kpi-br{ bottom: 12px; right: 12px; }
+
+.kpi-col{
+  display: grid;
+  gap: 16px;
+  align-content: start;
+}
+
+.kpi{
+  width: 220px;
+}
 
 @media (min-width: 901px){
   .map-shell{
@@ -1180,10 +1375,11 @@ watch(
     width: 100%;
     height: 100%;
   }
-  .kpi-tl{ top: 250px; left: 250px; }
-  .kpi-tr{ top: 250px; right: 250px; }
-  .kpi-bl{ bottom: 250px; left: 250px; }
-  .kpi-br{ bottom: 250px; right: 250px; }
+  .kpi-stack{
+    top: 250px;
+    left: 250px;
+    right: 250px;
+  }
   .map-hover{
     position: fixed;
   }
@@ -1192,6 +1388,18 @@ watch(
 @media (max-width: 1100px){
   .map-shell{ padding: 50px 40px; }
   .kpi{ width: 200px; }
+}
+
+@media (max-width: 700px){
+  .kpi-stack{
+    grid-template-columns: 1fr;
+    justify-content: center;
+    left: 16px;
+    right: 16px;
+  }
+  .kpi{
+    width: 100%;
+  }
 }
 
 .transformer-modal{

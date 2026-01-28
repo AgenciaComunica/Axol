@@ -14,10 +14,11 @@ const props = defineProps<{
 const open = ref(Boolean(props.defaultOpen))
 const bodyRef = ref<HTMLDivElement | null>(null)
 const bodyHeight = ref(0)
+const isOpen = computed(() => open.value)
 
 const bodyStyle = computed(() => ({
-  maxHeight: open.value ? `${bodyHeight.value}px` : '0px',
-  opacity: open.value ? '1' : '0',
+  maxHeight: isOpen.value ? `${bodyHeight.value}px` : '0px',
+  opacity: isOpen.value ? '1' : '0',
 }))
 
 function toggleOpen() {
@@ -47,8 +48,8 @@ onMounted(() => {
 </script>
 
 <template>
-  <div class="card" :class="{ open }">
-    <button class="header" type="button" @click="toggleOpen">
+  <div class="card" :class="{ open: isOpen }">
+    <button class="header" type="button" @pointerdown.stop @click.stop="toggleOpen">
       <div class="title">
         <strong>{{ title }}</strong>
         <span>{{ value }}</span>
@@ -85,6 +86,8 @@ onMounted(() => {
   gap: 10px;
   padding: 12px 14px;
   text-align: left;
+  pointer-events: auto;
+  touch-action: manipulation;
 }
 
 .title{
