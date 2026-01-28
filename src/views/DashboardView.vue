@@ -1,7 +1,7 @@
 <script setup lang="ts">
 import { computed, onMounted, ref, watch } from 'vue'
 import SideMenu from '@/components/SideMenu.vue'
-import Map3DMock from '@/components/Map3DMock.vue'
+import GoogleMapBase from '@/components/GoogleMapBase.vue'
 import KpiCard from '@/components/KpiCard.vue'
 import { usePrototypeScopeStore, type MapItem } from '@/stores/prototypeScope'
 import type { StateSelect } from '@/lib/BrazilMap3D'
@@ -14,18 +14,41 @@ const hoverPos = ref({ x: 0, y: 0 })
 const pinnedPos = ref<{ x: number; y: number } | null>(null)
 const mapShellRef = ref<HTMLElement | null>(null)
 const mapShellOffset = ref({ x: 0, y: 0 })
+const mapCenter = ref({ lat: -14.235, lng: -51.925 })
+const mapZoom = ref(4)
 const stateMenuOpen = ref(false)
 const cityMenuOpen = ref(false)
 const transformerMenuOpen = ref(false)
 const municipiosMG = ref<MapItem[]>([])
 const setoresIndex = ref<{ cd_mun: string; nm_mun: string; total_setores: number; file?: string }[]>([])
 const transformerOptions = ref<
-  { id: string; status: string; power: string; voltage: string; oil: string; location: string }[]
+  {
+    id: string
+    status: string
+    power: string
+    voltage: string
+    oil: string
+    location: string
+    lat?: number
+    lng?: number
+  }[]
 >([])
 const selectedTransformer = ref<
-  { id: string; status: string; power: string; voltage: string; oil: string; location: string } | null
+  {
+    id: string
+    status: string
+    power: string
+    voltage: string
+    oil: string
+    location: string
+    lat?: number
+    lng?: number
+  } | null
 >(null)
 const transformerModalOpen = ref(false)
+const viewerOpen = ref(false)
+const viewerFrameRef = ref<HTMLIFrameElement | null>(null)
+const viewerReady = ref(false)
 const stateQuery = ref('')
 const cityQuery = ref('')
 const transformerQuery = ref('')
@@ -63,52 +86,10 @@ const stateOptions: MapItem[] = [
   { id: 'TO', name: 'Tocantins', qty: 1 },
 ]
 
-const valuesByUf: Record<string, number> = {
-  AC: 96,
-  AL: 112,
-  AM: 134,
-  AP: 84,
-  BA: 178,
-  CE: 154,
-  DF: 121,
-  ES: 118,
-  GO: 142,
-  MA: 133,
-  MG: 204,
-  MS: 109,
-  MT: 116,
-  PA: 165,
-  PB: 101,
-  PE: 147,
-  PI: 97,
-  PR: 169,
-  RJ: 187,
-  RN: 92,
-  RO: 88,
-  RR: 76,
-  RS: 173,
-  SC: 161,
-  SE: 86,
-  SP: 248,
-  TO: 103,
-}
-const totalBrasil = computed(() =>
-  Object.values(valuesByUf).reduce((acc, value) => acc + value, 0)
-)
-
 const kpis = computed(() => store.getKpisForScope())
-const mapDataset = computed(() =>
-  store.path.some((node) => node.id === 'MG') ? 'mg' : 'br'
-)
 const stateNode = computed(() => store.path.find((node) => node.level === 'estado') || null)
 const cityNode = computed(() => store.path.find((node) => node.level === 'cidade') || null)
 const munCode = computed(() => (stateNode.value?.id === 'MG' ? cityNode.value?.id || null : null))
-const munFile = computed(() => {
-  if (!munCode.value) return null
-  const entry = setoresIndex.value.find((item) => item.cd_mun === munCode.value)
-  return entry?.file || null
-})
-const isTransformerView = computed(() => Boolean(munCode.value))
 const filteredStates = computed(() => {
   const q = stateQuery.value.trim().toLowerCase()
   if (!q) return stateOptions
@@ -124,24 +105,15 @@ const filteredTransformers = computed(() => {
   if (!q) return transformerOptions.value
   return transformerOptions.value.filter((item) => item.id.toLowerCase().includes(q))
 })
-
-const mapTitle = computed(() => {
-  const label = store.current.label
-  switch (store.level) {
-    case 'brasil':
-      return 'Mapa (mock) — Brasil por regionais'
-    case 'regiao':
-      return `Mapa (mock) — ${label} por estados`
-    case 'estado':
-      return `Mapa (mock) — ${label} por cidades`
-    case 'cidade':
-      return `Mapa (mock) — ${label} por bairros`
-    case 'bairro':
-      return `Mapa (mock) — ${label}: transformadores`
-    default:
-      return 'Mapa (mock)'
-  }
-})
+const transformerMarkers = computed(() =>
+  transformerOptions.value
+    .filter((item) => typeof item.lat === 'number' && typeof item.lng === 'number')
+    .map((item) => ({
+      id: item.id,
+      position: { lat: item.lat as number, lng: item.lng as number },
+      label: 'T',
+    }))
+)
 
 function handleSelect(item: MapItem) {
   pinnedInfo.value = { name: item.name, sigla: item.sigla || '', value: item.qty }
@@ -178,6 +150,8 @@ function openTransformerModal(transformer: {
   voltage: string
   oil: string
   location: string
+  lat?: number
+  lng?: number
 }) {
   selectedTransformer.value = transformer
   transformerModalOpen.value = true
@@ -202,12 +176,72 @@ function handleMove(payload: { x: number; y: number }) {
   mapShellOffset.value = { x: rect.left, y: rect.top }
 }
 
+function handleMapMarkerClick(id: string) {
+  const match = transformerOptions.value.find((item) => item.id === id)
+  if (!match) return
+  openTransformerModal(match)
+}
+
 const displayInfo = computed(() => pinnedInfo.value ?? hoverInfo.value)
 const displayPos = computed(() => pinnedPos.value ?? hoverPos.value)
 const mapHoverStyle = computed(() => ({
   left: `${displayPos.value.x + mapShellOffset.value.x + 16}px`,
   top: `${displayPos.value.y + mapShellOffset.value.y - 12}px`,
 }))
+
+const viewerSrc = computed(() => {
+  if (!selectedTransformer.value) return ''
+  const params = new URLSearchParams()
+  params.set('trafoId', selectedTransformer.value.id)
+  if (selectedTransformer.value.lat && selectedTransformer.value.lng) {
+    params.set('lat', String(selectedTransformer.value.lat))
+    params.set('lng', String(selectedTransformer.value.lng))
+  }
+  params.set('munCode', '3106200')
+  return `${import.meta.env.BASE_URL}viewer-3d?${params.toString()}`
+})
+
+function openViewer3D() {
+  if (!selectedTransformer.value) return
+  viewerOpen.value = true
+  viewerReady.value = false
+  transformerModalOpen.value = false
+}
+
+function closeViewer3D() {
+  viewerOpen.value = false
+  viewerReady.value = false
+}
+
+function sendViewerTrafo() {
+  const frame = viewerFrameRef.value
+  if (!frame?.contentWindow || !selectedTransformer.value) return
+  frame.contentWindow.postMessage(
+    {
+      type: 'SET_TRAFO',
+      payload: {
+        id: selectedTransformer.value.id,
+        lat: selectedTransformer.value.lat,
+        lng: selectedTransformer.value.lng,
+        munCode: '3106200',
+      },
+    },
+    window.location.origin
+  )
+}
+
+function handleViewerMessage(event: MessageEvent) {
+  if (event.origin !== window.location.origin) return
+  const data = event.data
+  if (!data || typeof data !== 'object') return
+  if (data.type === 'READY') {
+    viewerReady.value = true
+    sendViewerTrafo()
+  }
+  if (data.type === 'CLOSE_VIEWER') {
+    closeViewer3D()
+  }
+}
 
 function handleExpand() {
   if (!pinnedItem.value) return
@@ -345,6 +379,8 @@ onMounted(async () => {
       voltage: '138 kV',
       oil: 'Adequado',
       location: 'R. Monte Líbano, 121 - Padre Eustáquio, Belo Horizonte - MG, 30730-450',
+      lat: -19.9205,
+      lng: -43.9612,
     },
     {
       id: 'TR-0002',
@@ -353,6 +389,8 @@ onMounted(async () => {
       voltage: '69 kV',
       oil: 'Adequado',
       location: 'Praça Bagatelle, 204 - Aeroporto, Belo Horizonte - MG, 31270-705',
+      lat: -19.8516,
+      lng: -43.9503,
     },
     {
       id: 'TR-0003',
@@ -361,9 +399,22 @@ onMounted(async () => {
       voltage: '138 kV',
       oil: 'Reclassificacao',
       location: 'Praça Bagatelle, 204 - Aeroporto, Belo Horizonte - MG, 31270-705',
+      lat: -19.8522,
+      lng: -43.9511,
     },
   ]
 })
+
+watch(
+  () => viewerOpen.value,
+  (open) => {
+    if (open) {
+      window.addEventListener('message', handleViewerMessage)
+    } else {
+      window.removeEventListener('message', handleViewerMessage)
+    }
+  }
+)
 </script>
 
 <template>
@@ -483,19 +534,13 @@ onMounted(async () => {
 
         <div class="map-center">
           <div class="map-row">
-            <Map3DMock
-              :level="store.level"
-              :items="store.itemsForCurrentLevel"
-              :title="mapTitle"
-              :values-by-uf="valuesByUf"
-              :dataset="mapDataset"
-              :mun-code="munCode"
-              :mun-file="munFile"
-              @select="handleSelect"
-              @marker="handleMarker"
-              @hover="handleHover"
-              @background="handleBackground"
-              @move="handleMove"
+            <GoogleMapBase
+              :center="mapCenter"
+              :zoom="mapZoom"
+              :markers="transformerMarkers"
+              @update:center="mapCenter = $event"
+              @update:zoom="mapZoom = $event"
+              @markerClick="handleMapMarkerClick"
             />
           </div>
         </div>
@@ -625,7 +670,23 @@ onMounted(async () => {
               </a>
             </b>
           </div>
+          <button type="button" class="transformer-modal-action" @click="openViewer3D">
+            Ver em 3D / Ampliar
+          </button>
         </div>
+      </div>
+    </div>
+
+    <div v-if="viewerOpen" class="viewer-overlay">
+      <div class="viewer-frame">
+        <button type="button" class="viewer-close" @click="closeViewer3D">Fechar</button>
+        <iframe
+          ref="viewerFrameRef"
+          class="viewer-iframe"
+          title="Viewer 3D"
+          :src="viewerSrc"
+          @load="sendViewerTrafo"
+        ></iframe>
       </div>
     </div>
   </div>
@@ -635,7 +696,7 @@ onMounted(async () => {
 .prototype{
   min-height: 100vh;
   background: radial-gradient(1200px 800px at 20% 0%, #ffffff 0%, #f4f5f7 48%, #f2f3f5 100%);
-  color: #0f172a;
+  color: var(--color-text, #0f172a);
 }
 
 .content{
@@ -1086,6 +1147,59 @@ onMounted(async () => {
 
 .transformer-modal-row b{
   color: rgba(15, 23, 42, 0.9);
+}
+
+.transformer-modal-action{
+  border: none;
+  background: var(--color-accent, #2a364d);
+  color: #ffffff;
+  border-radius: 12px;
+  padding: 10px 14px;
+  font-size: 12px;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  cursor: pointer;
+  margin-top: 8px;
+}
+
+.viewer-overlay{
+  position: fixed;
+  inset: 0;
+  background: rgba(15, 23, 42, 0.55);
+  z-index: 80;
+  display: grid;
+  place-items: center;
+  padding: 20px;
+}
+
+.viewer-frame{
+  width: min(1100px, 96vw);
+  height: min(720px, 92vh);
+  background: #ffffff;
+  border-radius: 20px;
+  overflow: hidden;
+  position: relative;
+  display: grid;
+}
+
+.viewer-close{
+  position: absolute;
+  top: 12px;
+  right: 12px;
+  z-index: 2;
+  border: 1px solid rgba(15, 23, 42, 0.14);
+  background: rgba(255,255,255,0.9);
+  border-radius: 999px;
+  padding: 6px 12px;
+  cursor: pointer;
+}
+
+.viewer-iframe{
+  width: 100%;
+  height: 100%;
+  border: none;
+  display: block;
 }
 
 @media (max-width: 900px){
