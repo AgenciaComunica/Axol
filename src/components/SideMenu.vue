@@ -25,10 +25,21 @@ function toggleMenu() {
         <span class="mobile-menu-title">MENU</span>
         <button class="mobile-menu-close" type="button" @click="toggleMenu">✕</button>
       </div>
-      <button class="item" type="button">Visao Geral</button>
-      <button class="item" type="button">Alertas</button>
-      <button class="item" type="button">Relatorios</button>
-      <button class="item" type="button">Configuracoes</button>
+      <div class="item static">Início</div>
+      <div class="item-heading">Óleo Isolante</div>
+      <div class="item static">Transformadores</div>
+      <div class="item static">Transformadores Normais</div>
+      <div class="item static">Transformadores em Alerta</div>
+      <div class="item static">Transformadores em Críticos</div>
+      <div class="item static">Próximas Coletas</div>
+      <div class="item static">Tratamento de Óleo</div>
+      <div class="item-heading">Cadastro OLTC</div>
+      <div class="item static">OLTC</div>
+      <div class="item static">Físicos Químicos</div>
+      <div class="item static">Cromatografias</div>
+      <div class="item static">Físicos Químicos</div>
+      <div class="item static">Ensaios Especiais</div>
+      <div class="item-heading">Sair</div>
     </div>
   </div>
 </template>
@@ -72,7 +83,7 @@ function toggleMenu() {
   margin-top: 12px;
   width: 220px;
   border-radius: 16px;
-  background: rgba(255,255,255,0.85);
+  background: #ffffff;
   border: 1px solid rgba(15, 23, 42, 0.08);
   box-shadow: 0 18px 42px rgba(15, 23, 42, 0.12);
   padding: 8px;
@@ -101,7 +112,17 @@ function toggleMenu() {
   color: rgba(15, 23, 42, 0.82);
   transition: background 0.15s ease, transform 0.15s ease, border-color 0.15s ease;
 }
+.item.static{
+  cursor: default;
+}
 .item:hover{ background: rgba(15, 23, 42, 0.06); border-color: rgba(15, 23, 42, 0.08); transform: translateY(-1px); }
+
+.item-heading{
+  font-size: 12px;
+  font-weight: 600;
+  color: rgba(15, 23, 42, 0.65);
+  padding: 10px 12px 4px;
+}
 
 .mobile-menu-head{
   display: none;
@@ -136,8 +157,7 @@ function toggleMenu() {
     border-radius: 18px 0 0 18px;
     padding: 18px 20px 20px;
     gap: 5px;
-    background: rgba(255,255,255,0.96);
-    backdrop-filter: blur(10px);
+    background: #ffffff;
     transform: translateX(20px);
     display: flex;
     flex-direction: column;
