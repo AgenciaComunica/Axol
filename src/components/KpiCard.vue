@@ -69,7 +69,7 @@ onMounted(() => {
 .card{
   border-radius: 18px;
   border: 1px solid rgba(15, 23, 42, 0.08);
-  background: rgba(255,255,255,0.9);
+  background: #ffffff;
   box-shadow: 0 12px 30px rgba(15, 23, 42, 0.1);
   overflow: hidden;
 }
@@ -125,7 +125,7 @@ onMounted(() => {
   padding: 8px 10px;
   border-radius: 12px;
   border: 1px solid rgba(15, 23, 42, 0.06);
-  background: rgba(15, 23, 42, 0.02);
+  background: #f5f6f8;
   font-size: 12px;
   color: rgba(15, 23, 42, 0.7);
 }

@@ -1,15 +1,11 @@
 <script setup lang="ts">
 import { computed, onBeforeUnmount, onMounted, ref } from 'vue'
-import Map3DMock from '@/components/Map3DMock.vue'
+const placeholderText = 'Visualização 3D indisponível no momento'
 
 type TrafoPayload = { id?: string; lat?: number; lng?: number; munCode?: string }
 
 const trafoId = ref<string | null>(null)
 const munCode = ref<string>('3106200')
-
-const valuesByUf: Record<string, number> = {
-  MG: 204,
-}
 
 const viewerTitle = computed(() =>
   trafoId.value ? `Trafo ${trafoId.value} — Visualização 3D` : 'Visualização 3D'
@@ -55,14 +51,7 @@ onBeforeUnmount(() => {
       <button class="viewer-close" type="button" @click="closeViewer">Fechar</button>
     </header>
     <div class="viewer-canvas">
-      <Map3DMock
-        level="cidade"
-        :items="[]"
-        title="Mapa 3D"
-        :values-by-uf="valuesByUf"
-        dataset="mg"
-        :mun-code="munCode"
-      />
+      <div class="viewer-placeholder">{{ placeholderText }}</div>
     </div>
   </div>
 </template>
@@ -102,5 +91,13 @@ onBeforeUnmount(() => {
 .viewer-canvas{
   width: 100%;
   height: 100%;
+  display: grid;
+  place-items: center;
+  background: rgba(15, 23, 42, 0.04);
+}
+
+.viewer-placeholder{
+  font-size: 14px;
+  color: rgba(15, 23, 42, 0.6);
 }
 </style>

@@ -15,6 +15,7 @@ const emit = defineEmits<{
   (e: 'update:center', center: LatLng): void
   (e: 'update:zoom', zoom: number): void
   (e: 'markerClick', id: string): void
+  (e: 'ready', googleMaps: typeof google): void
 }>()
 
 const mapRef = ref<HTMLDivElement | null>(null)
@@ -49,8 +50,11 @@ async function initMap() {
   if (!mapRef.value) return
   const apiKey = import.meta.env.VITE_GOOGLE_MAPS_API_KEY
   if (!apiKey) return
-  const loader = new Loader({ apiKey, version: 'weekly' })
+  const loader = new Loader({ apiKey, version: 'weekly', libraries: ['places'] })
   const googleMaps = await loader.load()
+  if (!(window as any).google) {
+    ;(window as any).google = googleMaps
+  }
   map = new googleMaps.maps.Map(mapRef.value, {
     center: props.center,
     zoom: props.zoom,
@@ -60,6 +64,8 @@ async function initMap() {
     clickableIcons: false,
     gestureHandling: 'greedy',
   })
+  ;(window as any).__gm_map = map
+  emit('ready', googleMaps)
   idleListener = map.addListener('idle', () => {
     const center = map.getCenter()
     if (center) {

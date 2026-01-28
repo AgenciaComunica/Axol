@@ -1,10 +1,10 @@
 <script setup lang="ts">
-import { computed, onMounted, ref, watch } from 'vue'
+import { computed, nextTick, onMounted, ref, watch } from 'vue'
 import SideMenu from '@/components/SideMenu.vue'
 import GoogleMapBase from '@/components/GoogleMapBase.vue'
 import KpiCard from '@/components/KpiCard.vue'
 import { usePrototypeScopeStore, type MapItem } from '@/stores/prototypeScope'
-import type { StateSelect } from '@/lib/BrazilMap3D'
+type StateSelect = { name: string; sigla: string; value: number; transformers?: any[] }
 
 const store = usePrototypeScopeStore()
 const hoverInfo = ref<StateSelect | null>(null)
@@ -16,11 +16,6 @@ const mapShellRef = ref<HTMLElement | null>(null)
 const mapShellOffset = ref({ x: 0, y: 0 })
 const mapCenter = ref({ lat: -14.235, lng: -51.925 })
 const mapZoom = ref(4)
-const stateMenuOpen = ref(false)
-const cityMenuOpen = ref(false)
-const transformerMenuOpen = ref(false)
-const municipiosMG = ref<MapItem[]>([])
-const setoresIndex = ref<{ cd_mun: string; nm_mun: string; total_setores: number; file?: string }[]>([])
 const transformerOptions = ref<
   {
     id: string
@@ -67,12 +62,16 @@ const transformerModalOpen = ref(false)
 const viewerOpen = ref(false)
 const viewerFrameRef = ref<HTMLIFrameElement | null>(null)
 const viewerReady = ref(false)
-const stateQuery = ref('')
-const cityQuery = ref('')
+const searchQuery = ref('')
+const searchError = ref('')
+const searchLoading = ref(false)
+const searchInputRef = ref<HTMLInputElement | null>(null)
+const searchAutocomplete = ref<any | null>(null)
+const mapInstance = ref<any | null>(null)
+const googleMapsRef = ref<any | null>(null)
+const mapsReady = ref(false)
+const highlightRect = ref<any | null>(null)
 const transformerQuery = ref('')
-const stateMenuRef = ref<HTMLElement | null>(null)
-const cityMenuRef = ref<HTMLElement | null>(null)
-const transformerMenuRef = ref<HTMLElement | null>(null)
 
 const stateOptions: MapItem[] = [
   { id: 'AC', name: 'Acre', qty: 1 },
@@ -107,22 +106,20 @@ const stateOptions: MapItem[] = [
 const kpis = computed(() => store.getKpisForScope())
 const stateNode = computed(() => store.path.find((node) => node.level === 'estado') || null)
 const cityNode = computed(() => store.path.find((node) => node.level === 'cidade') || null)
-const munCode = computed(() => (stateNode.value?.id === 'MG' ? cityNode.value?.id || null : null))
-const filteredStates = computed(() => {
-  const q = stateQuery.value.trim().toLowerCase()
-  if (!q) return stateOptions
-  return stateOptions.filter((state) => state.name.toLowerCase().includes(q))
-})
-const filteredMunicipios = computed(() => {
-  const q = cityQuery.value.trim().toLowerCase()
-  if (!q) return municipiosMG.value
-  return municipiosMG.value.filter((item) => item.name.toLowerCase().includes(q))
-})
 const filteredTransformers = computed(() => {
   const q = transformerQuery.value.trim().toLowerCase()
   if (!q) return transformerOptions.value
   return transformerOptions.value.filter((item) => item.id.toLowerCase().includes(q))
 })
+const mapFocusByState: Record<string, { center: { lat: number; lng: number }; zoom: number }> = {
+  MG: { center: { lat: -18.9, lng: -44.0 }, zoom: 6 },
+  SP: { center: { lat: -23.55, lng: -46.64 }, zoom: 6 },
+  RJ: { center: { lat: -22.9, lng: -43.2 }, zoom: 7 },
+  ES: { center: { lat: -19.2, lng: -40.2 }, zoom: 7 },
+}
+const mapFocusByCity: Record<string, { center: { lat: number; lng: number }; zoom: number }> = {
+  BH: { center: { lat: -19.912998, lng: -43.940933 }, zoom: 11 },
+}
 const transformerMarkers = computed(() =>
   transformerOptions.value
     .filter((item) => typeof item.lat === 'number' && typeof item.lng === 'number')
@@ -188,6 +185,74 @@ function closeTransformerModal() {
   selectedTransformer.value = null
 }
 
+function handleSearch() {
+  const query = searchQuery.value.trim()
+  if (!query) return
+  let googleMaps = googleMapsRef.value || (window as any).google?.maps
+  if (!googleMaps?.Geocoder && (window as any).google?.maps?.Geocoder) {
+    googleMaps = (window as any).google.maps
+  }
+  if (!googleMaps?.Geocoder) {
+    searchError.value = 'Geocoder indisponível. Recarregue a página.'
+    return
+  }
+  console.info('[search] start', query, { mapsReady: Boolean(googleMaps?.Geocoder) })
+  searchLoading.value = true
+  searchError.value = ''
+  const geocoder = new googleMaps.Geocoder()
+  geocoder.geocode({ address: query, region: 'BR' }, (results: any[], status: string) => {
+    searchLoading.value = false
+    if (status !== 'OK') {
+      console.warn('[search] geocode failed', status, results)
+      searchError.value = `Erro do Google Maps: ${status}`
+      return
+    }
+    if (status !== 'OK' || !results?.length) {
+      searchError.value = 'Endereço não encontrado.'
+      return
+    }
+    const result = results[0]
+    const types = result.types || []
+    const geometry = result.geometry
+    if (!geometry) return
+    if (geometry.viewport && mapInstance.value && googleMapsRef.value) {
+      mapInstance.value.fitBounds(geometry.viewport)
+      highlightViewport(geometry.viewport, types)
+      return
+    }
+    const loc = geometry.location
+    if (!loc) return
+    mapCenter.value = { lat: loc.lat(), lng: loc.lng() }
+    mapZoom.value = 12
+  })
+}
+
+async function handleMapReady(googleMaps: any) {
+  googleMapsRef.value = googleMaps
+  mapsReady.value = true
+  if (!(window as any).google) {
+    ;(window as any).google = googleMaps
+  }
+  if (!(mapInstance.value) && (window as any).__gm_map) {
+    mapInstance.value = (window as any).__gm_map
+  }
+  await nextTick()
+  const input = searchInputRef.value
+  if (!input || !googleMaps?.places?.Autocomplete) return
+  searchAutocomplete.value = new googleMaps.places.Autocomplete(input, {
+    fields: ['geometry', 'formatted_address'],
+    types: ['geocode'],
+  })
+  searchAutocomplete.value.addListener('place_changed', () => {
+    const place = searchAutocomplete.value.getPlace()
+    const loc = place?.geometry?.location
+    if (!loc) return
+    searchQuery.value = place.formatted_address || searchQuery.value
+    mapCenter.value = { lat: loc.lat(), lng: loc.lng() }
+    mapZoom.value = 12
+  })
+}
+
 function handleMove(payload: { x: number; y: number }) {
   const rect = mapShellRef.value?.getBoundingClientRect()
   if (!rect) return
@@ -199,6 +264,51 @@ function handleMapMarkerClick(id: string) {
   const match = transformerOptions.value.find((item) => item.id === id)
   if (!match) return
   openTransformerModal(match)
+}
+
+function highlightViewport(viewport: any, types: string[]) {
+  const map = mapInstance.value
+  const googleMaps = googleMapsRef.value
+  if (!map || !googleMaps) return
+  if (highlightRect.value) {
+    highlightRect.value.setMap(null)
+    highlightRect.value = null
+  }
+  const isCity = types.includes('locality') || types.includes('administrative_area_level_2')
+  const stroke = '#ea4335'
+  highlightRect.value = new googleMaps.Rectangle({
+    bounds: viewport,
+    strokeColor: stroke,
+    strokeOpacity: 0.9,
+    strokeWeight: 2,
+    fillColor: stroke,
+    fillOpacity: isCity ? 0.08 : 0.04,
+    map,
+    clickable: false,
+  })
+}
+
+function syncMapToBreadcrumb() {
+  if (store.level === 'brasil') {
+    mapCenter.value = { lat: -14.235, lng: -51.925 }
+    mapZoom.value = 4
+    return
+  }
+  if (store.level === 'estado' && stateNode.value?.id) {
+    const focus = mapFocusByState[stateNode.value.id]
+    if (focus) {
+      mapCenter.value = focus.center
+      mapZoom.value = focus.zoom
+    }
+    return
+  }
+  if (store.level === 'cidade' && cityNode.value?.id) {
+    const focus = mapFocusByCity[cityNode.value.id]
+    if (focus) {
+      mapCenter.value = focus.center
+      mapZoom.value = focus.zoom
+    }
+  }
 }
 
 const displayInfo = computed(() => pinnedInfo.value ?? hoverInfo.value)
@@ -319,94 +429,26 @@ const displayPower = computed(() => {
   return `${base.toFixed(1)} MVA`
 })
 
-function toggleStateMenu() {
-  stateMenuOpen.value = !stateMenuOpen.value
-  cityMenuOpen.value = false
-  transformerMenuOpen.value = false
-}
-
-function toggleCityMenu() {
-  cityMenuOpen.value = !cityMenuOpen.value
-  stateMenuOpen.value = false
-  transformerMenuOpen.value = false
-}
-
-function toggleTransformerMenu() {
-  transformerMenuOpen.value = !transformerMenuOpen.value
-  stateMenuOpen.value = false
-  cityMenuOpen.value = false
-}
-
 function goBrasil() {
   store.goToLevel(0)
-  stateMenuOpen.value = false
-  cityMenuOpen.value = false
-  transformerMenuOpen.value = false
 }
 
 function selectState(state: MapItem) {
   store.jumpToState(state)
-  stateMenuOpen.value = false
-  cityMenuOpen.value = false
-  transformerMenuOpen.value = false
-  stateQuery.value = ''
 }
 
 function selectMunicipio(municipio: MapItem) {
   store.jumpToCity(municipio)
-  cityMenuOpen.value = false
-  cityQuery.value = ''
-}
-
-function handleOutsideClick(event: MouseEvent) {
-  const target = event.target as Node | null
-  const stateEl = stateMenuRef.value
-  const cityEl = cityMenuRef.value
-  const transformerEl = transformerMenuRef.value
-  if (stateEl && target && stateEl.contains(target)) return
-  if (cityEl && target && cityEl.contains(target)) return
-  if (transformerEl && target && transformerEl.contains(target)) return
-  stateMenuOpen.value = false
-  cityMenuOpen.value = false
-  transformerMenuOpen.value = false
 }
 
 watch(
-  () => stateMenuOpen.value || cityMenuOpen.value || transformerMenuOpen.value,
-  (open) => {
-    if (open) {
-      document.addEventListener('click', handleOutsideClick)
-    } else {
-      document.removeEventListener('click', handleOutsideClick)
-    }
+  () => [store.level, stateNode.value?.id, cityNode.value?.id],
+  () => {
+    syncMapToBreadcrumb()
   }
 )
 
 onMounted(async () => {
-  try {
-    const url = new URL('../assets/states/MG_Municipios_2024.geojson', import.meta.url)
-    const response = await fetch(url)
-    const data = await response.json()
-    const list = (data.features || []).map((feature: any) => ({
-      id: String(feature.properties?.CD_MUN || ''),
-      name: String(feature.properties?.NM_MUN || ''),
-      qty: 1,
-    }))
-    municipiosMG.value = list
-      .filter((item) => item.id && item.name)
-      .sort((a, b) => a.name.localeCompare(b.name))
-  } catch {
-    municipiosMG.value = []
-  }
-
-  try {
-    const urlIndex = new URL('../assets/cities/setores-mg/index.json', import.meta.url)
-    const response = await fetch(urlIndex)
-    setoresIndex.value = await response.json()
-  } catch {
-    setoresIndex.value = []
-  }
-
   transformerOptions.value = [
     {
       id: '9701-A01',
@@ -516,6 +558,14 @@ watch(
     }
   }
 )
+
+watch(
+  () => searchQuery.value,
+  () => {
+    if (searchError.value) searchError.value = ''
+  }
+)
+
 </script>
 
 <template>
@@ -526,82 +576,23 @@ watch(
       <div class="brand-header">
         <img src="@/assets/logo-axol.png" alt="Axol" class="brand-logo" />
       </div>
-      <header class="topbar">
-        <div class="breadcrumbs">
-          <button type="button" class="crumb" :class="{ active: !stateNode }" @click="goBrasil">
-            Brasil
-          </button>
-          <div ref="stateMenuRef" class="crumb-select">
-            <button type="button" class="crumb crumb-select-trigger" @click="toggleStateMenu">
-              {{ stateNode?.label || 'Estado' }}
-              <span class="crumb-chev">⌄</span>
+      <div class="search-under-logo">
+        <div class="search-wrap">
+          <form class="search-bar" @submit.prevent="handleSearch">
+            <input
+              v-model="searchQuery"
+              ref="searchInputRef"
+              type="search"
+              placeholder="Pesquisar endereço"
+              aria-label="Pesquisar endereço"
+            />
+            <button type="submit" :disabled="searchLoading || !mapsReady">
+              {{ !mapsReady ? 'Carregando...' : searchLoading ? 'Buscando...' : 'Buscar' }}
             </button>
-            <div v-if="stateMenuOpen" class="crumb-menu">
-              <input
-                v-model="stateQuery"
-                class="crumb-search"
-                type="search"
-                placeholder="Buscar estado"
-              />
-              <button
-                v-for="state in filteredStates"
-                :key="state.id"
-                type="button"
-                class="crumb-menu-item"
-                @click="selectState(state)"
-              >
-                {{ state.name }}
-              </button>
-            </div>
-          </div>
-          <div v-if="stateNode && stateNode.id === 'MG'" ref="cityMenuRef" class="crumb-select">
-            <button type="button" class="crumb crumb-select-trigger" @click="toggleCityMenu">
-              {{ cityNode?.label || 'Municipio' }}
-              <span class="crumb-chev">⌄</span>
-            </button>
-            <div v-if="cityMenuOpen" class="crumb-menu">
-              <input
-                v-model="cityQuery"
-                class="crumb-search"
-                type="search"
-                placeholder="Buscar municipio"
-              />
-              <button
-                v-for="municipio in filteredMunicipios"
-                :key="municipio.id"
-                type="button"
-                class="crumb-menu-item"
-                @click="selectMunicipio(municipio)"
-              >
-                {{ municipio.name }}
-              </button>
-            </div>
-          </div>
-          <div v-if="munCode" ref="transformerMenuRef" class="crumb-select">
-            <button type="button" class="crumb crumb-select-trigger" @click="toggleTransformerMenu">
-              Transformadores
-              <span class="crumb-chev">⌄</span>
-            </button>
-            <div v-if="transformerMenuOpen" class="crumb-menu">
-              <input
-                v-model="transformerQuery"
-                class="crumb-search"
-                type="search"
-                placeholder="Buscar transformador"
-              />
-              <button
-                v-for="transformer in filteredTransformers"
-                :key="transformer.id"
-                type="button"
-                class="crumb-menu-item"
-                @click="openTransformerModal(transformer)"
-              >
-                {{ transformer.id }}
-              </button>
-            </div>
-          </div>
+          </form>
+          <span v-if="searchError" class="search-error">{{ searchError }}</span>
         </div>
-      </header>
+      </div>
 
       <section ref="mapShellRef" class="map-shell">
         <KpiCard
@@ -642,6 +633,7 @@ watch(
               @update:center="mapCenter = $event"
               @update:zoom="mapZoom = $event"
               @markerClick="handleMapMarkerClick"
+              @ready="handleMapReady"
             />
           </div>
         </div>
@@ -853,99 +845,64 @@ watch(
   object-fit: contain;
 }
 
-.topbar{
-  display: flex;
-  align-items: center;
-  justify-content: flex-end;
-  gap: 20px;
-  position: relative;
-}
-
-.breadcrumbs{
-  display: flex;
-  flex-wrap: wrap;
-  gap: 8px;
-  justify-content: flex-end;
-  z-index: 2;
-  position: relative;
-}
-
-.crumb-select{
-  position: relative;
-}
-
-.crumb-select-trigger{
-  display: flex;
-  align-items: center;
+.search-wrap{
+  display: grid;
+  justify-items: end;
   gap: 6px;
 }
 
-.crumb-chev{
-  font-size: 10px;
-  color: rgba(15, 23, 42, 0.45);
-}
-
-.crumb-menu{
-  position: absolute;
-  top: calc(100% + 6px);
-  right: 0;
-  min-width: 200px;
-  max-height: 260px;
-  overflow: auto;
-  border-radius: 14px;
-  border: 1px solid rgba(15, 23, 42, 0.08);
-  background: rgba(255,255,255,0.98);
-  box-shadow: 0 16px 32px rgba(15, 23, 42, 0.14);
+.search-bar{
+  display: flex;
+  align-items: center;
+  gap: 8px;
   padding: 6px;
-  display: grid;
-  gap: 4px;
-  z-index: 10;
-}
-
-.crumb-search{
+  border-radius: 999px;
   border: 1px solid rgba(15, 23, 42, 0.12);
-  background: rgba(255,255,255,0.9);
-  border-radius: 10px;
-  padding: 6px 10px;
-  font-size: 12px;
-  color: rgba(15, 23, 42, 0.7);
+  background: #ffffff;
+  box-shadow: 0 12px 28px rgba(15, 23, 42, 0.08);
+  min-width: 320px;
 }
 
-.crumb-search:focus{
-  outline: none;
-  border-color: rgba(42, 54, 77, 0.4);
-  box-shadow: 0 0 0 2px rgba(42, 54, 77, 0.12);
+.search-under-logo{
+  display: flex;
+  justify-content: center;
+  margin-top: 10px;
+  position: relative;
+  z-index: 6;
 }
 
-.crumb-menu-item{
+.search-bar input{
   border: none;
   background: transparent;
-  text-align: left;
   padding: 6px 10px;
-  border-radius: 10px;
   font-size: 12px;
-  color: rgba(15, 23, 42, 0.7);
-  cursor: pointer;
-}
-.crumb-menu-item:hover{
-  background: rgba(15, 23, 42, 0.06);
+  min-width: 240px;
+  color: rgba(15, 23, 42, 0.8);
 }
 
-.crumb{
-  border: 1px solid rgba(15, 23, 42, 0.08);
-  background: rgba(255,255,255,0.8);
-  border-radius: 999px;
-  padding: 6px 10px;
-  font-size: 12px;
-  color: rgba(15, 23, 42, 0.7);
-  cursor: pointer;
-  transition: background 0.15s ease, transform 0.15s ease;
+.search-bar input:focus{
+  outline: none;
 }
-.crumb:hover{ background: rgba(255,255,255,1); transform: translateY(-1px); }
-.crumb.active{
-  font-weight: 600;
-  border-color: rgba(15, 23, 42, 0.14);
-  box-shadow: 0 10px 24px rgba(15, 23, 42, 0.08);
+
+.search-bar button{
+  border: none;
+  background: var(--color-accent, #2a364d);
+  color: #ffffff;
+  padding: 6px 12px;
+  border-radius: 999px;
+  font-size: 12px;
+  cursor: pointer;
+  min-width: 88px;
+}
+
+.search-bar button:disabled{
+  opacity: 0.6;
+  cursor: default;
+}
+
+.search-error{
+  font-size: 11px;
+  color: rgba(180, 20, 20, 0.8);
 }
 
 .map-shell{
@@ -1353,25 +1310,20 @@ watch(
 }
 
 @media (max-width: 900px){
-  .topbar{
-    flex-direction: column;
-    align-items: flex-start;
-    z-index: 8;
+  .search-under-logo{
+    padding: 0 16px;
   }
-  .breadcrumbs{
+  .search-wrap{
     width: 100%;
-    justify-content: center;
-    gap: 6px;
-    text-align: center;
-    z-index: 8;
+    justify-items: stretch;
   }
-  .crumb{
-    white-space: nowrap;
+  .search-bar{
+    width: 100%;
+    justify-content: space-between;
   }
-  .crumb-menu{
-    left: 50%;
-    right: auto;
-    transform: translateX(-50%);
+  .search-bar input{
+    min-width: 0;
+    flex: 1;
   }
   .map-shell{
     padding: 24px;
