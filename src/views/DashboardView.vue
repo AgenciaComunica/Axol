@@ -186,45 +186,86 @@ function closeTransformerModal() {
 }
 
 function handleSearch() {
-  const query = searchQuery.value.trim()
+  const rawQuery = searchQuery.value.trim()
+  const normalized = rawQuery.toLowerCase()
+  const statePrefix = normalized.startsWith('estado ')
+    ? rawQuery.slice(7).trim()
+    : normalized.startsWith('estado de ')
+      ? rawQuery.slice(10).trim()
+      : rawQuery
+  const query = statePrefix.trim()
   if (!query) return
   let googleMaps = googleMapsRef.value || (window as any).google?.maps
   if (!googleMaps?.Geocoder && (window as any).google?.maps?.Geocoder) {
     googleMaps = (window as any).google.maps
   }
-  if (!googleMaps?.Geocoder) {
-    searchError.value = 'Geocoder indisponível. Recarregue a página.'
+  if (!googleMaps || !mapInstance.value) {
+    searchError.value = 'Mapa indisponível. Recarregue a página.'
     return
   }
-  console.info('[search] start', query, { mapsReady: Boolean(googleMaps?.Geocoder) })
+  console.info('[search] start', query)
   searchLoading.value = true
   searchError.value = ''
-  const geocoder = new googleMaps.Geocoder()
-  geocoder.geocode({ address: query, region: 'BR' }, (results: any[], status: string) => {
-    searchLoading.value = false
-    if (status !== 'OK') {
-      console.warn('[search] geocode failed', status, results)
-      searchError.value = `Erro do Google Maps: ${status}`
-      return
-    }
-    if (status !== 'OK' || !results?.length) {
-      searchError.value = 'Endereço não encontrado.'
-      return
-    }
-    const result = results[0]
-    const types = result.types || []
-    const geometry = result.geometry
-    if (!geometry) return
-    if (geometry.viewport && mapInstance.value && googleMapsRef.value) {
-      mapInstance.value.fitBounds(geometry.viewport)
-      highlightViewport(geometry.viewport, types)
-      return
-    }
-    const loc = geometry.location
-    if (!loc) return
-    mapCenter.value = { lat: loc.lat(), lng: loc.lng() }
-    mapZoom.value = 12
-  })
+  const url = new URL('https://nominatim.openstreetmap.org/search')
+  url.searchParams.set('format', 'jsonv2')
+  url.searchParams.set('polygon_geojson', '1')
+  if (normalized.startsWith('estado ')) {
+    url.searchParams.set('state', query)
+    url.searchParams.set('country', 'Brazil')
+  } else if (normalized.startsWith('estado de ')) {
+    url.searchParams.set('state', query)
+    url.searchParams.set('country', 'Brazil')
+  } else {
+    url.searchParams.set('city', query)
+    url.searchParams.set('country', 'Brazil')
+  }
+  url.searchParams.set('limit', '1')
+  url.searchParams.set('addressdetails', '1')
+  fetch(url.toString(), { headers: { Accept: 'application/json' } })
+    .then((res) => res.json())
+    .then((results) => {
+      searchLoading.value = false
+      if (!Array.isArray(results) || results.length === 0) {
+        searchError.value = 'Endereço não encontrado.'
+        return
+      }
+      const result = results[0]
+      if (!result?.geojson) {
+        searchError.value = 'Limites administrativos indisponíveis.'
+        return
+      }
+      const map = mapInstance.value
+      map.data.forEach((feature: any) => map.data.remove(feature))
+      const geojson = {
+        type: 'FeatureCollection',
+        features: [{ type: 'Feature', properties: {}, geometry: result.geojson }],
+      }
+      map.data.addGeoJson(geojson)
+      map.data.setStyle({
+        fillColor: '#FF0000',
+        fillOpacity: 0.1,
+        strokeColor: '#FF0000',
+        strokeWeight: 2,
+      })
+      const bounds = new googleMaps.LatLngBounds()
+      const extendCoords = (coords: any) => {
+        if (!coords) return
+        if (typeof coords[0] === 'number') {
+          bounds.extend(new googleMaps.LatLng(coords[1], coords[0]))
+          return
+        }
+        coords.forEach((c: any) => extendCoords(c))
+      }
+      extendCoords(result.geojson.coordinates)
+      if (!bounds.isEmpty()) {
+        map.fitBounds(bounds)
+      }
+    })
+    .catch((err) => {
+      searchLoading.value = false
+      console.warn('[search] nominatim failed', err)
+      searchError.value = 'Erro ao consultar limites.'
+    })
 }
 
 async function handleMapReady(googleMaps: any) {
