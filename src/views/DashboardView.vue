@@ -24,10 +24,19 @@ const setoresIndex = ref<{ cd_mun: string; nm_mun: string; total_setores: number
 const transformerOptions = ref<
   {
     id: string
+    serial?: string
+    tag?: string
+    substation?: string
     status: string
+    analystStatus?: string
+    analystNote?: string
+    analyst?: string
     power: string
     voltage: string
     oil: string
+    manufacturer?: string
+    year?: string
+    commutator?: string
     location: string
     lat?: number
     lng?: number
@@ -36,10 +45,19 @@ const transformerOptions = ref<
 const selectedTransformer = ref<
   {
     id: string
+    serial?: string
+    tag?: string
+    substation?: string
     status: string
+    analystStatus?: string
+    analystNote?: string
+    analyst?: string
     power: string
     voltage: string
     oil: string
+    manufacturer?: string
+    year?: string
+    commutator?: string
     location: string
     lat?: number
     lng?: number
@@ -145,6 +163,7 @@ function handleCloseCard() {
 
 function openTransformerModal(transformer: {
   id: string
+  serial?: string
   status: string
   power: string
   voltage: string
@@ -272,6 +291,23 @@ function selectTransformer(transformer: {
   pinnedItem.value = null
   pinnedPos.value = { ...hoverPos.value }
 }
+
+function normalizeCoordinate(value?: string) {
+  if (!value) return undefined
+  const cleaned = value.replace(/[^0-9.-]/g, '')
+  if (!cleaned) return undefined
+  const parts = cleaned.split('.')
+  if (parts.length > 2) {
+    const first = parts.shift() || ''
+    const last = parts.pop() || ''
+    const middle = parts.join('')
+    const merged = `${first}.${middle}${last}`
+    const num = Number(merged)
+    return Number.isFinite(num) ? num : undefined
+  }
+  const num = Number(cleaned)
+  return Number.isFinite(num) ? num : undefined
+}
 const displayTension = computed(() => {
   if (!displayInfo.value) return ''
   const base = 69 + (displayInfo.value.value % 4) * 23
@@ -373,34 +409,99 @@ onMounted(async () => {
 
   transformerOptions.value = [
     {
-      id: 'TR-0001',
-      status: 'Operacional',
-      power: '18 MVA',
-      voltage: '138 kV',
-      oil: 'Adequado',
-      location: 'R. Monte Líbano, 121 - Padre Eustáquio, Belo Horizonte - MG, 30730-450',
-      lat: -19.9205,
-      lng: -43.9612,
-    },
-    {
-      id: 'TR-0002',
-      status: 'Operacional',
-      power: '12 MVA',
+      id: '9701-A01',
+      serial: 'A01',
+      tag: '9701',
+      substation: 'SE VISCONDE DO RIO BRANCO',
+      status: 'Normal',
+      analystStatus: 'Alerta',
+      analystNote: 'qwerqwerqwerwqeqwe\nqweqerqwreqweqwrewe',
+      analyst: 'alex.fabiano@axol.eng.br',
+      power: '43 MVA',
       voltage: '69 kV',
-      oil: 'Adequado',
-      location: 'Praça Bagatelle, 204 - Aeroporto, Belo Horizonte - MG, 31270-705',
-      lat: -19.8516,
-      lng: -43.9503,
+      oil: 'NAO IDENTIFICADO',
+      manufacturer: 'TRAFO',
+      year: '1993',
+      commutator: 'SIM',
+      location: 'SE VISCONDE DO RIO BRANCO',
+      lat: normalizeCoordinate('-19.912998'),
+      lng: normalizeCoordinate('-43.940933'),
     },
     {
-      id: 'TR-0003',
-      status: 'Manutencao',
-      power: '22 MVA',
+      id: '9701-A02',
+      serial: 'A02',
+      tag: '9701',
+      substation: 'SE SERENO',
+      status: 'Alerta',
+      analystStatus: 'Normal',
+      analystNote: 'sdkfasdjfaslkdjfaslkdjfaslkdjfslkdfjlskdf',
+      analyst: 'alexsandro.oliveira@axol.eng.br',
+      power: '2 MVA',
+      voltage: '22 kV',
+      oil: 'MINERAL',
+      manufacturer: 'WEG',
+      year: '2013',
+      commutator: 'CST',
+      location: 'SE SERENO',
+      lat: normalizeCoordinate('-21.316.419'),
+      lng: normalizeCoordinate('-42.650.596'),
+    },
+    {
+      id: 'A03',
+      serial: 'A03',
+      tag: '',
+      substation: 'SE CANARANA 138 KV',
+      status: 'Ainda nao Analisado',
+      analystStatus: 'Ainda nao Analisado',
+      analystNote: '',
+      analyst: '',
+      power: '30 MVA',
       voltage: '138 kV',
-      oil: 'Reclassificacao',
-      location: 'Praça Bagatelle, 204 - Aeroporto, Belo Horizonte - MG, 31270-705',
-      lat: -19.8522,
-      lng: -43.9511,
+      oil: 'MINERAL',
+      manufacturer: 'NAO IDENTIFICADO',
+      year: '2015',
+      commutator: 'SIM',
+      location: 'SE CANARANA 138 KV',
+      lat: normalizeCoordinate('-20.27848'),
+      lng: normalizeCoordinate('-40.30561'),
+    },
+    {
+      id: '2FTMTR01-A04',
+      serial: 'A04',
+      tag: '2FTMTR01',
+      substation: 'SE FATIMA',
+      status: 'Alerta',
+      analystStatus: 'Normal',
+      analystNote: 'Teste agora',
+      analyst: 'alex.fabiano@axol.eng.br',
+      power: '1.25 MVA',
+      voltage: '36 kV',
+      oil: 'MINERAL',
+      manufacturer: 'WEG',
+      year: '1997',
+      commutator: 'SIM',
+      location: 'SE FATIMA',
+      lat: normalizeCoordinate('-20.663567'),
+      lng: normalizeCoordinate('-43.783096'),
+    },
+    {
+      id: '2CTMTR01-A05',
+      serial: 'A05',
+      tag: '2CTMTR01',
+      substation: 'SE COUTO MAGALHAES',
+      status: 'Alerta',
+      analystStatus: 'Normal',
+      analystNote: 'Descricao do analista',
+      analyst: 'alex.fabiano@axol.eng.br',
+      power: '1 MVA',
+      voltage: '34.5 kV',
+      oil: 'MINERAL',
+      manufacturer: 'GE',
+      year: '1994',
+      commutator: 'SIM',
+      location: 'SE COUTO MAGALHAES',
+      lat: normalizeCoordinate('-19.8945'),
+      lng: normalizeCoordinate('-44.1377'),
     },
   ]
 })
@@ -642,9 +743,21 @@ watch(
         </div>
         <div class="transformer-modal-info">
           <h3>{{ selectedTransformer.id }}</h3>
+          <div class="transformer-modal-row" v-if="selectedTransformer.tag">
+            <span>TAG</span>
+            <b>{{ selectedTransformer.tag }}</b>
+          </div>
+          <div class="transformer-modal-row" v-if="selectedTransformer.serial">
+            <span>Serial</span>
+            <b>{{ selectedTransformer.serial }}</b>
+          </div>
           <div class="transformer-modal-row">
             <span>Status</span>
             <b>{{ selectedTransformer.status }}</b>
+          </div>
+          <div class="transformer-modal-row" v-if="selectedTransformer.analystStatus">
+            <span>Status (Analista)</span>
+            <b>{{ selectedTransformer.analystStatus }}</b>
           </div>
           <div class="transformer-modal-row">
             <span>Potência</span>
@@ -657,6 +770,26 @@ watch(
           <div class="transformer-modal-row">
             <span>Óleo</span>
             <b>{{ selectedTransformer.oil }}</b>
+          </div>
+          <div class="transformer-modal-row" v-if="selectedTransformer.substation">
+            <span>Subestação</span>
+            <b>{{ selectedTransformer.substation }}</b>
+          </div>
+          <div class="transformer-modal-row" v-if="selectedTransformer.manufacturer">
+            <span>Fabricante</span>
+            <b>{{ selectedTransformer.manufacturer }}</b>
+          </div>
+          <div class="transformer-modal-row" v-if="selectedTransformer.year">
+            <span>Ano</span>
+            <b>{{ selectedTransformer.year }}</b>
+          </div>
+          <div class="transformer-modal-row" v-if="selectedTransformer.commutator">
+            <span>Comutador</span>
+            <b>{{ selectedTransformer.commutator }}</b>
+          </div>
+          <div class="transformer-modal-note" v-if="selectedTransformer.analystNote">
+            <span>Descrição (Analista)</span>
+            <p>{{ selectedTransformer.analystNote }}</p>
           </div>
           <div class="transformer-modal-row">
             <span>Localização</span>
@@ -1147,6 +1280,23 @@ watch(
 
 .transformer-modal-row b{
   color: rgba(15, 23, 42, 0.9);
+}
+
+.transformer-modal-note{
+  display: grid;
+  gap: 6px;
+  font-size: 12px;
+  color: rgba(15, 23, 42, 0.7);
+  padding: 10px 12px;
+  border-radius: 12px;
+  background: rgba(15, 23, 42, 0.04);
+}
+
+.transformer-modal-note p{
+  margin: 0;
+  white-space: pre-wrap;
+  color: rgba(15, 23, 42, 0.9);
+  font-size: 12px;
 }
 
 .transformer-modal-action{
