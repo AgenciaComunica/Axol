@@ -5,6 +5,8 @@ import { Loader } from '@googlemaps/js-api-loader'
 type LatLng = { lat: number; lng: number }
 type MapMarker = { id: string; position: LatLng; label?: string }
 
+declare const google: any
+
 const transformerIconUrl = new URL('@/assets/power-transformer_1.svg', import.meta.url).toString()
 const pinSvg = encodeURIComponent(
   `<svg xmlns="http://www.w3.org/2000/svg" width="40" height="40" viewBox="0 0 40 40">

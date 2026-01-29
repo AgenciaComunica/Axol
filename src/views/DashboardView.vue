@@ -773,7 +773,7 @@ watch(
                 placeholder="Pesquisar endereço"
                 aria-label="Pesquisar endereço"
                 @focus="searchSuggestOpen = searchSuggestions.length > 0"
-                @blur="window.setTimeout(() => (searchSuggestOpen = false), 120)"
+                @blur="globalThis.setTimeout(() => (searchSuggestOpen = false), 120)"
               />
               <div v-if="searchSuggestOpen" class="search-suggest">
                 <div
