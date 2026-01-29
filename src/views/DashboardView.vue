@@ -940,6 +940,9 @@ watch(
         <div class="transformer-modal-media">
           <img class="transformer-modal-image" src="@/assets/Trafo_3D.svg" alt="Transformador 3D" />
         </div>
+        <button type="button" class="transformer-modal-action mobile-only" @click="openViewer3D">
+          Ampliar 3D
+        </button>
         <div class="transformer-modal-info">
           <h3>{{ selectedTransformer.id }}</h3>
           <div class="transformer-modal-row" v-if="selectedTransformer.tag">
@@ -1544,6 +1547,10 @@ watch(
   margin-top: 8px;
 }
 
+.transformer-modal-action.mobile-only{
+  display: none;
+}
+
 .viewer-overlay{
   position: fixed;
   inset: 0;
@@ -1603,6 +1610,10 @@ watch(
 @media (max-width: 900px){
   .search-under-logo{
     padding: 0 16px;
+    position: static;
+    top: auto;
+    z-index: 2;
+    margin-bottom: -8px;
   }
   .search-wrap{
     width: 100%;
@@ -1624,27 +1635,56 @@ watch(
     position: relative;
     z-index: 1;
   }
+  .map-center{
+    order: 1;
+  }
+  .kpi-stack{
+    position: static;
+    width: 100%;
+    grid-template-columns: 1fr;
+    justify-content: stretch;
+    order: 2;
+  }
+  .kpi-col{
+    width: 100%;
+  }
   .kpi{
     position: static;
     width: 100%;
     order: 2;
   }
   .map-center{ width: 100%; }
-  .map-row{ grid-template-columns: 1fr; }
-  .map-center{ order: 1; }
-  .map-hover{
-    position: fixed;
-    top: 170px !important;
-    left: 50% !important;
-    transform: translate(-50%, 0) !important;
-    margin: 0;
-    max-width: min(320px, 90vw);
+  .map-row{
+    grid-template-columns: 1fr;
+    min-height: 55vh;
+  }
+  .map-hover-overlay{
+    display: none;
   }
   .map-hover-transformer{
     grid-template-columns: 1fr;
   }
   .transformer-modal-card{
     grid-template-columns: 1fr;
+    max-height: 82vh;
+    overflow: auto;
+  }
+  .transformer-modal-media{
+    order: 1;
+  }
+  .transformer-modal-action.mobile-only{
+    display: block;
+    width: 100%;
+    order: 2;
+  }
+  .transformer-modal-info{
+    order: 3;
+  }
+  .transformer-modal-info .transformer-modal-action{
+    display: none;
+  }
+  .transformer-modal-media{
+    min-height: 180px;
   }
 }
 </style>
