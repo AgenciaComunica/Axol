@@ -362,6 +362,12 @@ function handleSearch(override?: unknown) {
     })
 }
 
+function handleSearchBlur() {
+  window.setTimeout(() => {
+    searchSuggestOpen.value = false
+  }, 120)
+}
+
 function clearSuggestions() {
   searchSuggestions.value = []
   searchSuggestOpen.value = false
@@ -773,7 +779,7 @@ watch(
                 placeholder="Pesquisar endereço"
                 aria-label="Pesquisar endereço"
                 @focus="searchSuggestOpen = searchSuggestions.length > 0"
-                @blur="globalThis.setTimeout(() => (searchSuggestOpen = false), 120)"
+                @blur="handleSearchBlur"
               />
               <div v-if="searchSuggestOpen" class="search-suggest">
                 <div
