@@ -59,6 +59,7 @@ const props = defineProps<{
 const emit = defineEmits<{
   (e: 'update:center', center: LatLng): void
   (e: 'update:zoom', zoom: number): void
+  (e: 'update:bounds', bounds: { north: number; south: number; east: number; west: number } | null): void
   (e: 'markerClick', id: string): void
   (e: 'markerHover', payload: { id: string; clientX: number; clientY: number }): void
   (e: 'markerLeave', id: string): void
@@ -138,7 +139,7 @@ async function initMap() {
   if (!mapRef.value) return
   const apiKey = import.meta.env.VITE_GOOGLE_MAPS_API_KEY
   if (!apiKey) return
-  const loader = new Loader({ apiKey, version: 'weekly', libraries: ['places', 'marker'] })
+  const loader = new Loader({ apiKey, version: 'weekly', libraries: ['places', 'marker', 'geometry'] })
   const googleMaps = await loader.load()
   if (!(window as any).google) {
     ;(window as any).google = googleMaps
@@ -168,6 +169,14 @@ async function initMap() {
       emit('update:center', { lat: center.lat(), lng: center.lng() })
     }
     emit('update:zoom', map.getZoom() || props.zoom)
+    const bounds = map.getBounds()
+    if (!bounds) {
+      emit('update:bounds', null)
+    } else {
+      const ne = bounds.getNorthEast()
+      const sw = bounds.getSouthWest()
+      emit('update:bounds', { north: ne.lat(), east: ne.lng(), south: sw.lat(), west: sw.lng() })
+    }
   })
   syncMarkers()
 }

@@ -72,7 +72,16 @@ const searchInputRef = ref<HTMLInputElement | null>(null)
 const mapInstance = ref<any | null>(null)
 const googleMapsRef = ref<any | null>(null)
 const mapsReady = ref(false)
-const searchSuggestions = ref<any[]>([])
+const mapBounds = ref<{ north: number; south: number; east: number; west: number } | null>(null)
+const searchSuggestions = ref<
+  {
+    kind: 'transformer' | 'substation' | 'place'
+    label: string
+    transformer?: (typeof transformerOptions.value)[number]
+    substation?: string
+    place?: any
+  }[]
+>([])
 const searchSuggestOpen = ref(false)
 const searchSuggestLoading = ref(false)
 const searchSuggestSuppress = ref(false)
@@ -84,18 +93,15 @@ const searchSuggestAllowedTypes = new Set([
   'city',
   'town',
   'municipality',
-  'village',
-  'suburb',
-  'neighbourhood',
-  'quarter',
-  'road',
-  'street',
-  'residential',
-  'living_street',
-  'hamlet',
 ])
 const highlightRect = ref<any | null>(null)
 const transformerQuery = ref('')
+const selectedSubstation = ref<string | null>(null)
+const searchPolygonActive = ref(false)
+const searchPolygonGeojson = ref<any | null>(null)
+const searchPolygons = ref<{ outer: { lat: number; lng: number }[]; holes: { lat: number; lng: number }[][] }[]>([])
+const centralViewportFactor = 0.6
+const substationZoomThreshold = 7
 
 const stateOptions: MapItem[] = [
   { id: 'AC', name: 'Acre', qty: 1 },
@@ -175,27 +181,111 @@ function parseNumeric(value?: string) {
   return Number.isFinite(parsed) ? parsed : 0
 }
 
+function clearSearchPolygon() {
+  searchPolygonActive.value = false
+  searchPolygonGeojson.value = null
+  searchPolygons.value = []
+}
+
+function buildPolygonsFromGeojson(geojson: any) {
+  if (!geojson) return []
+  const polygons: { outer: { lat: number; lng: number }[]; holes: { lat: number; lng: number }[][] }[] = []
+  const normalizeRing = (ring: any) =>
+    ring.map(([lng, lat]: [number, number]) => ({ lat: Number(lat), lng: Number(lng) }))
+  const buildPolygon = (coords: any) => {
+    if (!Array.isArray(coords) || !coords.length) return
+    const rings = coords.map((ring: any) => normalizeRing(ring))
+    const [outer, ...holes] = rings
+    if (outer?.length) polygons.push({ outer, holes })
+  }
+  if (geojson.type === 'Polygon') {
+    buildPolygon(geojson.coordinates)
+  } else if (geojson.type === 'MultiPolygon') {
+    geojson.coordinates.forEach((poly: any) => buildPolygon(poly))
+  }
+  return polygons
+}
+
+function pointInRing(point: { lat: number; lng: number }, ring: { lat: number; lng: number }[]) {
+  let inside = false
+  for (let i = 0, j = ring.length - 1; i < ring.length; j = i++) {
+    const xi = ring[i].lng
+    const yi = ring[i].lat
+    const xj = ring[j].lng
+    const yj = ring[j].lat
+    const intersect =
+      yi > point.lat !== yj > point.lat &&
+      point.lng < ((xj - xi) * (point.lat - yi)) / (yj - yi + Number.EPSILON) + xi
+    if (intersect) inside = !inside
+  }
+  return inside
+}
+
+function isPointInsideSearchPolygon(lat: number, lng: number) {
+  if (!searchPolygonActive.value || !searchPolygons.value.length) return false
+  const point = { lat, lng }
+  return searchPolygons.value.some((polygon) => {
+    if (!pointInRing(point, polygon.outer)) return false
+    if (!polygon.holes?.length) return true
+    return !polygon.holes.some((hole) => pointInRing(point, hole))
+  })
+}
+
+function getCentralBounds(bounds: { north: number; south: number; east: number; west: number }, factor: number) {
+  const centerLat = (bounds.north + bounds.south) / 2
+  const centerLng = (bounds.east + bounds.west) / 2
+  const latSpan = (bounds.north - bounds.south) * factor
+  const lngSpan = (bounds.east - bounds.west) * factor
+  return {
+    north: centerLat + latSpan / 2,
+    south: centerLat - latSpan / 2,
+    east: centerLng + lngSpan / 2,
+    west: centerLng - lngSpan / 2,
+  }
+}
+
 const scopeTransformers = computed(() => {
   const items = transformerOptions.value
-  if (selectedTransformer.value?.substation) {
-    return items.filter((item) => item.substation === selectedTransformer.value?.substation)
+  if (selectedTransformer.value?.id) {
+    const match = items.find((item) => item.id === selectedTransformer.value?.id)
+    return match ? [match] : items
   }
-  switch (store.level) {
-    case 'regiao': {
-      const regionId = store.current.id
-      return items.filter((item) => item.regionId === regionId)
-    }
-    case 'estado': {
-      const stateId = stateNode.value?.id
-      return items.filter((item) => item.stateId === stateId)
-    }
-    case 'cidade': {
-      const cityId = cityNode.value?.id
-      return items.filter((item) => item.cityId === cityId)
-    }
-    default:
-      return items
+  if (selectedSubstation.value) {
+    return items.filter((item) => item.substation?.toLowerCase() === selectedSubstation.value?.toLowerCase())
   }
+  if (searchPolygonActive.value) {
+    return items.filter(
+      (item) =>
+        typeof item.lat === 'number' &&
+        typeof item.lng === 'number' &&
+        isPointInsideSearchPolygon(item.lat, item.lng)
+    )
+  }
+  if (store.level === 'regiao') {
+    const regionId = store.current.id
+    return items.filter((item) => item.regionId === regionId)
+  }
+  if (store.level === 'estado') {
+    const stateId = stateNode.value?.id
+    return items.filter((item) => item.stateId === stateId)
+  }
+  if (store.level === 'cidade') {
+    const cityId = cityNode.value?.id
+    return items.filter((item) => item.cityId === cityId)
+  }
+  if (!mapBounds.value || mapZoom.value <= 4) {
+    return items
+  }
+  const central = getCentralBounds(mapBounds.value, centralViewportFactor)
+  return items.filter(
+    (item) =>
+      typeof item.lat === 'number' &&
+      typeof item.lng === 'number' &&
+      item.lat <= central.north &&
+      item.lat >= central.south &&
+      item.lng <= central.east &&
+      item.lng >= central.west
+  )
 })
 
 const statusCounts = computed(() => {
@@ -460,6 +550,29 @@ const mapFocusByState: Record<string, { center: { lat: number; lng: number }; zo
 const mapFocusByCity: Record<string, { center: { lat: number; lng: number }; zoom: number }> = {
   BH: { center: { lat: -19.912998, lng: -43.940933 }, zoom: 11 },
 }
+const substationGroups = computed(() => {
+  const groups: Record<string, { name: string; transformers: typeof transformerOptions.value; lat: number; lng: number }> =
+    {}
+  transformerOptions.value.forEach((item) => {
+    if (!item.substation || typeof item.lat !== 'number' || typeof item.lng !== 'number') return
+    if (!groups[item.substation]) {
+      groups[item.substation] = { name: item.substation, transformers: [], lat: 0, lng: 0 }
+    }
+    groups[item.substation].transformers.push(item)
+    groups[item.substation].lat += item.lat
+    groups[item.substation].lng += item.lng
+  })
+  return Object.values(groups).map((group) => {
+    const count = group.transformers.length || 1
+    return {
+      name: group.name,
+      transformers: group.transformers,
+      lat: group.lat / count,
+      lng: group.lng / count,
+    }
+  })
+})
+
 const transformerMarkers = computed(() =>
   transformerOptions.value
     .filter((item) => typeof item.lat === 'number' && typeof item.lng === 'number')
@@ -467,6 +580,19 @@ const transformerMarkers = computed(() =>
       id: item.id,
       position: { lat: item.lat as number, lng: item.lng as number },
     }))
+)
+
+const substationMarkers = computed(() =>
+  substationGroups.value
+    .filter((group) => Number.isFinite(group.lat) && Number.isFinite(group.lng))
+    .map((group) => ({
+      id: `substation:${group.name}`,
+      position: { lat: group.lat, lng: group.lng },
+    }))
+)
+
+const activeMapMarkers = computed(() =>
+  mapZoom.value < substationZoomThreshold ? substationMarkers.value : transformerMarkers.value
 )
 
 function handleSelect(item: MapItem) {
@@ -486,6 +612,22 @@ function handleHover(payload: StateSelect | null) {
 }
 
 function handleMarkerHover(payload: { id: string; clientX: number; clientY: number }) {
+  if (payload.id.startsWith('substation:')) {
+    const name = payload.id.replace('substation:', '')
+    const group = substationGroups.value.find((item) => item.name === name)
+    if (!group) return
+    const rect = mapShellRef.value?.getBoundingClientRect()
+    if (!rect) return
+    hoverPos.value = { x: payload.clientX - rect.left, y: payload.clientY - rect.top }
+    mapShellOffset.value = { x: rect.left, y: rect.top }
+    hoverInfo.value = {
+      name: group.name,
+      sigla: 'Subestação',
+      value: group.transformers.length,
+      transformers: group.transformers,
+    }
+    return
+  }
   const transformer = transformerOptions.value.find((item) => item.id === payload.id)
   if (!transformer) return
   const rect = mapShellRef.value?.getBoundingClientRect()
@@ -506,6 +648,10 @@ function handleMarkerHover(payload: { id: string; clientX: number; clientY: numb
 }
 
 function handleMarkerLeave(id: string) {
+  if (id.startsWith('substation:') && hoverInfo.value?.sigla === 'Subestação') {
+    hoverInfo.value = null
+    return
+  }
   const current = hoverInfo.value?.transformers?.[0]?.id
   if (current === id) {
     hoverInfo.value = null
@@ -551,12 +697,49 @@ function closeTransformerModal() {
   selectedTransformer.value = null
 }
 
+function focusOnTransformer(transformer: (typeof transformerOptions.value)[number]) {
+  if (!transformer?.lat || !transformer?.lng || !mapInstance.value || !googleMapsRef.value) return
+  clearSearchPolygon()
+  selectedSubstation.value = null
+  const map = mapInstance.value
+  map.panTo({ lat: transformer.lat, lng: transformer.lng })
+  map.setZoom(12)
+  openTransformerModal(transformer)
+}
+
+function focusOnSubstation(name: string) {
+  clearSearchPolygon()
+  selectedSubstation.value = name
+  const items = transformerOptions.value.filter(
+    (item) => item.substation?.toLowerCase() === name.toLowerCase()
+  )
+  if (!items.length || !mapInstance.value || !googleMapsRef.value) return
+  const map = mapInstance.value
+  const googleMaps = googleMapsRef.value
+  const bounds = new googleMaps.LatLngBounds()
+  items.forEach((item) => {
+    if (typeof item.lat === 'number' && typeof item.lng === 'number') {
+      bounds.extend(new googleMaps.LatLng(item.lat, item.lng))
+    }
+  })
+  if (!bounds.isEmpty()) {
+    map.fitBounds(bounds)
+  }
+  pinnedInfo.value = {
+    name,
+    sigla: 'Subestação',
+    value: items.length,
+    transformers: items,
+  }
+}
+
 function handleSearch(override?: unknown) {
   const overrideQuery = typeof override === 'string' ? override : undefined
   searchSuggestSuppress.value = true
   clearSuggestions()
   const rawQuery = String(overrideQuery ?? searchQuery.value ?? '').trim()
   const normalized = rawQuery.toLowerCase()
+  selectedSubstation.value = null
   const queryParts = rawQuery.split(',').map((part) => part.trim()).filter(Boolean)
   const filteredParts = queryParts.filter(
     (part) => !/regi[aã]o/i.test(part) && !/brasil/i.test(part)
@@ -574,6 +757,27 @@ function handleSearch(override?: unknown) {
   const isBrazilQuery =
     normalizedQuery === 'brasil' || normalizedQuery === 'brazil' || normalizedQuery === 'br'
   if (!query) return
+
+  const localTransformers = transformerOptions.value.filter((item) => {
+    const haystack = `${item.id} ${item.serial ?? ''} ${item.tag ?? ''} ${item.substation ?? ''}`.toLowerCase()
+    return haystack.includes(query.toLowerCase())
+  })
+  if (localTransformers.length === 1) {
+    focusOnTransformer(localTransformers[0])
+    return
+  }
+  const matchingSubstations = Array.from(
+    new Set(
+      transformerOptions.value
+        .map((item) => item.substation)
+        .filter((name): name is string => Boolean(name))
+        .filter((name) => name.toLowerCase().includes(query.toLowerCase()))
+    )
+  )
+  if (matchingSubstations.length === 1) {
+    focusOnSubstation(matchingSubstations[0])
+    return
+  }
   let googleMaps = googleMapsRef.value || (window as any).google?.maps
   if (!googleMaps?.Geocoder && (window as any).google?.maps?.Geocoder) {
     googleMaps = (window as any).google.maps
@@ -607,23 +811,10 @@ function handleSearch(override?: unknown) {
       searchLoading.value = false
       if (!Array.isArray(results) || results.length === 0) {
         searchError.value = 'Endereço não encontrado.'
+        clearSearchPolygon()
         return
       }
-      const allowedTypes = new Set([
-        'state',
-        'city',
-        'town',
-        'municipality',
-        'village',
-        'suburb',
-        'neighbourhood',
-        'quarter',
-        'road',
-        'street',
-        'residential',
-        'living_street',
-        'hamlet',
-      ])
+      const allowedTypes = new Set(['state', 'city', 'town', 'municipality'])
       if (isBrazilQuery) {
         allowedTypes.add('country')
       }
@@ -634,6 +825,10 @@ function handleSearch(override?: unknown) {
       const map = mapInstance.value
       map.data.forEach((feature: any) => map.data.remove(feature))
       if (result?.geojson) {
+        closeTransformerModal()
+        searchPolygonActive.value = true
+        searchPolygonGeojson.value = result.geojson
+        searchPolygons.value = buildPolygonsFromGeojson(result.geojson)
         const geojson = {
           type: 'FeatureCollection',
           features: [{ type: 'Feature', properties: {}, geometry: result.geojson }],
@@ -660,6 +855,7 @@ function handleSearch(override?: unknown) {
         }
         return
       }
+      clearSearchPolygon()
 
       const bbox = result?.boundingbox
       if (Array.isArray(bbox) && bbox.length === 4) {
@@ -678,6 +874,7 @@ function handleSearch(override?: unknown) {
       searchLoading.value = false
       console.warn('[search] nominatim failed', err)
       searchError.value = 'Erro ao consultar limites.'
+      clearSearchPolygon()
     })
 }
 
@@ -692,14 +889,34 @@ function clearSuggestions() {
   searchSuggestOpen.value = false
 }
 
+function clearSearchOverlay() {
+  const map = mapInstance.value
+  if (map?.data) {
+    map.data.forEach((feature: any) => map.data.remove(feature))
+  }
+  clearSearchPolygon()
+}
+
 function handleSuggestSelect(suggestion: any) {
   searchSuggestSuppress.value = true
+  if (suggestion?.kind === 'transformer' && suggestion.transformer) {
+    searchQuery.value = suggestion.label
+    focusOnTransformer(suggestion.transformer)
+    clearSuggestions()
+    return
+  }
+  if (suggestion?.kind === 'substation' && suggestion.substation) {
+    searchQuery.value = suggestion.label
+    focusOnSubstation(suggestion.substation)
+    clearSuggestions()
+    return
+  }
   const raw = searchQuery.value.trim()
   const normalized = raw.toLowerCase()
   if (normalized.startsWith('estado ') || normalized.startsWith('estado de ')) {
     handleSearch(raw)
   } else {
-    searchQuery.value = suggestion.display_name || raw
+    searchQuery.value = suggestion.place?.display_name || suggestion.label || raw
     handleSearch(searchQuery.value)
   }
   clearSuggestions()
@@ -714,6 +931,9 @@ async function handleMapReady(googleMaps: any) {
   if (!(mapInstance.value) && (window as any).__gm_map) {
     mapInstance.value = (window as any).__gm_map
   }
+  if (searchPolygonGeojson.value) {
+    searchPolygons.value = buildPolygonsFromGeojson(searchPolygonGeojson.value)
+  }
 }
 
 function handleMove(payload: { x: number; y: number }) {
@@ -724,6 +944,11 @@ function handleMove(payload: { x: number; y: number }) {
 }
 
 function handleMapMarkerClick(id: string) {
+  if (id.startsWith('substation:')) {
+    const name = id.replace('substation:', '')
+    if (name) focusOnSubstation(name)
+    return
+  }
   const match = transformerOptions.value.find((item) => item.id === id)
   if (!match) return
   openTransformerModal(match)
@@ -917,6 +1142,18 @@ watch(
 )
 
 onMounted(async () => {
+  const storedLocation = window.localStorage.getItem('axol.userLocation')
+  if (storedLocation) {
+    try {
+      const parsed = JSON.parse(storedLocation)
+      if (typeof parsed?.lat === 'number' && typeof parsed?.lng === 'number') {
+        mapCenter.value = { lat: parsed.lat, lng: parsed.lng }
+        mapZoom.value = typeof parsed?.zoom === 'number' ? parsed.zoom : 10
+      }
+    } catch (err) {
+      console.warn('[map] invalid stored location', err)
+    }
+  }
   transformerOptions.value = [
     {
       id: '9701-A01',
@@ -1045,6 +1282,10 @@ watch(
   () => searchQuery.value,
   () => {
     if (searchError.value) searchError.value = ''
+    if (!searchQuery.value.trim()) {
+      clearSearchOverlay()
+      return
+    }
     if (searchSuggestSuppress.value) {
       searchSuggestSuppress.value = false
       return
@@ -1077,8 +1318,36 @@ watch(
             const type = String(item?.addresstype || item?.type || '').toLowerCase()
             return searchSuggestAllowedTypes.has(type)
           })
-          searchSuggestions.value = filtered
-          searchSuggestOpen.value = filtered.length > 0
+          const localTransformers = transformerOptions.value
+            .filter((item) => {
+              const haystack = `${item.id} ${item.serial ?? ''} ${item.tag ?? ''}`.toLowerCase()
+              return haystack.includes(q.toLowerCase())
+            })
+            .map((item) => ({
+              kind: 'transformer' as const,
+              label: `Transformador ${item.id}`,
+              transformer: item,
+            }))
+          const localSubstations = Array.from(
+            new Set(
+              transformerOptions.value
+                .map((item) => item.substation)
+                .filter((name): name is string => Boolean(name))
+                .filter((name) => name.toLowerCase().includes(q.toLowerCase()))
+            )
+          ).map((name) => ({
+            kind: 'substation' as const,
+            label: `Subestação ${name}`,
+            substation: name,
+          }))
+          const placeSuggestions = filtered.map((item) => ({
+            kind: 'place' as const,
+            label: item.display_name,
+            place: item,
+          }))
+          const merged = [...localTransformers, ...localSubstations, ...placeSuggestions]
+          searchSuggestions.value = merged
+          searchSuggestOpen.value = merged.length > 0
         })
         .catch((err) => {
           if (err?.name === 'AbortError') return
@@ -1115,11 +1384,11 @@ watch(
               <div v-if="searchSuggestOpen" class="search-suggest">
                 <div
                   v-for="suggestion in searchSuggestions"
-                  :key="suggestion.place_id"
+                  :key="suggestion.label"
                   class="search-suggest-item"
                   @mousedown.prevent="handleSuggestSelect(suggestion)"
                 >
-                  {{ suggestion.display_name }}
+                  {{ suggestion.label }}
                 </div>
                 <div v-if="searchSuggestLoading" class="search-suggest-loading">Carregando...</div>
               </div>
@@ -1179,9 +1448,10 @@ watch(
             <GoogleMapBase
               :center="mapCenter"
               :zoom="mapZoom"
-              :markers="transformerMarkers"
+              :markers="activeMapMarkers"
               @update:center="mapCenter = $event"
               @update:zoom="mapZoom = $event"
+              @update:bounds="mapBounds = $event"
               @markerClick="handleMapMarkerClick"
               @markerHover="handleMarkerHover"
               @markerLeave="handleMarkerLeave"
