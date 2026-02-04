@@ -1664,23 +1664,42 @@ watch(
   margin-top: -8px;
   transition: opacity 0.35s ease, transform 0.35s ease;
 }
+.brand-logo{
+  width: 150px;
+  height: auto;
+  object-fit: contain;
+  padding: 0.5px;
+}
 .brand-header.hidden{
   opacity: 0;
   transform: translateY(-10px);
   pointer-events: none;
 }
 
-.brand-logo{
-  width: 180px;
-  height: auto;
-  object-fit: contain;
-  padding: 0.5px;
+@media (max-width: 700px){
+  .brand-header{
+    justify-content: flex-end;
+    margin-top: -40px;
+  }
+  .brand-logo{
+    width: 90px;
+  }
+  .brand-header.hidden{
+    opacity: 1;
+    transform: none;
+    pointer-events: auto;
+  }
 }
 
 .search-wrap{
   display: grid;
   justify-items: end;
   gap: 6px;
+}
+
+body.menu-open{
+  overflow: hidden;
+  touch-action: none;
 }
 
 .search-bar{
