@@ -102,6 +102,7 @@ const searchPolygonGeojson = ref<any | null>(null)
 const searchPolygons = ref<{ outer: { lat: number; lng: number }[]; holes: { lat: number; lng: number }[][] }[]>([])
 const centralViewportFactor = 0.6
 const substationZoomThreshold = 7
+const logoHideZoom = 5
 
 const stateOptions: MapItem[] = [
   { id: 'AC', name: 'Acre', qty: 1 },
@@ -1010,6 +1011,7 @@ const mapHoverStyle = computed(() => {
     transform: 'translateX(-50%)',
   }
 })
+const isLogoHidden = computed(() => mapZoom.value >= logoHideZoom)
 
 const viewerSrc = computed(() => {
   if (!selectedTransformer.value) return ''
@@ -1363,7 +1365,7 @@ watch(
     <SideMenu />
 
     <div class="content">
-      <div class="brand-header">
+      <div class="brand-header" :class="{ hidden: isLogoHidden }">
         <img src="@/assets/logo_siaro.png" alt="Siaro" class="brand-logo" />
       </div>
       <div class="search-under-logo">
@@ -1660,6 +1662,12 @@ watch(
   position: relative;
   z-index: 3;
   margin-top: -8px;
+  transition: opacity 0.35s ease, transform 0.35s ease;
+}
+.brand-header.hidden{
+  opacity: 0;
+  transform: translateY(-10px);
+  pointer-events: none;
 }
 
 .brand-logo{
