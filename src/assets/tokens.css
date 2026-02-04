@@ -6,4 +6,7 @@
   --color-accent: #1e4e8b;
   --color-neutral: #86898d;
   --color-warning: #f7cf29;
+  --status-normal: #2f7f6c;
+  --status-alert: #f7cf29;
+  --status-critical: #c85c5c;
 }

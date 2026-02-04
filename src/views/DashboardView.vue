@@ -35,6 +35,9 @@ const transformerOptions = ref<
     location: string
     lat?: number
     lng?: number
+    regionId?: string
+    stateId?: string
+    cityId?: string
   }[]
 >([])
 const selectedTransformer = ref<
@@ -124,7 +127,323 @@ const stateOptions: MapItem[] = [
   { id: 'TO', name: 'Tocantins', qty: 1 },
 ]
 
-const kpis = computed(() => store.getKpisForScope())
+const regionByState: Record<string, string> = {
+  AC: 'N',
+  AP: 'N',
+  AM: 'N',
+  PA: 'N',
+  RO: 'N',
+  RR: 'N',
+  TO: 'N',
+  AL: 'NE',
+  BA: 'NE',
+  CE: 'NE',
+  MA: 'NE',
+  PB: 'NE',
+  PE: 'NE',
+  PI: 'NE',
+  RN: 'NE',
+  SE: 'NE',
+  DF: 'CO',
+  GO: 'CO',
+  MS: 'CO',
+  MT: 'CO',
+  ES: 'SE',
+  MG: 'SE',
+  RJ: 'SE',
+  SP: 'SE',
+  PR: 'S',
+  RS: 'S',
+  SC: 'S',
+}
+const statusRank: Record<string, number> = { Normal: 1, Alerta: 2, Critico: 3 }
+
+function normalizeStatus(raw?: string) {
+  if (!raw) return 'Normal'
+  const value = raw.toLowerCase()
+  if (value.includes('crit')) return 'Critico'
+  if (value.includes('alert') || value.includes('manut') || value.includes('reclass')) return 'Alerta'
+  if (value.includes('oper')) return 'Normal'
+  if (value.includes('ainda')) return 'Alerta'
+  return 'Normal'
+}
+
+function parseNumeric(value?: string) {
+  if (!value) return 0
+  const cleaned = value.replace(/[^\d.,-]/g, '').replace(',', '.')
+  const parsed = Number(cleaned)
+  return Number.isFinite(parsed) ? parsed : 0
+}
+
+const scopeTransformers = computed(() => {
+  const items = transformerOptions.value
+  if (selectedTransformer.value?.substation) {
+    return items.filter((item) => item.substation === selectedTransformer.value?.substation)
+  }
+  switch (store.level) {
+    case 'regiao': {
+      const regionId = store.current.id
+      return items.filter((item) => item.regionId === regionId)
+    }
+    case 'estado': {
+      const stateId = stateNode.value?.id
+      return items.filter((item) => item.stateId === stateId)
+    }
+    case 'cidade': {
+      const cityId = cityNode.value?.id
+      return items.filter((item) => item.cityId === cityId)
+    }
+    default:
+      return items
+  }
+})
+
+const statusCounts = computed(() => {
+  const counts = { Normal: 0, Alerta: 0, Critico: 0 }
+  scopeTransformers.value.forEach((item) => {
+    const normalized = normalizeStatus(item.status)
+    counts[normalized as keyof typeof counts] += 1
+  })
+  return counts
+})
+
+const statusPercents = computed(() => {
+  const total = scopeTransformers.value.length || 1
+  return {
+    Normal: (statusCounts.value.Normal / total) * 100,
+    Alerta: (statusCounts.value.Alerta / total) * 100,
+    Critico: (statusCounts.value.Critico / total) * 100,
+  }
+})
+
+const worstStatus = computed(() => {
+  const entries = Object.entries(statusCounts.value)
+  if (!entries.length) return 'Normal'
+  return entries.reduce((acc, [key, value]) => {
+    if (value === 0) return acc
+    return statusRank[key] > statusRank[acc] ? (key as keyof typeof statusRank) : acc
+  }, 'Normal' as keyof typeof statusRank)
+})
+const worstStatusTone = computed(() => {
+  switch (worstStatus.value) {
+    case 'Critico':
+      return 'danger'
+    case 'Alerta':
+      return 'warning'
+    default:
+      return 'success'
+  }
+})
+
+const statusChart = computed(() => ({
+  segments: [
+    { label: 'Normal', value: statusPercents.value.Normal, color: 'var(--status-normal, #2f7f6c)' },
+    { label: 'Alerta', value: statusPercents.value.Alerta, color: 'var(--status-alert, #f7cf29)' },
+    { label: 'Crítico', value: statusPercents.value.Critico, color: 'var(--status-critical, #c85c5c)' },
+  ],
+}))
+
+const kpiCards = computed(() => {
+  const total = scopeTransformers.value.length
+  const powerValues = scopeTransformers.value.map((item) => parseNumeric(item.power)).filter((v) => v > 0)
+  const voltageValues = scopeTransformers.value.map((item) => parseNumeric(item.voltage)).filter((v) => v > 0)
+  const powerAvg = powerValues.length
+    ? powerValues.reduce((acc, v) => acc + v, 0) / powerValues.length
+    : 0
+  const voltageAvg = voltageValues.length
+    ? voltageValues.reduce((acc, v) => acc + v, 0) / voltageValues.length
+    : 0
+
+  const powerBands = { low: 0, mid: 0, high: 0 }
+  powerValues.forEach((value) => {
+    if (value <= 30) powerBands.low += 1
+    else if (value < 50) powerBands.mid += 1
+    else powerBands.high += 1
+  })
+
+  const powerStatusBands = {
+    high: { Normal: 0, Alerta: 0, Critico: 0 },
+    mid: { Normal: 0, Alerta: 0, Critico: 0 },
+    low: { Normal: 0, Alerta: 0, Critico: 0 },
+  }
+  scopeTransformers.value.forEach((item) => {
+    const power = parseNumeric(item.power)
+    const status = normalizeStatus(item.status) as keyof typeof statusRank
+    if (!power) return
+    if (power >= 50) powerStatusBands.high[status] += 1
+    else if (power > 30) powerStatusBands.mid[status] += 1
+    else powerStatusBands.low[status] += 1
+  })
+
+  const voltageBands = { low: 0, mid: 0, high: 0 }
+  voltageValues.forEach((value) => {
+    if (value <= 69) voltageBands.low += 1
+    else if (value < 230) voltageBands.mid += 1
+    else voltageBands.high += 1
+  })
+  const voltageStatusBands = {
+    high: { Normal: 0, Alerta: 0, Critico: 0 },
+    mid: { Normal: 0, Alerta: 0, Critico: 0 },
+    low: { Normal: 0, Alerta: 0, Critico: 0 },
+  }
+  scopeTransformers.value.forEach((item) => {
+    const voltage = parseNumeric(item.voltage)
+    const status = normalizeStatus(item.status) as keyof typeof statusRank
+    if (!voltage) return
+    if (voltage >= 230) voltageStatusBands.high[status] += 1
+    else if (voltage > 69) voltageStatusBands.mid[status] += 1
+    else voltageStatusBands.low[status] += 1
+  })
+
+  const oilBands = { adequado: 0, reclass: 0, regenera: 0 }
+  scopeTransformers.value.forEach((item) => {
+    const oil = item.oil?.toLowerCase() || ''
+    if (oil.includes('adequ')) oilBands.adequado += 1
+    else if (oil.includes('reclass')) oilBands.reclass += 1
+    else if (oil.includes('regener')) oilBands.regenera += 1
+  })
+
+  const pct = (count: number) => (total ? Math.round((count / total) * 100) : 0)
+
+  return [
+    {
+      title: 'Transformadores',
+      value: total ? `Total: ${total}` : 'Total: 0',
+      subtitle: `Pior status: ${worstStatus.value}`,
+      chart: statusChart.value,
+      rows: [
+        { label: 'Total Normal', value: `${statusCounts.value.Normal}`, tone: 'success' },
+        { label: 'Total Alerta', value: `${statusCounts.value.Alerta}`, tone: 'warning' },
+        { label: 'Total Crítico', value: `${statusCounts.value.Critico}`, tone: 'danger' },
+      ],
+    },
+    {
+      title: 'Potência',
+      value: powerAvg ? `${powerAvg.toFixed(1)} MVA` : '-',
+      subtitle: 'Média do escopo',
+      rows: [
+        {
+          label: '≥ 50 MVA',
+          value: '',
+          tags: [
+            { tone: 'success', value: `${powerStatusBands.high.Normal}` },
+            { tone: 'warning', value: `${powerStatusBands.high.Alerta}` },
+            { tone: 'danger', value: `${powerStatusBands.high.Critico}` },
+          ],
+          hover: {
+            columns: ['Normal', 'Alerta', 'Crítico'],
+            tones: ['success', 'warning', 'danger'],
+            values: [
+              `${powerStatusBands.high.Normal}`,
+              `${powerStatusBands.high.Alerta}`,
+              `${powerStatusBands.high.Critico}`,
+            ],
+          },
+        },
+        {
+          label: '30-50 MVA',
+          value: '',
+          tags: [
+            { tone: 'success', value: `${powerStatusBands.mid.Normal}` },
+            { tone: 'warning', value: `${powerStatusBands.mid.Alerta}` },
+            { tone: 'danger', value: `${powerStatusBands.mid.Critico}` },
+          ],
+          hover: {
+            columns: ['Normal', 'Alerta', 'Crítico'],
+            tones: ['success', 'warning', 'danger'],
+            values: [`${powerStatusBands.mid.Normal}`, `${powerStatusBands.mid.Alerta}`, `${powerStatusBands.mid.Critico}`],
+          },
+        },
+        {
+          label: '≤ 30 MVA',
+          value: '',
+          tags: [
+            { tone: 'success', value: `${powerStatusBands.low.Normal}` },
+            { tone: 'warning', value: `${powerStatusBands.low.Alerta}` },
+            { tone: 'danger', value: `${powerStatusBands.low.Critico}` },
+          ],
+          hover: {
+            columns: ['Normal', 'Alerta', 'Crítico'],
+            tones: ['success', 'warning', 'danger'],
+            values: [`${powerStatusBands.low.Normal}`, `${powerStatusBands.low.Alerta}`, `${powerStatusBands.low.Critico}`],
+          },
+        },
+      ],
+    },
+    {
+      title: 'Classe de Tensão',
+      value: voltageAvg ? `${voltageAvg.toFixed(0)} kV` : '-',
+      subtitle: 'Média do escopo',
+      rows: [
+        {
+          label: '≥ 230 kV',
+          value: '',
+          tags: [
+            { tone: 'success', value: `${voltageStatusBands.high.Normal}` },
+            { tone: 'warning', value: `${voltageStatusBands.high.Alerta}` },
+            { tone: 'danger', value: `${voltageStatusBands.high.Critico}` },
+          ],
+          hover: {
+            columns: ['Normal', 'Alerta', 'Crítico'],
+            tones: ['success', 'warning', 'danger'],
+            values: [
+              `${voltageStatusBands.high.Normal}`,
+              `${voltageStatusBands.high.Alerta}`,
+              `${voltageStatusBands.high.Critico}`,
+            ],
+          },
+        },
+        {
+          label: '69 kV < u < 230',
+          value: '',
+          tags: [
+            { tone: 'success', value: `${voltageStatusBands.mid.Normal}` },
+            { tone: 'warning', value: `${voltageStatusBands.mid.Alerta}` },
+            { tone: 'danger', value: `${voltageStatusBands.mid.Critico}` },
+          ],
+          hover: {
+            columns: ['Normal', 'Alerta', 'Crítico'],
+            tones: ['success', 'warning', 'danger'],
+            values: [
+              `${voltageStatusBands.mid.Normal}`,
+              `${voltageStatusBands.mid.Alerta}`,
+              `${voltageStatusBands.mid.Critico}`,
+            ],
+          },
+        },
+        {
+          label: '≤ 69 kV',
+          value: '',
+          tags: [
+            { tone: 'success', value: `${voltageStatusBands.low.Normal}` },
+            { tone: 'warning', value: `${voltageStatusBands.low.Alerta}` },
+            { tone: 'danger', value: `${voltageStatusBands.low.Critico}` },
+          ],
+          hover: {
+            columns: ['Normal', 'Alerta', 'Crítico'],
+            tones: ['success', 'warning', 'danger'],
+            values: [
+              `${voltageStatusBands.low.Normal}`,
+              `${voltageStatusBands.low.Alerta}`,
+              `${voltageStatusBands.low.Critico}`,
+            ],
+          },
+        },
+      ],
+    },
+    {
+      title: 'Tratamento de Óleo',
+      value: '36.240 L',
+      subtitle: 'Volume total (litros)',
+      rows: [
+        { label: 'Volume Normal', value: '33.405 L', tone: 'success' },
+        { label: 'Regeneração', value: '0 L', tone: 'info' },
+        { label: 'Recondicionamento', value: '0 L', tone: 'warning' },
+        { label: 'Volume em Alarme', value: '0 L', tone: 'danger' },
+      ],
+    },
+  ]
+})
 const stateNode = computed(() => store.path.find((node) => node.level === 'estado') || null)
 const cityNode = computed(() => store.path.find((node) => node.level === 'cidade') || null)
 const filteredTransformers = computed(() => {
@@ -569,15 +888,13 @@ function normalizeCoordinate(value?: string) {
   const num = Number(cleaned)
   return Number.isFinite(num) ? num : undefined
 }
-const displayTension = computed(() => {
-  if (!displayInfo.value) return ''
-  const base = 69 + (displayInfo.value.value % 4) * 23
-  return `${base} kV`
-})
-const displayPower = computed(() => {
-  if (!displayInfo.value) return ''
-  const base = 8 + (displayInfo.value.value % 7)
-  return `${base.toFixed(1)} MVA`
+const displayWorstStatus = computed(() => {
+  const transformers = displayInfo.value?.transformers
+  if (!transformers?.length) return ''
+  return transformers.reduce((acc, item) => {
+    const normalized = normalizeStatus(item.status)
+    return statusRank[normalized] > statusRank[acc] ? normalized : acc
+  }, 'Normal' as keyof typeof statusRank)
 })
 
 function goBrasil() {
@@ -619,6 +936,9 @@ onMounted(async () => {
       location: 'SE VISCONDE DO RIO BRANCO',
       lat: normalizeCoordinate('-19.912998'),
       lng: normalizeCoordinate('-43.940933'),
+      regionId: 'SE',
+      stateId: 'MG',
+      cityId: 'BH',
     },
     {
       id: '9701-A02',
@@ -638,6 +958,9 @@ onMounted(async () => {
       location: 'SE SERENO',
       lat: normalizeCoordinate('-21.316.419'),
       lng: normalizeCoordinate('-42.650.596'),
+      regionId: 'SE',
+      stateId: 'MG',
+      cityId: 'BH',
     },
     {
       id: 'A03',
@@ -657,6 +980,8 @@ onMounted(async () => {
       location: 'SE CANARANA 138 KV',
       lat: normalizeCoordinate('-20.27848'),
       lng: normalizeCoordinate('-40.30561'),
+      regionId: 'SE',
+      stateId: 'ES',
     },
     {
       id: '2FTMTR01-A04',
@@ -676,6 +1001,9 @@ onMounted(async () => {
       location: 'SE FATIMA',
       lat: normalizeCoordinate('-20.663567'),
       lng: normalizeCoordinate('-43.783096'),
+      regionId: 'SE',
+      stateId: 'MG',
+      cityId: 'BH',
     },
     {
       id: '2CTMTR01-A05',
@@ -695,6 +1023,9 @@ onMounted(async () => {
       location: 'SE COUTO MAGALHAES',
       lat: normalizeCoordinate('-19.8945'),
       lng: normalizeCoordinate('-44.1377'),
+      regionId: 'SE',
+      stateId: 'MG',
+      cityId: 'BH',
     },
   ]
 })
@@ -806,33 +1137,39 @@ watch(
           <div class="kpi-col">
             <KpiCard
               class="kpi"
-              :title="stateNode?.label || 'Brasil'"
-              value="Estado geral"
-              :subtitle="kpis.cards[0].subtitle"
-              :rows="kpis.cards[0].rows"
+              :title="kpiCards[0].title"
+              :value="kpiCards[0].value"
+              :subtitle="kpiCards[0].subtitle"
+              :subtitleTone="worstStatusTone"
+              :rows="kpiCards[0].rows"
+              :chart="kpiCards[0].chart"
+              :defaultOpen="true"
             />
             <KpiCard
               class="kpi"
-              :title="kpis.cards[2].title"
-              :value="kpis.cards[2].value"
-              :subtitle="kpis.cards[2].subtitle"
-              :rows="kpis.cards[2].rows"
+              :title="kpiCards[3].title"
+              :value="kpiCards[3].value"
+              :subtitle="kpiCards[3].subtitle"
+              :rows="kpiCards[3].rows"
+              :defaultOpen="true"
             />
           </div>
           <div class="kpi-col">
             <KpiCard
               class="kpi"
-              :title="kpis.cards[1].title"
-              :value="kpis.cards[1].value"
-              :subtitle="kpis.cards[1].subtitle"
-              :rows="kpis.cards[1].rows"
+              :title="kpiCards[1].title"
+              :value="kpiCards[1].value"
+              :subtitle="kpiCards[1].subtitle"
+              :rows="kpiCards[1].rows"
+              :defaultOpen="true"
             />
             <KpiCard
               class="kpi"
-              :title="kpis.cards[3].title"
-              :value="kpis.cards[3].value"
-              :subtitle="kpis.cards[3].subtitle"
-              :rows="kpis.cards[3].rows"
+              :title="kpiCards[2].title"
+              :value="kpiCards[2].value"
+              :subtitle="kpiCards[2].subtitle"
+              :rows="kpiCards[2].rows"
+              :defaultOpen="true"
             />
           </div>
         </div>
@@ -894,6 +1231,10 @@ watch(
               </div>
             </div>
             <div v-else class="map-hover-list">
+              <div class="map-hover-row">
+                <span>Status (pior)</span>
+                <b>{{ displayWorstStatus }}</b>
+              </div>
               <div class="map-hover-list-head">Transformadores</div>
               <button
                 v-for="transformer in displayInfo.transformers"
@@ -1382,7 +1723,7 @@ watch(
   left: 12px;
   right: 12px;
   display: grid;
-  grid-template-columns: repeat(2, 220px);
+  grid-template-columns: repeat(2, 250px);
   justify-content: space-between;
   gap: 16px;
   z-index: 3;
@@ -1398,8 +1739,11 @@ watch(
 }
 
 .kpi{
-  width: 220px;
+  width: 250px;
   pointer-events: auto;
+}
+.kpi:has(.card.open){
+  min-height: 320px;
 }
 
 @media (min-width: 901px){
@@ -1429,7 +1773,7 @@ watch(
 
 @media (max-width: 1100px){
   .map-shell{ padding: 50px 40px; }
-  .kpi{ width: 200px; }
+  .kpi{ width: 220px; }
 }
 
 @media (max-width: 700px){
