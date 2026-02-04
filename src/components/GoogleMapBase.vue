@@ -1,6 +1,7 @@
 <script setup lang="ts">
 import { onBeforeUnmount, onMounted, ref, watch } from 'vue'
 import { Loader } from '@googlemaps/js-api-loader'
+import { MarkerClusterer } from '@googlemaps/markerclusterer'
 
 type LatLng = { lat: number; lng: number }
 type MapMarker = { id: string; position: LatLng; label?: string }
@@ -50,6 +51,24 @@ function createMarkerContent(onEnter: (event: MouseEvent) => void, onLeave: () =
   return wrapper
 }
 
+function createClusterContent(count: number) {
+  const wrapper = document.createElement('div')
+  wrapper.style.position = 'relative'
+  wrapper.style.width = '34px'
+  wrapper.style.height = '34px'
+  wrapper.style.backgroundImage = `url('${pinIconUrl}')`
+  wrapper.style.backgroundRepeat = 'no-repeat'
+  wrapper.style.backgroundSize = 'contain'
+  wrapper.style.backgroundPosition = 'center'
+  wrapper.style.display = 'grid'
+  wrapper.style.placeItems = 'center'
+  wrapper.style.color = '#ffffff'
+  wrapper.style.fontSize = '12px'
+  wrapper.style.fontWeight = '700'
+  wrapper.style.textShadow = '0 1px 2px rgba(0, 0, 0, 0.35)'
+  wrapper.textContent = String(count)
+  return wrapper
+}
 const props = defineProps<{
   center: LatLng
   zoom: number
@@ -69,12 +88,17 @@ const emit = defineEmits<{
 const mapRef = ref<HTMLDivElement | null>(null)
 let map: any = null
 let markers: any[] = []
+let clusterer: MarkerClusterer | null = null
 let idleListener: any = null
 let projectionOverlay: any = null
 
 function clearMarkers() {
   markers.forEach((marker) => marker.setMap(null))
   markers = []
+  if (clusterer) {
+    clusterer.clearMarkers()
+    clusterer = null
+  }
 }
 
 function getClientPosition(lat: number, lng: number) {
@@ -132,6 +156,50 @@ function syncMarkers() {
     instance.addListener('mouseover', (event: any) => handleHover(marker, event))
     instance.addListener('mouseout', () => emit('markerLeave', marker.id))
     return instance
+  })
+  clusterer = new MarkerClusterer({
+    map,
+    markers,
+    onClusterClick: (_event, cluster, mapInstance) => {
+      const bounds = cluster.bounds
+      if (!bounds) return
+      const div = mapRef.value
+      if (div) {
+        const paddingX = Math.round(div.clientWidth * 0.2)
+        const paddingY = Math.round(div.clientHeight * 0.2)
+        mapInstance.fitBounds(bounds, {
+          left: paddingX,
+          right: paddingX,
+          top: paddingY,
+          bottom: paddingY,
+        })
+      } else {
+        mapInstance.fitBounds(bounds, { top: 100, right: 100, bottom: 100, left: 100 })
+      }
+    },
+    renderer: {
+      render({ count, position }) {
+        if (googleMaps.marker?.AdvancedMarkerElement) {
+          return new googleMaps.marker.AdvancedMarkerElement({
+            position,
+            content: createClusterContent(count),
+          })
+        }
+        return new googleMaps.Marker({
+          position,
+          icon: {
+            url: pinIconUrl,
+            scaledSize: new googleMaps.Size(34, 34),
+          },
+          label: {
+            text: String(count),
+            color: '#ffffff',
+            fontSize: '12px',
+            fontWeight: '700',
+          },
+        })
+      },
+    },
   })
 }
 

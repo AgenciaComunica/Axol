@@ -591,9 +591,7 @@ const substationMarkers = computed(() =>
     }))
 )
 
-const activeMapMarkers = computed(() =>
-  mapZoom.value < substationZoomThreshold ? substationMarkers.value : transformerMarkers.value
-)
+const activeMapMarkers = computed(() => transformerMarkers.value)
 
 function handleSelect(item: MapItem) {
   pinnedInfo.value = { name: item.name, sigla: item.sigla || '', value: item.qty }

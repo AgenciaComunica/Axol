@@ -17,6 +17,7 @@
   },
   "dependencies": {
     "@googlemaps/js-api-loader": "^1.16.10",
+    "@googlemaps/markerclusterer": "^2.6.2",
     "maplibre-gl": "^5.16.0",
     "pinia": "^3.0.4",
     "three": "^0.182.0",
