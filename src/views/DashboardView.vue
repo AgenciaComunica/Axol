@@ -85,6 +85,10 @@ const mapBounds = ref<{ north: number; south: number; east: number; west: number
 const directionsService = ref<any | null>(null)
 const routePolyline = shallowRef<any | null>(null)
 const lastRouteKey = ref<string | null>(null)
+const pinnedRouteKeys = ref<Set<string>>(new Set())
+const pinnedRouteStorageKey = 'siaro:pinnedRouteKeys'
+const pinnedRouteRestored = ref(false)
+const pinnedRouteOverlays = ref<Map<string, any>>(new Map())
 const lastMarkerHoverAt = ref(0)
 const hoverLocked = ref(false)
 const searchSuggestions = ref<
@@ -747,6 +751,7 @@ function transformerMapsLink(address: string) {
 function closeTransformerModal() {
   transformerModalOpen.value = false
   selectedTransformer.value = null
+  clearRoute()
 }
 
 function focusOnTransformer(transformer: (typeof transformerOptions.value)[number]) {
@@ -758,6 +763,7 @@ function focusOnTransformer(transformer: (typeof transformerOptions.value)[numbe
     pendingFocusTransformer.value = transformer.id
     return
   }
+  clearRoute()
   clearSearchPolygon()
   selectedSubstation.value = null
   const map = mapInstance.value
@@ -767,6 +773,7 @@ function focusOnTransformer(transformer: (typeof transformerOptions.value)[numbe
 }
 
 function focusOnSubstation(name: string) {
+  clearRoute()
   clearSearchPolygon()
   selectedSubstation.value = name
   const items = transformerOptions.value.filter(
@@ -975,6 +982,7 @@ function clearSearchOverlay() {
   if (map?.data) {
     map.data.forEach((feature: any) => map.data.remove(feature))
   }
+  clearRoute()
   clearSearchPolygon()
 }
 
@@ -987,7 +995,96 @@ function clearRoute() {
   lastRouteKey.value = null
 }
 
-function drawContingencyRoute(transformer: (typeof transformerOptions.value)[number]) {
+function clearRouteForce() {
+  pinnedRouteKeys.value.clear()
+  window.localStorage.removeItem(pinnedRouteStorageKey)
+  if (routePolyline.value) {
+    const raw = toRaw(routePolyline.value)
+    raw?.setMap?.(null)
+    routePolyline.value = null
+  }
+  pinnedRouteOverlays.value.forEach((polyline) => {
+    const raw = toRaw(polyline)
+    raw?.setMap?.(null)
+  })
+  pinnedRouteOverlays.value.clear()
+  lastRouteKey.value = null
+}
+
+function hasContingency(transformer: (typeof transformerOptions.value)[number]) {
+  const hasForward =
+    typeof transformer?.contingencyLat === 'number' && typeof transformer?.contingencyLng === 'number'
+  const reverseMatch = transformerOptions.value.find(
+    (item) =>
+      item.contingencySerial &&
+      (item.contingencySerial === transformer.id || item.contingencySerial === transformer.serial)
+  )
+  const hasReverse =
+    reverseMatch && typeof reverseMatch.lat === 'number' && typeof reverseMatch.lng === 'number'
+  return hasForward || hasReverse
+}
+
+function getRouteKey(transformer: (typeof transformerOptions.value)[number]) {
+  const hasForward =
+    typeof transformer?.contingencyLat === 'number' && typeof transformer?.contingencyLng === 'number'
+  const reverseMatch = transformerOptions.value.find(
+    (item) =>
+      item.contingencySerial &&
+      (item.contingencySerial === transformer.id || item.contingencySerial === transformer.serial)
+  )
+  if (hasForward) {
+    return `${transformer.id}:${transformer.contingencyLat},${transformer.contingencyLng}`
+  }
+  if (reverseMatch) {
+    return `${transformer.id}:${reverseMatch.id}`
+  }
+  return null
+}
+
+function findTransformerByRouteKey(key: string) {
+  for (const item of transformerOptions.value) {
+    const itemKey = getRouteKey(item)
+    if (itemKey && itemKey === key) {
+      return item
+    }
+  }
+  return null
+}
+
+function isRoutePinnedFor(transformer: (typeof transformerOptions.value)[number]) {
+  const key = getRouteKey(transformer)
+  return Boolean(key && pinnedRouteKeys.value.has(key))
+}
+
+function toggleRoutePin(transformer: (typeof transformerOptions.value)[number]) {
+  const key = getRouteKey(transformer)
+  if (!key) return
+  if (pinnedRouteKeys.value.has(key)) {
+    pinnedRouteKeys.value.delete(key)
+    const existing = pinnedRouteOverlays.value.get(key)
+    if (existing) {
+      const raw = toRaw(existing)
+      raw?.setMap?.(null)
+      pinnedRouteOverlays.value.delete(key)
+    }
+    window.localStorage.setItem(
+      pinnedRouteStorageKey,
+      JSON.stringify(Array.from(pinnedRouteKeys.value))
+    )
+    return
+  }
+  pinnedRouteKeys.value.add(key)
+  window.localStorage.setItem(
+    pinnedRouteStorageKey,
+    JSON.stringify(Array.from(pinnedRouteKeys.value))
+  )
+  drawContingencyRoute(transformer, { pinned: true })
+}
+
+function drawContingencyRoute(
+  transformer: (typeof transformerOptions.value)[number],
+  options: { pinned?: boolean } = {}
+) {
   const hasForward =
     typeof transformer?.contingencyLat === 'number' && typeof transformer?.contingencyLng === 'number'
   const reverseMatch = transformerOptions.value.find(
@@ -1020,6 +1117,12 @@ function drawContingencyRoute(transformer: (typeof transformerOptions.value)[num
     : `${transformer.id}:${reverseMatch!.id}`
   if (lastRouteKey.value === key && routePolyline.value) return
   lastRouteKey.value = key
+  if (options.pinned && pinnedRouteOverlays.value.has(key)) {
+    const existing = pinnedRouteOverlays.value.get(key)
+    const raw = toRaw(existing)
+    raw?.setMap?.(map)
+    return
+  }
   directionsService.value.route(
     {
       origin: routeOrigin,
@@ -1032,6 +1135,17 @@ function drawContingencyRoute(transformer: (typeof transformerOptions.value)[num
         return
       }
       const path = result.routes[0].overview_path
+      if (options.pinned) {
+        const pinnedPolyline = new googleMaps.Polyline({
+          path,
+          strokeColor: '#1e4e8b',
+          strokeOpacity: 0.9,
+          strokeWeight: 4,
+          map,
+        })
+        pinnedRouteOverlays.value.set(key, pinnedPolyline)
+        return
+      }
       if (routePolyline.value) {
         const raw = toRaw(routePolyline.value)
         raw?.setMap?.(null)
@@ -1478,6 +1592,41 @@ onMounted(async () => {
 })
 
 watch(
+  [mapInstance, googleMapsRef, transformerOptions],
+  ([map, googleMaps, transformers]) => {
+    if (pinnedRouteRestored.value) return
+    if (!map || !googleMaps || !transformers.length) return
+    const stored = window.localStorage.getItem(pinnedRouteStorageKey)
+    if (!stored) {
+      pinnedRouteRestored.value = true
+      return
+    }
+    const keys = (() => {
+      try {
+        return JSON.parse(stored) as string[]
+      } catch {
+        return [stored]
+      }
+    })()
+    const restored: string[] = []
+    keys.forEach((key) => {
+      const transformer = findTransformerByRouteKey(key)
+      if (!transformer) return
+      pinnedRouteKeys.value.add(key)
+      restored.push(key)
+      drawContingencyRoute(transformer, { pinned: true })
+    })
+    if (!restored.length) {
+      window.localStorage.removeItem(pinnedRouteStorageKey)
+    } else {
+      window.localStorage.setItem(pinnedRouteStorageKey, JSON.stringify(restored))
+    }
+    pinnedRouteRestored.value = true
+  },
+  { immediate: true }
+)
+
+watch(
   () => viewerOpen.value,
   (open) => {
     if (open) {
@@ -1691,6 +1840,32 @@ watch(
             <div>
               <strong>{{ displayInfo.name }} - {{ displayInfo.sigla }}</strong>
             </div>
+            <button
+              v-if="displayInfo.transformers?.length === 1 && hasContingency(displayInfo.transformers[0])"
+              type="button"
+              class="map-hover-pin"
+              :class="{ active: isRoutePinnedFor(displayInfo.transformers[0]) }"
+              aria-label="Fixar rota de contingência"
+              :aria-pressed="isRoutePinnedFor(displayInfo.transformers[0])"
+              @click.stop="toggleRoutePin(displayInfo.transformers[0])"
+            >
+              <svg v-if="isRoutePinnedFor(displayInfo.transformers[0])" viewBox="0 0 16 16" aria-hidden="true">
+                <path
+                  fill="currentColor"
+                  d="M9.25 1.75a1.75 1.75 0 1 1 3.5 0V4a2.25 2.25 0 0 1-1.5 2.12V8l1.53 1.53a.75.75 0 0 1-.53 1.28H9.5V14a.5.5 0 0 1-1 0v-3.19H5.75a.75.75 0 0 1-.53-1.28L6.75 8V6.12A2.25 2.25 0 0 1 5.25 4V1.75a1.75 1.75 0 1 1 3.5 0V4a.75.75 0 0 0 .5.71V1.75Z"
+                />
+                <path
+                  fill="currentColor"
+                  d="M2.47 2.47a.75.75 0 0 1 1.06 0l10 10a.75.75 0 1 1-1.06 1.06l-10-10a.75.75 0 0 1 0-1.06Z"
+                />
+              </svg>
+              <svg v-else viewBox="0 0 16 16" aria-hidden="true">
+                <path
+                  fill="currentColor"
+                  d="M9.25 1.75a1.75 1.75 0 1 1 3.5 0V4a2.25 2.25 0 0 1-1.5 2.12V8l1.53 1.53a.75.75 0 0 1-.53 1.28H9.5V14a.5.5 0 0 1-1 0v-3.19H5.75a.75.75 0 0 1-.53-1.28L6.75 8V6.12A2.25 2.25 0 0 1 5.25 4V1.75a1.75 1.75 0 1 1 3.5 0V4a.75.75 0 0 0 .5.71V1.75Z"
+                />
+              </svg>
+            </button>
           </div>
           <template v-if="displayInfo.transformers?.length">
             <div v-if="displayInfo.transformers.length === 1" class="map-hover-table">
@@ -1833,6 +2008,34 @@ watch(
                 {{ selectedTransformer.location }}
               </a>
             </b>
+          </div>
+          <div class="transformer-modal-row" v-if="hasContingency(selectedTransformer)">
+            <span>Fixar Rota de Contingência</span>
+            <button
+              type="button"
+              class="transformer-modal-pin"
+              :class="{ active: isRoutePinnedFor(selectedTransformer) }"
+              aria-label="Fixar rota de contingência"
+              :aria-pressed="isRoutePinnedFor(selectedTransformer)"
+              @click.stop="toggleRoutePin(selectedTransformer)"
+            >
+              <svg v-if="isRoutePinnedFor(selectedTransformer)" viewBox="0 0 16 16" aria-hidden="true">
+                <path
+                  fill="currentColor"
+                  d="M9.25 1.75a1.75 1.75 0 1 1 3.5 0V4a2.25 2.25 0 0 1-1.5 2.12V8l1.53 1.53a.75.75 0 0 1-.53 1.28H9.5V14a.5.5 0 0 1-1 0v-3.19H5.75a.75.75 0 0 1-.53-1.28L6.75 8V6.12A2.25 2.25 0 0 1 5.25 4V1.75a1.75 1.75 0 1 1 3.5 0V4a.75.75 0 0 0 .5.71V1.75Z"
+                />
+                <path
+                  fill="currentColor"
+                  d="M2.47 2.47a.75.75 0 0 1 1.06 0l10 10a.75.75 0 1 1-1.06 1.06l-10-10a.75.75 0 0 1 0-1.06Z"
+                />
+              </svg>
+              <svg v-else viewBox="0 0 16 16" aria-hidden="true">
+                <path
+                  fill="currentColor"
+                  d="M9.25 1.75a1.75 1.75 0 1 1 3.5 0V4a2.25 2.25 0 0 1-1.5 2.12V8l1.53 1.53a.75.75 0 0 1-.53 1.28H9.5V14a.5.5 0 0 1-1 0v-3.19H5.75a.75.75 0 0 1-.53-1.28L6.75 8V6.12A2.25 2.25 0 0 1 5.25 4V1.75a1.75 1.75 0 1 1 3.5 0V4a.75.75 0 0 0 .5.71V1.75Z"
+                />
+              </svg>
+            </button>
           </div>
           <button type="button" class="transformer-modal-action" @click="openViewer3D">
             Ampliar 3D
@@ -2110,6 +2313,37 @@ body.menu-open{
   gap: 12px;
 }
 
+.map-hover-pin{
+  width: 26px;
+  height: 26px;
+  border-radius: 8px;
+  border: 1px solid rgba(15, 23, 42, 0.12);
+  background: transparent;
+  color: #1e4e8b;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  padding: 0;
+  cursor: pointer;
+  transition: transform 150ms ease, background 150ms ease, color 150ms ease;
+}
+
+.map-hover-pin svg{
+  width: 14px;
+  height: 14px;
+}
+
+.map-hover-pin:hover{
+  background: rgba(30, 78, 139, 0.08);
+  transform: translateY(-1px);
+}
+
+.map-hover-pin.active{
+  background: #1e4e8b;
+  border-color: #1e4e8b;
+  color: #ffffff;
+}
+
 .map-hover strong{
   font-size: 13px;
   color: rgba(15, 23, 42, 0.78);
@@ -2370,6 +2604,37 @@ body.menu-open{
   gap: 12px;
   font-size: 13px;
   color: rgba(15, 23, 42, 0.7);
+}
+
+.transformer-modal-pin{
+  width: 26px;
+  height: 26px;
+  border-radius: 8px;
+  border: 1px solid rgba(15, 23, 42, 0.12);
+  background: transparent;
+  color: #1e4e8b;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  padding: 0;
+  cursor: pointer;
+  transition: transform 150ms ease, background 150ms ease, color 150ms ease;
+}
+
+.transformer-modal-pin svg{
+  width: 14px;
+  height: 14px;
+}
+
+.transformer-modal-pin:hover{
+  background: rgba(30, 78, 139, 0.08);
+  transform: translateY(-1px);
+}
+
+.transformer-modal-pin.active{
+  background: #1e4e8b;
+  border-color: #1e4e8b;
+  color: #ffffff;
 }
 
 .transformer-modal-row b{
