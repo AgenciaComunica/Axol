@@ -96,6 +96,7 @@ const pageSize = 20
 const visibleTransformers = computed(() => orderedTransformers.value.slice(0, page.value * pageSize))
 
 const openActionId = ref<string | null>(null)
+const exportMenuOpen = ref(false)
 
 function toggleActions(id: string) {
   openActionId.value = openActionId.value === id ? null : id
@@ -113,10 +114,15 @@ function openReport(transformer: TableTransformer) {
 
 function closeActions() {
   openActionId.value = null
+  exportMenuOpen.value = false
 }
 
 function loadMore() {
   page.value += 1
+}
+
+function toggleExportMenu() {
+  exportMenuOpen.value = !exportMenuOpen.value
 }
 </script>
 
@@ -133,7 +139,19 @@ function loadMore() {
     <section class="table-shell" @mouseleave="closeActions">
       <div class="table-head">
         <span>Listagem completa</span>
-        <span class="count">{{ orderedTransformers.length }} itens</span>
+        <div class="table-head-right">
+          <div class="export-wrap">
+            <button type="button" class="ghost-btn export-btn" @click="toggleExportMenu">
+              Exportar
+            </button>
+            <div v-if="exportMenuOpen" class="export-menu">
+              <button type="button">Transformadores</button>
+              <button type="button">Níveis</button>
+              <button type="button">Níveis Variáveis</button>
+            </div>
+          </div>
+          <span class="count">{{ orderedTransformers.length }} itens</span>
+        </div>
       </div>
 
       <div class="table-scroll">
@@ -248,6 +266,53 @@ function loadMore() {
   font-size: 13px;
   color: rgba(15, 23, 42, 0.7);
   padding: 0 6px 12px;
+}
+
+.table-head-right{
+  display: inline-flex;
+  align-items: center;
+  gap: 12px;
+  position: relative;
+}
+
+.export-wrap{
+  position: relative;
+}
+
+.export-btn{
+  padding: 8px 16px;
+  font-size: 13px;
+  box-shadow: 0 6px 14px rgba(15, 23, 42, 0.08);
+  border: 1px solid rgba(15, 23, 42, 0.12);
+  border-radius: 999px;
+  color: rgba(15, 23, 42, 0.8);
+  cursor: pointer;
+  background: rgba(255,255,255,0.7);
+}
+
+.export-menu{
+  position: absolute;
+  right: 0;
+  top: 36px;
+  background: #fff;
+  border: 1px solid rgba(15, 23, 42, 0.12);
+  border-radius: 12px;
+  box-shadow: 0 16px 32px rgba(15, 23, 42, 0.12);
+  display: grid;
+  gap: 6px;
+  padding: 8px;
+  z-index: 5;
+  min-width: 180px;
+}
+
+.export-menu button{
+  border: none;
+  background: rgba(15, 23, 42, 0.04);
+  padding: 8px 10px;
+  border-radius: 10px;
+  font-size: 12px;
+  cursor: pointer;
+  text-align: left;
 }
 
 .table-scroll{
