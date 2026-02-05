@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { computed, nextTick, onMounted, ref, watch } from 'vue'
+import { computed, nextTick, onMounted, ref, shallowRef, toRaw, watch } from 'vue'
 import { useRouter } from 'vue-router'
 import SideMenu from '@/components/SideMenu.vue'
 import GoogleMapBase from '@/components/GoogleMapBase.vue'
@@ -83,7 +83,7 @@ const googleMapsRef = ref<any | null>(null)
 const mapsReady = ref(false)
 const mapBounds = ref<{ north: number; south: number; east: number; west: number } | null>(null)
 const directionsService = ref<any | null>(null)
-const routePolyline = ref<any | null>(null)
+const routePolyline = shallowRef<any | null>(null)
 const lastRouteKey = ref<string | null>(null)
 const lastMarkerHoverAt = ref(0)
 const hoverLocked = ref(false)
@@ -980,7 +980,8 @@ function clearSearchOverlay() {
 
 function clearRoute() {
   if (routePolyline.value) {
-    routePolyline.value.setMap(null)
+    const raw = toRaw(routePolyline.value)
+    raw?.setMap?.(null)
     routePolyline.value = null
   }
   lastRouteKey.value = null
@@ -1032,7 +1033,8 @@ function drawContingencyRoute(transformer: (typeof transformerOptions.value)[num
       }
       const path = result.routes[0].overview_path
       if (routePolyline.value) {
-        routePolyline.value.setMap(null)
+        const raw = toRaw(routePolyline.value)
+        raw?.setMap?.(null)
       }
       routePolyline.value = new googleMaps.Polyline({
         path,
