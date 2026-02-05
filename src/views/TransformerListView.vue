@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { computed, ref } from 'vue'
+import { computed, onBeforeUnmount, onMounted, ref } from 'vue'
 import { useRouter } from 'vue-router'
 import SideMenu from '@/components/SideMenu.vue'
 import AppHeader from '@/components/AppHeader.vue'
@@ -97,6 +97,7 @@ const visibleTransformers = computed(() => orderedTransformers.value.slice(0, pa
 
 const openActionId = ref<string | null>(null)
 const exportMenuOpen = ref(false)
+const exportWrapRef = ref<HTMLElement | null>(null)
 
 function toggleActions(id: string) {
   openActionId.value = openActionId.value === id ? null : id
@@ -124,6 +125,28 @@ function loadMore() {
 function toggleExportMenu() {
   exportMenuOpen.value = !exportMenuOpen.value
 }
+
+function handleDocumentClick(event: MouseEvent) {
+  const target = event.target as HTMLElement | null
+  if (!target) return
+  const exportWrap = exportWrapRef.value
+  if (exportWrap && !exportWrap.contains(target)) {
+    exportMenuOpen.value = false
+  }
+  const inActionMenu = !!target.closest('.action-menu')
+  const inActionTrigger = !!target.closest('.action-trigger')
+  if (!inActionMenu && !inActionTrigger) {
+    openActionId.value = null
+  }
+}
+
+onMounted(() => {
+  document.addEventListener('click', handleDocumentClick)
+})
+
+onBeforeUnmount(() => {
+  document.removeEventListener('click', handleDocumentClick)
+})
 </script>
 
 <template>
@@ -140,7 +163,7 @@ function toggleExportMenu() {
       <div class="table-head">
         <span>Listagem completa</span>
         <div class="table-head-right">
-          <div class="export-wrap">
+          <div class="export-wrap" ref="exportWrapRef">
             <button type="button" class="ghost-btn export-btn" @click="toggleExportMenu">
               Exportar
             </button>
