@@ -1,5 +1,6 @@
 <script setup lang="ts">
 import { computed, nextTick, onMounted, ref, watch } from 'vue'
+import { useRouter } from 'vue-router'
 import SideMenu from '@/components/SideMenu.vue'
 import GoogleMapBase from '@/components/GoogleMapBase.vue'
 import KpiCard from '@/components/KpiCard.vue'
@@ -8,6 +9,7 @@ import transformersData from '@/assets/transformadores.json'
 type StateSelect = { name: string; sigla: string; value: number; transformers?: any[] }
 
 const store = usePrototypeScopeStore()
+const router = useRouter()
 const hoverInfo = ref<StateSelect | null>(null)
 const pinnedInfo = ref<StateSelect | null>(null)
 const pinnedItem = ref<MapItem | null>(null)
@@ -39,6 +41,12 @@ const transformerOptions = ref<
     regionId?: string
     stateId?: string
     cityId?: string
+    contingencySerial?: string
+    contingencyStatus?: string
+    contingencySubstation?: string
+    contingencyPower?: string
+    contingencyLat?: number
+    contingencyLng?: number
   }[]
 >([])
 const selectedTransformer = ref<
@@ -74,6 +82,11 @@ const mapInstance = ref<any | null>(null)
 const googleMapsRef = ref<any | null>(null)
 const mapsReady = ref(false)
 const mapBounds = ref<{ north: number; south: number; east: number; west: number } | null>(null)
+const directionsService = ref<any | null>(null)
+const routePolyline = ref<any | null>(null)
+const lastRouteKey = ref<string | null>(null)
+const lastMarkerHoverAt = ref(0)
+const hoverLocked = ref(false)
 const searchSuggestions = ref<
   {
     kind: 'transformer' | 'substation' | 'place'
@@ -614,6 +627,8 @@ function handleHover(payload: StateSelect | null) {
 }
 
 function handleMarkerHover(payload: { id: string; clientX: number; clientY: number }) {
+  lastMarkerHoverAt.value = Date.now()
+  hoverLocked.value = true
   if (payload.id.startsWith('substation:')) {
     const name = payload.id.replace('substation:', '')
     const group = substationGroups.value.find((item) => item.name === name)
@@ -628,6 +643,7 @@ function handleMarkerHover(payload: { id: string; clientX: number; clientY: numb
       value: group.transformers.length,
       transformers: group.transformers,
     }
+    clearRoute()
     return
   }
   const transformer = transformerOptions.value.find((item) => item.id === payload.id)
@@ -647,16 +663,49 @@ function handleMarkerHover(payload: { id: string; clientX: number; clientY: numb
   }
   hoverPos.value = { x: payload.clientX - rect.left, y: payload.clientY - rect.top }
   mapShellOffset.value = { x: rect.left, y: rect.top }
+  drawContingencyRoute(transformer)
+}
+
+function handleMapMouseMove() {
+  if (pinnedInfo.value) return
+  if (hoverLocked.value) return
+  const elapsed = Date.now() - lastMarkerHoverAt.value
+  if (elapsed < 120) return
+  if (hoverInfo.value) {
+    hoverInfo.value = null
+    clearRoute()
+  }
+}
+
+function handleMapMouseLeave() {
+  if (pinnedInfo.value) return
+  if (hoverLocked.value) return
+  if (hoverInfo.value) {
+    hoverInfo.value = null
+    clearRoute()
+  }
+}
+
+function handleMapInteraction() {
+  if (pinnedInfo.value) return
+  hoverLocked.value = false
+  if (hoverInfo.value) {
+    hoverInfo.value = null
+    clearRoute()
+  }
 }
 
 function handleMarkerLeave(id: string) {
+  hoverLocked.value = false
   if (id.startsWith('substation:') && hoverInfo.value?.sigla === 'Subestação') {
     hoverInfo.value = null
+    clearRoute()
     return
   }
   const current = hoverInfo.value?.transformers?.[0]?.id
   if (current === id) {
     hoverInfo.value = null
+    clearRoute()
   }
 }
 
@@ -685,6 +734,7 @@ function openTransformerModal(transformer: {
 }) {
   selectedTransformer.value = transformer
   transformerModalOpen.value = true
+  clearRoute()
   pinnedInfo.value = null
   pinnedItem.value = null
   pinnedPos.value = null
@@ -928,6 +978,73 @@ function clearSearchOverlay() {
   clearSearchPolygon()
 }
 
+function clearRoute() {
+  if (routePolyline.value) {
+    routePolyline.value.setMap(null)
+    routePolyline.value = null
+  }
+  lastRouteKey.value = null
+}
+
+function drawContingencyRoute(transformer: (typeof transformerOptions.value)[number]) {
+  const hasForward =
+    typeof transformer?.contingencyLat === 'number' && typeof transformer?.contingencyLng === 'number'
+  const reverseMatch = transformerOptions.value.find(
+    (item) =>
+      item.contingencySerial &&
+      (item.contingencySerial === transformer.id || item.contingencySerial === transformer.serial)
+  )
+  const hasReverse =
+    reverseMatch && typeof reverseMatch.lat === 'number' && typeof reverseMatch.lng === 'number'
+  if (!hasForward && !hasReverse) {
+    clearRoute()
+    return
+  }
+  const map = mapInstance.value
+  const googleMaps = googleMapsRef.value?.maps ?? googleMapsRef.value
+  if (!map || !googleMaps) return
+  if (!directionsService.value) {
+    directionsService.value = new googleMaps.DirectionsService()
+  }
+  if (typeof transformer.lat !== 'number' || typeof transformer.lng !== 'number') {
+    clearRoute()
+    return
+  }
+  const routeOrigin = { lat: transformer.lat as number, lng: transformer.lng as number }
+  const routeDestination = hasForward
+    ? { lat: transformer.contingencyLat as number, lng: transformer.contingencyLng as number }
+    : { lat: reverseMatch!.lat as number, lng: reverseMatch!.lng as number }
+  const key = hasForward
+    ? `${transformer.id}:${transformer.contingencyLat},${transformer.contingencyLng}`
+    : `${transformer.id}:${reverseMatch!.id}`
+  if (lastRouteKey.value === key && routePolyline.value) return
+  lastRouteKey.value = key
+  directionsService.value.route(
+    {
+      origin: routeOrigin,
+      destination: routeDestination,
+      travelMode: googleMaps.TravelMode.DRIVING,
+    },
+    (result: any, status: string) => {
+      if (status !== 'OK' || !result?.routes?.length) {
+        clearRoute()
+        return
+      }
+      const path = result.routes[0].overview_path
+      if (routePolyline.value) {
+        routePolyline.value.setMap(null)
+      }
+      routePolyline.value = new googleMaps.Polyline({
+        path,
+        strokeColor: '#1e4e8b',
+        strokeOpacity: 0.9,
+        strokeWeight: 4,
+        map,
+      })
+    }
+  )
+}
+
 function handleSuggestSelect(suggestion: any) {
   searchSuggestSuppress.value = true
   if (suggestion?.kind === 'transformer' && suggestion.transformer) {
@@ -1078,6 +1195,11 @@ function openViewer3D() {
   transformerModalOpen.value = false
 }
 
+function openTransformerReport() {
+  if (!selectedTransformer.value) return
+  router.push({ name: 'transformer-report', params: { id: selectedTransformer.value.id } })
+}
+
 function closeViewer3D() {
   viewerOpen.value = false
   viewerReady.value = false
@@ -1223,6 +1345,12 @@ onMounted(async () => {
       regionId: 'SE',
       stateId: 'MG',
       cityId: 'BH',
+      contingencySerial: 'MG-2CTMTR01-A05',
+      contingencyStatus: 'Alerta',
+      contingencySubstation: 'SE COUTO MAGALHAES',
+      contingencyPower: '1 MVA',
+      contingencyLat: normalizeCoordinate('-19.8945'),
+      contingencyLng: normalizeCoordinate('-44.1377'),
     },
     {
       id: 'MG-9701-A02',
@@ -1336,6 +1464,12 @@ onMounted(async () => {
       regionId: 'SE',
       stateId: 'SP',
       cityId: 'SPC',
+      contingencySerial: trafo?.CONTINGENCIA?.SERIAL,
+      contingencyStatus: trafo?.CONTINGENCIA?.STATUS,
+      contingencySubstation: trafo?.CONTINGENCIA?.SUBESTACAO,
+      contingencyPower: trafo?.CONTINGENCIA?.POTENCIA ? `${trafo.CONTINGENCIA.POTENCIA} MVA` : undefined,
+      contingencyLat: normalizeCoordinate(trafo?.CONTINGENCIA?.LATITUDE),
+      contingencyLng: normalizeCoordinate(trafo?.CONTINGENCIA?.LONGITUDE),
     }))
   })
   transformerOptions.value = [...baseTransformers, ...jsonTransformers]
@@ -1475,7 +1609,7 @@ watch(
         </div>
       </div>
 
-      <section ref="mapShellRef" class="map-shell">
+      <section ref="mapShellRef" class="map-shell" @mousemove="handleMapMouseMove" @mouseleave="handleMapMouseLeave">
         <div class="kpi-stack">
           <div class="kpi-col">
             <KpiCard
@@ -1529,6 +1663,7 @@ watch(
               @markerClick="handleMapMarkerClick"
               @markerHover="handleMarkerHover"
               @markerLeave="handleMarkerLeave"
+              @interaction="handleMapInteraction"
               @ready="handleMapReady"
             />
           </div>
@@ -1572,6 +1707,13 @@ watch(
               <div class="map-hover-row">
                 <span>Óleo</span>
                 <b>{{ displayInfo.transformers[0].oil }}</b>
+              </div>
+              <div v-if="displayInfo.transformers[0].contingencySerial" class="map-hover-row">
+                <span>Contingência</span>
+                <b>
+                  {{ displayInfo.transformers[0].contingencySerial }} •
+                  {{ displayInfo.transformers[0].contingencyStatus || 'Normal' }}
+                </b>
               </div>
             </div>
             <div v-else class="map-hover-list">
@@ -1692,6 +1834,9 @@ watch(
           </div>
           <button type="button" class="transformer-modal-action" @click="openViewer3D">
             Ampliar 3D
+          </button>
+          <button type="button" class="transformer-modal-action secondary" @click="openTransformerReport">
+            Ver relatório
           </button>
         </div>
       </div>
@@ -2258,6 +2403,11 @@ body.menu-open{
   letter-spacing: 0.06em;
   cursor: pointer;
   margin-top: 8px;
+}
+.transformer-modal-action.secondary{
+  background: #ffffff;
+  color: var(--color-accent, #2a364d);
+  border: 1px solid rgba(30, 78, 139, 0.35);
 }
 
 .transformer-modal-action.mobile-only{

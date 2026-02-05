@@ -82,6 +82,7 @@ const emit = defineEmits<{
   (e: 'markerClick', id: string): void
   (e: 'markerHover', payload: { id: string; clientX: number; clientY: number }): void
   (e: 'markerLeave', id: string): void
+  (e: 'interaction'): void
   (e: 'ready', googleMaps: typeof google): void
 }>()
 
@@ -90,6 +91,8 @@ let map: any = null
 let markers: any[] = []
 let clusterer: MarkerClusterer | null = null
 let idleListener: any = null
+let zoomListener: any = null
+let dragListener: any = null
 let projectionOverlay: any = null
 
 function clearMarkers() {
@@ -246,6 +249,8 @@ async function initMap() {
       emit('update:bounds', { north: ne.lat(), east: ne.lng(), south: sw.lat(), west: sw.lng() })
     }
   })
+  zoomListener = map.addListener('zoom_changed', () => emit('interaction'))
+  dragListener = map.addListener('dragstart', () => emit('interaction'))
   syncMarkers()
 }
 
@@ -255,6 +260,8 @@ onMounted(() => {
 
 onBeforeUnmount(() => {
   if (idleListener) idleListener.remove()
+  if (zoomListener) zoomListener.remove()
+  if (dragListener) dragListener.remove()
   clearMarkers()
   map = null
   projectionOverlay = null

@@ -12,6 +12,11 @@ const router = createRouter({
       name: 'viewer-3d',
       component: () => import('../views/Viewer3DView.vue'),
     },
+    {
+      path: '/relatorio/:id',
+      name: 'transformer-report',
+      component: () => import('../views/TransformerReportView.vue'),
+    },
   ],
 })
 
