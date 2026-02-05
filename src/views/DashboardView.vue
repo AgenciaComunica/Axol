@@ -4,6 +4,7 @@ import SideMenu from '@/components/SideMenu.vue'
 import GoogleMapBase from '@/components/GoogleMapBase.vue'
 import KpiCard from '@/components/KpiCard.vue'
 import { usePrototypeScopeStore, type MapItem } from '@/stores/prototypeScope'
+import transformersData from '@/assets/transformadores.json'
 type StateSelect = { name: string; sigla: string; value: number; transformers?: any[] }
 
 const store = usePrototypeScopeStore()
@@ -96,6 +97,8 @@ const searchSuggestAllowedTypes = new Set([
 ])
 const highlightRect = ref<any | null>(null)
 const transformerQuery = ref('')
+const pendingFocusSubstation = ref<string | null>(null)
+const pendingFocusTransformer = ref<string | null>(null)
 const selectedSubstation = ref<string | null>(null)
 const searchPolygonActive = ref(false)
 const searchPolygonGeojson = ref<any | null>(null)
@@ -697,7 +700,14 @@ function closeTransformerModal() {
 }
 
 function focusOnTransformer(transformer: (typeof transformerOptions.value)[number]) {
-  if (!transformer?.lat || !transformer?.lng || !mapInstance.value || !googleMapsRef.value) return
+  if (!transformer?.lat || !transformer?.lng) return
+  if (!mapInstance.value && (window as any).__gm_map) {
+    mapInstance.value = (window as any).__gm_map
+  }
+  if (!mapInstance.value || !googleMapsRef.value) {
+    pendingFocusTransformer.value = transformer.id
+    return
+  }
   clearSearchPolygon()
   selectedSubstation.value = null
   const map = mapInstance.value
@@ -712,9 +722,16 @@ function focusOnSubstation(name: string) {
   const items = transformerOptions.value.filter(
     (item) => item.substation?.toLowerCase() === name.toLowerCase()
   )
-  if (!items.length || !mapInstance.value || !googleMapsRef.value) return
+  if (!items.length) return false
+  if (!mapInstance.value && (window as any).__gm_map) {
+    mapInstance.value = (window as any).__gm_map
+  }
+  if (!mapInstance.value || !googleMapsRef.value) {
+    pendingFocusSubstation.value = name
+    return false
+  }
   const map = mapInstance.value
-  const googleMaps = googleMapsRef.value
+  const googleMaps = googleMapsRef.value?.maps ?? googleMapsRef.value
   const bounds = new googleMaps.LatLngBounds()
   items.forEach((item) => {
     if (typeof item.lat === 'number' && typeof item.lng === 'number') {
@@ -723,6 +740,20 @@ function focusOnSubstation(name: string) {
   })
   if (!bounds.isEmpty()) {
     map.fitBounds(bounds)
+    window.setTimeout(() => {
+      const currentZoom = map.getZoom?.()
+      if (typeof currentZoom === 'number' && currentZoom > 17) {
+        map.setZoom(17)
+      }
+    }, 0)
+    if (bounds.getNorthEast().equals(bounds.getSouthWest())) {
+      const first = items.find((item) => typeof item.lat === 'number' && typeof item.lng === 'number')
+      if (first) {
+        map.panTo({ lat: first.lat as number, lng: first.lng as number })
+        const nextZoom = Math.max(map.getZoom?.() || 17, 17)
+        map.setZoom(nextZoom)
+      }
+    }
   }
   pinnedInfo.value = {
     name,
@@ -730,6 +761,7 @@ function focusOnSubstation(name: string) {
     value: items.length,
     transformers: items,
   }
+  return true
 }
 
 function handleSearch(override?: unknown) {
@@ -906,7 +938,8 @@ function handleSuggestSelect(suggestion: any) {
   }
   if (suggestion?.kind === 'substation' && suggestion.substation) {
     searchQuery.value = suggestion.label
-    focusOnSubstation(suggestion.substation)
+    const focused = focusOnSubstation(suggestion.substation)
+    if (!focused) handleSearch(suggestion.substation)
     clearSuggestions()
     return
   }
@@ -932,6 +965,19 @@ async function handleMapReady(googleMaps: any) {
   }
   if (searchPolygonGeojson.value) {
     searchPolygons.value = buildPolygonsFromGeojson(searchPolygonGeojson.value)
+  }
+  if (pendingFocusTransformer.value) {
+    const target = transformerOptions.value.find((item) => item.id === pendingFocusTransformer.value)
+    pendingFocusTransformer.value = null
+    if (target) {
+      focusOnTransformer(target)
+      return
+    }
+  }
+  if (pendingFocusSubstation.value) {
+    const target = pendingFocusSubstation.value
+    pendingFocusSubstation.value = null
+    focusOnSubstation(target)
   }
 }
 
@@ -1154,10 +1200,11 @@ onMounted(async () => {
       console.warn('[map] invalid stored location', err)
     }
   }
-  transformerOptions.value = [
+  const rawSubstations = (transformersData as any)?.subestacoes || []
+  const baseTransformers = [
     {
-      id: '9701-A01',
-      serial: 'A01',
+      id: 'MG-9701-A01',
+      serial: 'MG-A01',
       tag: '9701',
       substation: 'SE VISCONDE DO RIO BRANCO',
       status: 'Normal',
@@ -1178,8 +1225,8 @@ onMounted(async () => {
       cityId: 'BH',
     },
     {
-      id: '9701-A02',
-      serial: 'A02',
+      id: 'MG-9701-A02',
+      serial: 'MG-A02',
       tag: '9701',
       substation: 'SE SERENO',
       status: 'Alerta',
@@ -1200,8 +1247,8 @@ onMounted(async () => {
       cityId: 'BH',
     },
     {
-      id: 'A03',
-      serial: 'A03',
+      id: 'MG-A03',
+      serial: 'MG-A03',
       tag: '',
       substation: 'SE CANARANA 138 KV',
       status: 'Ainda nao Analisado',
@@ -1221,8 +1268,8 @@ onMounted(async () => {
       stateId: 'ES',
     },
     {
-      id: '2FTMTR01-A04',
-      serial: 'A04',
+      id: 'MG-2FTMTR01-A04',
+      serial: 'MG-A04',
       tag: '2FTMTR01',
       substation: 'SE FATIMA',
       status: 'Alerta',
@@ -1243,8 +1290,8 @@ onMounted(async () => {
       cityId: 'BH',
     },
     {
-      id: '2CTMTR01-A05',
-      serial: 'A05',
+      id: 'MG-2CTMTR01-A05',
+      serial: 'MG-A05',
       tag: '2CTMTR01',
       substation: 'SE COUTO MAGALHAES',
       status: 'Alerta',
@@ -1265,6 +1312,33 @@ onMounted(async () => {
       cityId: 'BH',
     },
   ]
+  const jsonTransformers = rawSubstations.flatMap((substation: any) => {
+    const name = substation?.NOME || substation?.SUBESTACAO || 'Subestação'
+    const reference = substation?.REFERENCIA ? ` • ${substation.REFERENCIA}` : ''
+    return (substation?.transformadores || []).map((trafo: any) => ({
+      id: trafo?.TAG ? `${trafo.TAG}-${trafo.SERIAL}` : String(trafo?.SERIAL || ''),
+      serial: trafo?.SERIAL,
+      tag: trafo?.TAG,
+      substation: trafo?.SUBESTACAO || name,
+      status: trafo?.ESTADO || 'Normal',
+      analystStatus: trafo?.ESTADO_ANALISTA,
+      analystNote: trafo?.DESCRICAO_ANALISTA,
+      analyst: trafo?.ANALISTA,
+      power: trafo?.POTENCIA ? `${trafo.POTENCIA} MVA` : '-',
+      voltage: trafo?.T_MAIOR ? `${trafo.T_MAIOR} kV` : '-',
+      oil: trafo?.OLEO_FLUIDO || '-',
+      manufacturer: trafo?.FABRICANTE,
+      year: trafo?.ANO_FABRICACAO,
+      commutator: trafo?.COMUTADOR,
+      location: `${name}${reference}`,
+      lat: normalizeCoordinate(trafo?.LATITUDE),
+      lng: normalizeCoordinate(trafo?.LONGITUDE),
+      regionId: 'SE',
+      stateId: 'SP',
+      cityId: 'SPC',
+    }))
+  })
+  transformerOptions.value = [...baseTransformers, ...jsonTransformers]
 })
 
 watch(

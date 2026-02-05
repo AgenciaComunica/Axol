@@ -116,7 +116,13 @@ onMounted(() => {
           >
             {{ column }}
           </div>
-            <div v-for="value in row.hover.values" :key="value" class="row-hover-cell">{{ value }}</div>
+            <div
+              v-for="(value, index) in row.hover.values"
+              :key="`${row.label}-hover-${index}`"
+              class="row-hover-cell"
+            >
+              {{ value }}
+            </div>
           </div>
         </div>
       </div>
