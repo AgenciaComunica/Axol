@@ -184,15 +184,35 @@ const regionByState: Record<string, string> = {
   SC: 'S',
 }
 const statusRank: Record<string, number> = { Normal: 1, Alerta: 2, Critico: 3 }
+const statusLabelMap: Record<keyof typeof statusRank, string> = {
+  Normal: 'Normal',
+  Alerta: 'Alerta',
+  Critico: 'Crítico',
+}
 
 function normalizeStatus(raw?: string) {
   if (!raw) return 'Normal'
-  const value = raw.toLowerCase()
+  const value = raw
+    .toLowerCase()
+    .normalize('NFD')
+    .replace(/[\u0300-\u036f]/g, '')
   if (value.includes('crit')) return 'Critico'
   if (value.includes('alert') || value.includes('manut') || value.includes('reclass')) return 'Alerta'
   if (value.includes('oper')) return 'Normal'
   if (value.includes('ainda')) return 'Alerta'
   return 'Normal'
+}
+
+function formatStatus(raw?: string) {
+  const normalized = normalizeStatus(raw) as keyof typeof statusRank
+  return statusLabelMap[normalized] || 'Normal'
+}
+
+function pickWorstStatus(primary?: string, secondary?: string) {
+  const primaryNorm = normalizeStatus(primary) as keyof typeof statusRank
+  const secondaryNorm = normalizeStatus(secondary) as keyof typeof statusRank
+  const worst = statusRank[secondaryNorm] > statusRank[primaryNorm] ? secondaryNorm : primaryNorm
+  return statusLabelMap[worst]
 }
 
 function parseNumeric(value?: string) {
@@ -418,7 +438,7 @@ const kpiCards = computed(() => {
 
   return [
     {
-      title: 'Transformadores',
+      title: 'Transformadores Status',
       value: total ? `Total: ${total}` : 'Total: 0',
       subtitle: `Pior status: ${worstStatus.value}`,
       chart: statusChart.value,
@@ -1565,8 +1585,8 @@ onMounted(async () => {
       serial: trafo?.SERIAL,
       tag: trafo?.TAG,
       substation: trafo?.SUBESTACAO || name,
-      status: trafo?.ESTADO || 'Normal',
-      analystStatus: trafo?.ESTADO_ANALISTA,
+      status: pickWorstStatus(trafo?.ESTADO, trafo?.ESTADO_ANALISTA),
+      analystStatus: formatStatus(trafo?.ESTADO_ANALISTA),
       analystNote: trafo?.DESCRICAO_ANALISTA,
       analyst: trafo?.ANALISTA,
       power: trafo?.POTENCIA ? `${trafo.POTENCIA} MVA` : '-',
@@ -2080,7 +2100,7 @@ watch(
 .content{
   max-width: 1300px;
   margin: 0 auto;
-  padding: 45px 24px 60px;
+  padding: 32px 24px 60px;
   display: grid;
   gap: 24px;
 }
@@ -2090,7 +2110,7 @@ watch(
   justify-content: center;
   position: relative;
   z-index: 3;
-  margin-top: -8px;
+  margin-top: -20px;
   transition: opacity 0.35s ease, transform 0.35s ease;
 }
 .brand-logo{
@@ -2108,7 +2128,7 @@ watch(
 @media (max-width: 700px){
   .brand-header{
     justify-content: flex-end;
-    margin-top: -40px;
+    margin-top: -20px;
   }
   .brand-logo{
     width: 90px;
@@ -2154,6 +2174,7 @@ body.menu-open{
   justify-content: center;
   position: relative;
   z-index: 6;
+  margin-top: -10px;
 }
 
 .search-bar input{
@@ -2517,9 +2538,9 @@ body.menu-open{
     height: 100%;
   }
   .kpi-stack{
-    top: 250px;
-    left: 250px;
-    right: 250px;
+    top: 220px;
+    left: 140px;
+    right: 140px;
   }
   .map-hover{
     position: fixed;
