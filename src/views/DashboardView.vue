@@ -1870,6 +1870,14 @@ watch(
           <template v-if="displayInfo.transformers?.length">
             <div v-if="displayInfo.transformers.length === 1" class="map-hover-table">
               <div class="map-hover-row">
+                <span>Serial</span>
+                <b>{{ displayInfo.transformers[0].serial || displayInfo.transformers[0].id }}</b>
+              </div>
+              <div class="map-hover-row">
+                <span>Subestação</span>
+                <b>{{ displayInfo.transformers[0].substation || '—' }}</b>
+              </div>
+              <div class="map-hover-row">
                 <span>Status</span>
                 <b>{{ displayInfo.transformers[0].status }}</b>
               </div>
@@ -1880,10 +1888,6 @@ watch(
               <div class="map-hover-row">
                 <span>Nível de tensão</span>
                 <b>{{ displayInfo.transformers[0].voltage }}</b>
-              </div>
-              <div class="map-hover-row">
-                <span>Óleo</span>
-                <b>{{ displayInfo.transformers[0].oil }}</b>
               </div>
               <div v-if="displayInfo.transformers[0].contingencySerial" class="map-hover-row">
                 <span>Contingência</span>
