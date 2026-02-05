@@ -599,6 +599,7 @@ const transformerMarkers = computed(() =>
     .filter((item) => typeof item.lat === 'number' && typeof item.lng === 'number')
     .map((item) => ({
       id: item.id,
+      status: item.status,
       position: { lat: item.lat as number, lng: item.lng as number },
     }))
 )
