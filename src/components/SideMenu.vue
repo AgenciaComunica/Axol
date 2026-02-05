@@ -1,10 +1,17 @@
 <script setup lang="ts">
 import { onBeforeUnmount, ref, watch } from 'vue'
+import { useRouter } from 'vue-router'
 
 const open = ref(false)
+const router = useRouter()
 
 function toggleMenu() {
   open.value = !open.value
+}
+
+function goToTransformers() {
+  router.push({ name: 'transformer-list' })
+  open.value = false
 }
 
 function updateBodyLock(isOpen: boolean) {
@@ -41,7 +48,7 @@ onBeforeUnmount(() => {
       </div>
       <div class="item static">Início</div>
       <div class="item-heading">Óleo Isolante</div>
-      <div class="item static">Transformadores</div>
+      <button class="item" type="button" @click="goToTransformers">Transformadores</button>
       <div class="item static">Transformadores Normais</div>
       <div class="item static">Transformadores em Alerta</div>
       <div class="item static">Transformadores em Críticos</div>
@@ -116,6 +123,8 @@ onBeforeUnmount(() => {
 }
 
 .item{
+  appearance: none;
+  width: 100%;
   text-align: left;
   padding: 10px 12px;
   border-radius: 12px;

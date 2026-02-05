@@ -17,6 +17,11 @@ const router = createRouter({
       name: 'transformer-report',
       component: () => import('../views/TransformerReportView.vue'),
     },
+    {
+      path: '/transformadores',
+      name: 'transformer-list',
+      component: () => import('../views/TransformerListView.vue'),
+    },
   ],
 })
 

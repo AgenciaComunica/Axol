@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import { computed, nextTick, onMounted, ref, shallowRef, toRaw, watch } from 'vue'
-import { useRouter } from 'vue-router'
+import { useRoute, useRouter } from 'vue-router'
 import SideMenu from '@/components/SideMenu.vue'
 import GoogleMapBase from '@/components/GoogleMapBase.vue'
 import KpiCard from '@/components/KpiCard.vue'
@@ -10,6 +10,7 @@ type StateSelect = { name: string; sigla: string; value: number; transformers?: 
 
 const store = usePrototypeScopeStore()
 const router = useRouter()
+const route = useRoute()
 const hoverInfo = ref<StateSelect | null>(null)
 const pinnedInfo = ref<StateSelect | null>(null)
 const pinnedItem = ref<MapItem | null>(null)
@@ -213,6 +214,10 @@ function pickWorstStatus(primary?: string, secondary?: string) {
   const secondaryNorm = normalizeStatus(secondary) as keyof typeof statusRank
   const worst = statusRank[secondaryNorm] > statusRank[primaryNorm] ? secondaryNorm : primaryNorm
   return statusLabelMap[worst]
+}
+
+function getWorstStatusLabel(item: { status?: string; analystStatus?: string }) {
+  return pickWorstStatus(item.status, item.analystStatus)
 }
 
 function parseNumeric(value?: string) {
@@ -1222,8 +1227,8 @@ async function handleMapReady(googleMaps: any) {
   }
   if (pendingFocusTransformer.value) {
     const target = transformerOptions.value.find((item) => item.id === pendingFocusTransformer.value)
-    pendingFocusTransformer.value = null
     if (target) {
+      pendingFocusTransformer.value = null
       focusOnTransformer(target)
       return
     }
@@ -1234,6 +1239,32 @@ async function handleMapReady(googleMaps: any) {
     focusOnSubstation(target)
   }
 }
+
+watch(
+  () => route.query.transformer,
+  (value) => {
+    if (!value) return
+    const id = Array.isArray(value) ? value[0] : String(value)
+    const target = transformerOptions.value.find((item) => item.id === id)
+    if (target) {
+      focusOnTransformer(target)
+    } else {
+      pendingFocusTransformer.value = id
+    }
+  },
+  { immediate: true }
+)
+
+watch(
+  [transformerOptions, mapInstance, googleMapsRef, pendingFocusTransformer],
+  ([options, map, googleMaps, pending]) => {
+    if (!pending || !options.length || !map || !googleMaps) return
+    const target = options.find((item) => item.id === pending)
+    if (!target) return
+    pendingFocusTransformer.value = null
+    focusOnTransformer(target)
+  }
+)
 
 function handleMove(payload: { x: number; y: number }) {
   const rect = mapShellRef.value?.getBoundingClientRect()
