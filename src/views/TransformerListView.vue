@@ -371,19 +371,34 @@ watch(searchQuery, () => {
               Novo
             </button>
             <div v-if="newMenuOpen" class="export-menu">
-              <button type="button">Novo Transformador</button>
-              <button type="button">Importar Transformadores</button>
+              <button type="button">
+                <span class="menu-icon" aria-hidden="true">＋</span>
+                Novo Transformador
+              </button>
+              <button type="button">
+                <span class="menu-icon" aria-hidden="true">⤴</span>
+                Importar Transformadores
+              </button>
             </div>
           </div>
           <div class="export-wrap" ref="exportWrapRef">
             <button type="button" class="ghost-btn export-btn" @click="toggleExportMenu">
-              <span class="btn-icon" aria-hidden="true">⤴</span>
+              <span class="btn-icon" aria-hidden="true">⭳</span>
               Exportar
             </button>
             <div v-if="exportMenuOpen" class="export-menu">
-              <button type="button">Transformadores</button>
-              <button type="button">Níveis</button>
-              <button type="button">Níveis Variáveis</button>
+              <button type="button">
+                <span class="menu-icon" aria-hidden="true">📄</span>
+                Transformadores
+              </button>
+              <button type="button">
+                <span class="menu-icon" aria-hidden="true">📊</span>
+                Níveis
+              </button>
+              <button type="button">
+                <span class="menu-icon" aria-hidden="true">📈</span>
+                Níveis Variáveis
+              </button>
             </div>
           </div>
           <span class="count">{{ orderedTransformers.length }} itens</span>
@@ -692,6 +707,13 @@ watch(searchQuery, () => {
   font-size: 12px;
   cursor: pointer;
   text-align: left;
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.menu-icon{
+  font-size: 12px;
 }
 
 .table-scroll{
