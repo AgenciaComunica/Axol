@@ -1,12 +1,16 @@
 <script setup lang="ts">
-import { computed, nextTick, onMounted, ref, watch } from 'vue'
+import { computed, nextTick, onMounted, ref, shallowRef, toRaw, watch } from 'vue'
+import { useRoute, useRouter } from 'vue-router'
 import SideMenu from '@/components/SideMenu.vue'
 import GoogleMapBase from '@/components/GoogleMapBase.vue'
 import KpiCard from '@/components/KpiCard.vue'
 import { usePrototypeScopeStore, type MapItem } from '@/stores/prototypeScope'
+import transformersData from '@/assets/transformadores.json'
 type StateSelect = { name: string; sigla: string; value: number; transformers?: any[] }
 
 const store = usePrototypeScopeStore()
+const router = useRouter()
+const route = useRoute()
 const hoverInfo = ref<StateSelect | null>(null)
 const pinnedInfo = ref<StateSelect | null>(null)
 const pinnedItem = ref<MapItem | null>(null)
@@ -35,6 +39,15 @@ const transformerOptions = ref<
     location: string
     lat?: number
     lng?: number
+    regionId?: string
+    stateId?: string
+    cityId?: string
+    contingencySerial?: string
+    contingencyStatus?: string
+    contingencySubstation?: string
+    contingencyPower?: string
+    contingencyLat?: number
+    contingencyLng?: number
   }[]
 >([])
 const selectedTransformer = ref<
@@ -69,7 +82,25 @@ const searchInputRef = ref<HTMLInputElement | null>(null)
 const mapInstance = ref<any | null>(null)
 const googleMapsRef = ref<any | null>(null)
 const mapsReady = ref(false)
-const searchSuggestions = ref<any[]>([])
+const mapBounds = ref<{ north: number; south: number; east: number; west: number } | null>(null)
+const directionsService = ref<any | null>(null)
+const routePolyline = shallowRef<any | null>(null)
+const lastRouteKey = ref<string | null>(null)
+const pinnedRouteKeys = ref<Set<string>>(new Set())
+const pinnedRouteStorageKey = 'siaro:pinnedRouteKeys'
+const pinnedRouteRestored = ref(false)
+const pinnedRouteOverlays = ref<Map<string, any>>(new Map())
+const lastMarkerHoverAt = ref(0)
+const hoverLocked = ref(false)
+const searchSuggestions = ref<
+  {
+    kind: 'transformer' | 'substation' | 'place'
+    label: string
+    transformer?: (typeof transformerOptions.value)[number]
+    substation?: string
+    place?: any
+  }[]
+>([])
 const searchSuggestOpen = ref(false)
 const searchSuggestLoading = ref(false)
 const searchSuggestSuppress = ref(false)
@@ -81,18 +112,18 @@ const searchSuggestAllowedTypes = new Set([
   'city',
   'town',
   'municipality',
-  'village',
-  'suburb',
-  'neighbourhood',
-  'quarter',
-  'road',
-  'street',
-  'residential',
-  'living_street',
-  'hamlet',
 ])
 const highlightRect = ref<any | null>(null)
 const transformerQuery = ref('')
+const pendingFocusSubstation = ref<string | null>(null)
+const pendingFocusTransformer = ref<string | null>(null)
+const selectedSubstation = ref<string | null>(null)
+const searchPolygonActive = ref(false)
+const searchPolygonGeojson = ref<any | null>(null)
+const searchPolygons = ref<{ outer: { lat: number; lng: number }[]; holes: { lat: number; lng: number }[][] }[]>([])
+const centralViewportFactor = 0.6
+const substationZoomThreshold = 7
+const logoHideZoom = 5
 
 const stateOptions: MapItem[] = [
   { id: 'AC', name: 'Acre', qty: 1 },
@@ -124,7 +155,431 @@ const stateOptions: MapItem[] = [
   { id: 'TO', name: 'Tocantins', qty: 1 },
 ]
 
-const kpis = computed(() => store.getKpisForScope())
+const regionByState: Record<string, string> = {
+  AC: 'N',
+  AP: 'N',
+  AM: 'N',
+  PA: 'N',
+  RO: 'N',
+  RR: 'N',
+  TO: 'N',
+  AL: 'NE',
+  BA: 'NE',
+  CE: 'NE',
+  MA: 'NE',
+  PB: 'NE',
+  PE: 'NE',
+  PI: 'NE',
+  RN: 'NE',
+  SE: 'NE',
+  DF: 'CO',
+  GO: 'CO',
+  MS: 'CO',
+  MT: 'CO',
+  ES: 'SE',
+  MG: 'SE',
+  RJ: 'SE',
+  SP: 'SE',
+  PR: 'S',
+  RS: 'S',
+  SC: 'S',
+}
+const statusRank: Record<string, number> = { Normal: 1, Alerta: 2, Critico: 3 }
+const statusLabelMap: Record<keyof typeof statusRank, string> = {
+  Normal: 'Normal',
+  Alerta: 'Alerta',
+  Critico: 'Crítico',
+}
+
+function normalizeStatus(raw?: string) {
+  if (!raw) return 'Normal'
+  const value = raw
+    .toLowerCase()
+    .normalize('NFD')
+    .replace(/[\u0300-\u036f]/g, '')
+  if (value.includes('crit')) return 'Critico'
+  if (value.includes('alert') || value.includes('manut') || value.includes('reclass')) return 'Alerta'
+  if (value.includes('oper')) return 'Normal'
+  if (value.includes('ainda')) return 'Alerta'
+  return 'Normal'
+}
+
+function formatStatus(raw?: string) {
+  const normalized = normalizeStatus(raw) as keyof typeof statusRank
+  return statusLabelMap[normalized] || 'Normal'
+}
+
+function pickWorstStatus(primary?: string, secondary?: string) {
+  const primaryNorm = normalizeStatus(primary) as keyof typeof statusRank
+  const secondaryNorm = normalizeStatus(secondary) as keyof typeof statusRank
+  const worst = statusRank[secondaryNorm] > statusRank[primaryNorm] ? secondaryNorm : primaryNorm
+  return statusLabelMap[worst]
+}
+
+function getWorstStatusLabel(item: { status?: string; analystStatus?: string }) {
+  return pickWorstStatus(item.status, item.analystStatus)
+}
+
+function parseNumeric(value?: string) {
+  if (!value) return 0
+  const cleaned = value.replace(/[^\d.,-]/g, '').replace(',', '.')
+  const parsed = Number(cleaned)
+  return Number.isFinite(parsed) ? parsed : 0
+}
+
+function clearSearchPolygon() {
+  searchPolygonActive.value = false
+  searchPolygonGeojson.value = null
+  searchPolygons.value = []
+}
+
+function buildPolygonsFromGeojson(geojson: any) {
+  if (!geojson) return []
+  const polygons: { outer: { lat: number; lng: number }[]; holes: { lat: number; lng: number }[][] }[] = []
+  const normalizeRing = (ring: any) =>
+    ring.map(([lng, lat]: [number, number]) => ({ lat: Number(lat), lng: Number(lng) }))
+  const buildPolygon = (coords: any) => {
+    if (!Array.isArray(coords) || !coords.length) return
+    const rings = coords.map((ring: any) => normalizeRing(ring))
+    const [outer, ...holes] = rings
+    if (outer?.length) polygons.push({ outer, holes })
+  }
+  if (geojson.type === 'Polygon') {
+    buildPolygon(geojson.coordinates)
+  } else if (geojson.type === 'MultiPolygon') {
+    geojson.coordinates.forEach((poly: any) => buildPolygon(poly))
+  }
+  return polygons
+}
+
+function pointInRing(point: { lat: number; lng: number }, ring: { lat: number; lng: number }[]) {
+  let inside = false
+  for (let i = 0, j = ring.length - 1; i < ring.length; j = i++) {
+    const xi = ring[i].lng
+    const yi = ring[i].lat
+    const xj = ring[j].lng
+    const yj = ring[j].lat
+    const intersect =
+      yi > point.lat !== yj > point.lat &&
+      point.lng < ((xj - xi) * (point.lat - yi)) / (yj - yi + Number.EPSILON) + xi
+    if (intersect) inside = !inside
+  }
+  return inside
+}
+
+function isPointInsideSearchPolygon(lat: number, lng: number) {
+  if (!searchPolygonActive.value || !searchPolygons.value.length) return false
+  const point = { lat, lng }
+  return searchPolygons.value.some((polygon) => {
+    if (!pointInRing(point, polygon.outer)) return false
+    if (!polygon.holes?.length) return true
+    return !polygon.holes.some((hole) => pointInRing(point, hole))
+  })
+}
+
+function getCentralBounds(bounds: { north: number; south: number; east: number; west: number }, factor: number) {
+  const centerLat = (bounds.north + bounds.south) / 2
+  const centerLng = (bounds.east + bounds.west) / 2
+  const latSpan = (bounds.north - bounds.south) * factor
+  const lngSpan = (bounds.east - bounds.west) * factor
+  return {
+    north: centerLat + latSpan / 2,
+    south: centerLat - latSpan / 2,
+    east: centerLng + lngSpan / 2,
+    west: centerLng - lngSpan / 2,
+  }
+}
+
+const scopeTransformers = computed(() => {
+  const items = transformerOptions.value
+  if (selectedTransformer.value?.id) {
+    const match = items.find((item) => item.id === selectedTransformer.value?.id)
+    return match ? [match] : items
+  }
+  if (selectedSubstation.value) {
+    return items.filter((item) => item.substation?.toLowerCase() === selectedSubstation.value?.toLowerCase())
+  }
+  if (searchPolygonActive.value) {
+    return items.filter(
+      (item) =>
+        typeof item.lat === 'number' &&
+        typeof item.lng === 'number' &&
+        isPointInsideSearchPolygon(item.lat, item.lng)
+    )
+  }
+  if (store.level === 'regiao') {
+    const regionId = store.current.id
+    return items.filter((item) => item.regionId === regionId)
+  }
+  if (store.level === 'estado') {
+    const stateId = stateNode.value?.id
+    return items.filter((item) => item.stateId === stateId)
+  }
+  if (store.level === 'cidade') {
+    const cityId = cityNode.value?.id
+    return items.filter((item) => item.cityId === cityId)
+  }
+  if (!mapBounds.value || mapZoom.value <= 4) {
+    return items
+  }
+  const central = getCentralBounds(mapBounds.value, centralViewportFactor)
+  return items.filter(
+    (item) =>
+      typeof item.lat === 'number' &&
+      typeof item.lng === 'number' &&
+      item.lat <= central.north &&
+      item.lat >= central.south &&
+      item.lng <= central.east &&
+      item.lng >= central.west
+  )
+})
+
+const statusCounts = computed(() => {
+  const counts = { Normal: 0, Alerta: 0, Critico: 0 }
+  scopeTransformers.value.forEach((item) => {
+    const normalized = normalizeStatus(item.status)
+    counts[normalized as keyof typeof counts] += 1
+  })
+  return counts
+})
+
+const statusPercents = computed(() => {
+  const total = scopeTransformers.value.length || 1
+  return {
+    Normal: (statusCounts.value.Normal / total) * 100,
+    Alerta: (statusCounts.value.Alerta / total) * 100,
+    Critico: (statusCounts.value.Critico / total) * 100,
+  }
+})
+
+const worstStatus = computed(() => {
+  const entries = Object.entries(statusCounts.value)
+  if (!entries.length) return 'Normal'
+  return entries.reduce((acc, [key, value]) => {
+    if (value === 0) return acc
+    return statusRank[key] > statusRank[acc] ? (key as keyof typeof statusRank) : acc
+  }, 'Normal' as keyof typeof statusRank)
+})
+const worstStatusTone = computed(() => {
+  switch (worstStatus.value) {
+    case 'Critico':
+      return 'danger'
+    case 'Alerta':
+      return 'warning'
+    default:
+      return 'success'
+  }
+})
+
+const statusChart = computed(() => ({
+  segments: [
+    { label: 'Normal', value: statusPercents.value.Normal, color: 'var(--status-normal, #2f7f6c)' },
+    { label: 'Alerta', value: statusPercents.value.Alerta, color: 'var(--status-alert, #f7cf29)' },
+    { label: 'Crítico', value: statusPercents.value.Critico, color: 'var(--status-critical, #c85c5c)' },
+  ],
+}))
+
+const kpiCards = computed(() => {
+  const total = scopeTransformers.value.length
+  const powerValues = scopeTransformers.value.map((item) => parseNumeric(item.power)).filter((v) => v > 0)
+  const voltageValues = scopeTransformers.value.map((item) => parseNumeric(item.voltage)).filter((v) => v > 0)
+  const powerAvg = powerValues.length
+    ? powerValues.reduce((acc, v) => acc + v, 0) / powerValues.length
+    : 0
+  const voltageAvg = voltageValues.length
+    ? voltageValues.reduce((acc, v) => acc + v, 0) / voltageValues.length
+    : 0
+
+  const powerBands = { low: 0, mid: 0, high: 0 }
+  powerValues.forEach((value) => {
+    if (value <= 30) powerBands.low += 1
+    else if (value < 50) powerBands.mid += 1
+    else powerBands.high += 1
+  })
+
+  const powerStatusBands = {
+    high: { Normal: 0, Alerta: 0, Critico: 0 },
+    mid: { Normal: 0, Alerta: 0, Critico: 0 },
+    low: { Normal: 0, Alerta: 0, Critico: 0 },
+  }
+  scopeTransformers.value.forEach((item) => {
+    const power = parseNumeric(item.power)
+    const status = normalizeStatus(item.status) as keyof typeof statusRank
+    if (!power) return
+    if (power >= 50) powerStatusBands.high[status] += 1
+    else if (power > 30) powerStatusBands.mid[status] += 1
+    else powerStatusBands.low[status] += 1
+  })
+
+  const voltageBands = { low: 0, mid: 0, high: 0 }
+  voltageValues.forEach((value) => {
+    if (value <= 69) voltageBands.low += 1
+    else if (value < 230) voltageBands.mid += 1
+    else voltageBands.high += 1
+  })
+  const voltageStatusBands = {
+    high: { Normal: 0, Alerta: 0, Critico: 0 },
+    mid: { Normal: 0, Alerta: 0, Critico: 0 },
+    low: { Normal: 0, Alerta: 0, Critico: 0 },
+  }
+  scopeTransformers.value.forEach((item) => {
+    const voltage = parseNumeric(item.voltage)
+    const status = normalizeStatus(item.status) as keyof typeof statusRank
+    if (!voltage) return
+    if (voltage >= 230) voltageStatusBands.high[status] += 1
+    else if (voltage > 69) voltageStatusBands.mid[status] += 1
+    else voltageStatusBands.low[status] += 1
+  })
+
+  const oilBands = { adequado: 0, reclass: 0, regenera: 0 }
+  scopeTransformers.value.forEach((item) => {
+    const oil = item.oil?.toLowerCase() || ''
+    if (oil.includes('adequ')) oilBands.adequado += 1
+    else if (oil.includes('reclass')) oilBands.reclass += 1
+    else if (oil.includes('regener')) oilBands.regenera += 1
+  })
+
+  const pct = (count: number) => (total ? Math.round((count / total) * 100) : 0)
+
+  return [
+    {
+      title: 'Transformadores Status',
+      value: total ? `Total: ${total}` : 'Total: 0',
+      subtitle: `Pior status: ${worstStatus.value}`,
+      chart: statusChart.value,
+      rows: [
+        { label: 'Total Normal', value: `${statusCounts.value.Normal}`, tone: 'success' },
+        { label: 'Total Alerta', value: `${statusCounts.value.Alerta}`, tone: 'warning' },
+        { label: 'Total Crítico', value: `${statusCounts.value.Critico}`, tone: 'danger' },
+      ],
+    },
+    {
+      title: 'Potência',
+      value: powerAvg ? `${powerAvg.toFixed(1)} MVA` : '-',
+      subtitle: 'Média do escopo',
+      rows: [
+        {
+          label: '≥ 50 MVA',
+          value: '',
+          tags: [
+            { tone: 'success', value: `${powerStatusBands.high.Normal}` },
+            { tone: 'warning', value: `${powerStatusBands.high.Alerta}` },
+            { tone: 'danger', value: `${powerStatusBands.high.Critico}` },
+          ],
+          hover: {
+            columns: ['Normal', 'Alerta', 'Crítico'],
+            tones: ['success', 'warning', 'danger'],
+            values: [
+              `${powerStatusBands.high.Normal}`,
+              `${powerStatusBands.high.Alerta}`,
+              `${powerStatusBands.high.Critico}`,
+            ],
+          },
+        },
+        {
+          label: '30-50 MVA',
+          value: '',
+          tags: [
+            { tone: 'success', value: `${powerStatusBands.mid.Normal}` },
+            { tone: 'warning', value: `${powerStatusBands.mid.Alerta}` },
+            { tone: 'danger', value: `${powerStatusBands.mid.Critico}` },
+          ],
+          hover: {
+            columns: ['Normal', 'Alerta', 'Crítico'],
+            tones: ['success', 'warning', 'danger'],
+            values: [`${powerStatusBands.mid.Normal}`, `${powerStatusBands.mid.Alerta}`, `${powerStatusBands.mid.Critico}`],
+          },
+        },
+        {
+          label: '≤ 30 MVA',
+          value: '',
+          tags: [
+            { tone: 'success', value: `${powerStatusBands.low.Normal}` },
+            { tone: 'warning', value: `${powerStatusBands.low.Alerta}` },
+            { tone: 'danger', value: `${powerStatusBands.low.Critico}` },
+          ],
+          hover: {
+            columns: ['Normal', 'Alerta', 'Crítico'],
+            tones: ['success', 'warning', 'danger'],
+            values: [`${powerStatusBands.low.Normal}`, `${powerStatusBands.low.Alerta}`, `${powerStatusBands.low.Critico}`],
+          },
+        },
+      ],
+    },
+    {
+      title: 'Classe de Tensão',
+      value: voltageAvg ? `${voltageAvg.toFixed(0)} kV` : '-',
+      subtitle: 'Média do escopo',
+      rows: [
+        {
+          label: '≥ 230 kV',
+          value: '',
+          tags: [
+            { tone: 'success', value: `${voltageStatusBands.high.Normal}` },
+            { tone: 'warning', value: `${voltageStatusBands.high.Alerta}` },
+            { tone: 'danger', value: `${voltageStatusBands.high.Critico}` },
+          ],
+          hover: {
+            columns: ['Normal', 'Alerta', 'Crítico'],
+            tones: ['success', 'warning', 'danger'],
+            values: [
+              `${voltageStatusBands.high.Normal}`,
+              `${voltageStatusBands.high.Alerta}`,
+              `${voltageStatusBands.high.Critico}`,
+            ],
+          },
+        },
+        {
+          label: '69 kV < u < 230',
+          value: '',
+          tags: [
+            { tone: 'success', value: `${voltageStatusBands.mid.Normal}` },
+            { tone: 'warning', value: `${voltageStatusBands.mid.Alerta}` },
+            { tone: 'danger', value: `${voltageStatusBands.mid.Critico}` },
+          ],
+          hover: {
+            columns: ['Normal', 'Alerta', 'Crítico'],
+            tones: ['success', 'warning', 'danger'],
+            values: [
+              `${voltageStatusBands.mid.Normal}`,
+              `${voltageStatusBands.mid.Alerta}`,
+              `${voltageStatusBands.mid.Critico}`,
+            ],
+          },
+        },
+        {
+          label: '≤ 69 kV',
+          value: '',
+          tags: [
+            { tone: 'success', value: `${voltageStatusBands.low.Normal}` },
+            { tone: 'warning', value: `${voltageStatusBands.low.Alerta}` },
+            { tone: 'danger', value: `${voltageStatusBands.low.Critico}` },
+          ],
+          hover: {
+            columns: ['Normal', 'Alerta', 'Crítico'],
+            tones: ['success', 'warning', 'danger'],
+            values: [
+              `${voltageStatusBands.low.Normal}`,
+              `${voltageStatusBands.low.Alerta}`,
+              `${voltageStatusBands.low.Critico}`,
+            ],
+          },
+        },
+      ],
+    },
+    {
+      title: 'Tratamento de Óleo',
+      value: '36.240 L',
+      subtitle: 'Volume total (litros)',
+      rows: [
+        { label: 'Volume Normal', value: '33.405 L', tone: 'success' },
+        { label: 'Regeneração', value: '0 L', tone: 'info' },
+        { label: 'Recondicionamento', value: '0 L', tone: 'warning' },
+        { label: 'Volume em Alarme', value: '0 L', tone: 'danger' },
+      ],
+    },
+  ]
+})
 const stateNode = computed(() => store.path.find((node) => node.level === 'estado') || null)
 const cityNode = computed(() => store.path.find((node) => node.level === 'cidade') || null)
 const filteredTransformers = computed(() => {
@@ -141,14 +596,49 @@ const mapFocusByState: Record<string, { center: { lat: number; lng: number }; zo
 const mapFocusByCity: Record<string, { center: { lat: number; lng: number }; zoom: number }> = {
   BH: { center: { lat: -19.912998, lng: -43.940933 }, zoom: 11 },
 }
+const substationGroups = computed(() => {
+  const groups: Record<string, { name: string; transformers: typeof transformerOptions.value; lat: number; lng: number }> =
+    {}
+  transformerOptions.value.forEach((item) => {
+    if (!item.substation || typeof item.lat !== 'number' || typeof item.lng !== 'number') return
+    if (!groups[item.substation]) {
+      groups[item.substation] = { name: item.substation, transformers: [], lat: 0, lng: 0 }
+    }
+    groups[item.substation].transformers.push(item)
+    groups[item.substation].lat += item.lat
+    groups[item.substation].lng += item.lng
+  })
+  return Object.values(groups).map((group) => {
+    const count = group.transformers.length || 1
+    return {
+      name: group.name,
+      transformers: group.transformers,
+      lat: group.lat / count,
+      lng: group.lng / count,
+    }
+  })
+})
+
 const transformerMarkers = computed(() =>
   transformerOptions.value
     .filter((item) => typeof item.lat === 'number' && typeof item.lng === 'number')
     .map((item) => ({
       id: item.id,
+      status: item.status,
       position: { lat: item.lat as number, lng: item.lng as number },
     }))
 )
+
+const substationMarkers = computed(() =>
+  substationGroups.value
+    .filter((group) => Number.isFinite(group.lat) && Number.isFinite(group.lng))
+    .map((group) => ({
+      id: `substation:${group.name}`,
+      position: { lat: group.lat, lng: group.lng },
+    }))
+)
+
+const activeMapMarkers = computed(() => transformerMarkers.value)
 
 function handleSelect(item: MapItem) {
   pinnedInfo.value = { name: item.name, sigla: item.sigla || '', value: item.qty }
@@ -167,6 +657,25 @@ function handleHover(payload: StateSelect | null) {
 }
 
 function handleMarkerHover(payload: { id: string; clientX: number; clientY: number }) {
+  lastMarkerHoverAt.value = Date.now()
+  hoverLocked.value = true
+  if (payload.id.startsWith('substation:')) {
+    const name = payload.id.replace('substation:', '')
+    const group = substationGroups.value.find((item) => item.name === name)
+    if (!group) return
+    const rect = mapShellRef.value?.getBoundingClientRect()
+    if (!rect) return
+    hoverPos.value = { x: payload.clientX - rect.left, y: payload.clientY - rect.top }
+    mapShellOffset.value = { x: rect.left, y: rect.top }
+    hoverInfo.value = {
+      name: group.name,
+      sigla: 'Subestação',
+      value: group.transformers.length,
+      transformers: group.transformers,
+    }
+    clearRoute()
+    return
+  }
   const transformer = transformerOptions.value.find((item) => item.id === payload.id)
   if (!transformer) return
   const rect = mapShellRef.value?.getBoundingClientRect()
@@ -184,12 +693,49 @@ function handleMarkerHover(payload: { id: string; clientX: number; clientY: numb
   }
   hoverPos.value = { x: payload.clientX - rect.left, y: payload.clientY - rect.top }
   mapShellOffset.value = { x: rect.left, y: rect.top }
+  drawContingencyRoute(transformer)
+}
+
+function handleMapMouseMove() {
+  if (pinnedInfo.value) return
+  if (hoverLocked.value) return
+  const elapsed = Date.now() - lastMarkerHoverAt.value
+  if (elapsed < 120) return
+  if (hoverInfo.value) {
+    hoverInfo.value = null
+    clearRoute()
+  }
+}
+
+function handleMapMouseLeave() {
+  if (pinnedInfo.value) return
+  if (hoverLocked.value) return
+  if (hoverInfo.value) {
+    hoverInfo.value = null
+    clearRoute()
+  }
+}
+
+function handleMapInteraction() {
+  if (pinnedInfo.value) return
+  hoverLocked.value = false
+  if (hoverInfo.value) {
+    hoverInfo.value = null
+    clearRoute()
+  }
 }
 
 function handleMarkerLeave(id: string) {
+  hoverLocked.value = false
+  if (id.startsWith('substation:') && hoverInfo.value?.sigla === 'Subestação') {
+    hoverInfo.value = null
+    clearRoute()
+    return
+  }
   const current = hoverInfo.value?.transformers?.[0]?.id
   if (current === id) {
     hoverInfo.value = null
+    clearRoute()
   }
 }
 
@@ -218,6 +764,7 @@ function openTransformerModal(transformer: {
 }) {
   selectedTransformer.value = transformer
   transformerModalOpen.value = true
+  clearRoute()
   pinnedInfo.value = null
   pinnedItem.value = null
   pinnedPos.value = null
@@ -230,6 +777,74 @@ function transformerMapsLink(address: string) {
 function closeTransformerModal() {
   transformerModalOpen.value = false
   selectedTransformer.value = null
+  clearRoute()
+}
+
+function focusOnTransformer(transformer: (typeof transformerOptions.value)[number]) {
+  if (!transformer?.lat || !transformer?.lng) return
+  if (!mapInstance.value && (window as any).__gm_map) {
+    mapInstance.value = (window as any).__gm_map
+  }
+  if (!mapInstance.value || !googleMapsRef.value) {
+    pendingFocusTransformer.value = transformer.id
+    return
+  }
+  clearRoute()
+  clearSearchPolygon()
+  selectedSubstation.value = null
+  const map = mapInstance.value
+  map.panTo({ lat: transformer.lat, lng: transformer.lng })
+  map.setZoom(12)
+  openTransformerModal(transformer)
+}
+
+function focusOnSubstation(name: string) {
+  clearRoute()
+  clearSearchPolygon()
+  selectedSubstation.value = name
+  const items = transformerOptions.value.filter(
+    (item) => item.substation?.toLowerCase() === name.toLowerCase()
+  )
+  if (!items.length) return false
+  if (!mapInstance.value && (window as any).__gm_map) {
+    mapInstance.value = (window as any).__gm_map
+  }
+  if (!mapInstance.value || !googleMapsRef.value) {
+    pendingFocusSubstation.value = name
+    return false
+  }
+  const map = mapInstance.value
+  const googleMaps = googleMapsRef.value?.maps ?? googleMapsRef.value
+  const bounds = new googleMaps.LatLngBounds()
+  items.forEach((item) => {
+    if (typeof item.lat === 'number' && typeof item.lng === 'number') {
+      bounds.extend(new googleMaps.LatLng(item.lat, item.lng))
+    }
+  })
+  if (!bounds.isEmpty()) {
+    map.fitBounds(bounds)
+    window.setTimeout(() => {
+      const currentZoom = map.getZoom?.()
+      if (typeof currentZoom === 'number' && currentZoom > 17) {
+        map.setZoom(17)
+      }
+    }, 0)
+    if (bounds.getNorthEast().equals(bounds.getSouthWest())) {
+      const first = items.find((item) => typeof item.lat === 'number' && typeof item.lng === 'number')
+      if (first) {
+        map.panTo({ lat: first.lat as number, lng: first.lng as number })
+        const nextZoom = Math.max(map.getZoom?.() || 17, 17)
+        map.setZoom(nextZoom)
+      }
+    }
+  }
+  pinnedInfo.value = {
+    name,
+    sigla: 'Subestação',
+    value: items.length,
+    transformers: items,
+  }
+  return true
 }
 
 function handleSearch(override?: unknown) {
@@ -238,6 +853,7 @@ function handleSearch(override?: unknown) {
   clearSuggestions()
   const rawQuery = String(overrideQuery ?? searchQuery.value ?? '').trim()
   const normalized = rawQuery.toLowerCase()
+  selectedSubstation.value = null
   const queryParts = rawQuery.split(',').map((part) => part.trim()).filter(Boolean)
   const filteredParts = queryParts.filter(
     (part) => !/regi[aã]o/i.test(part) && !/brasil/i.test(part)
@@ -255,6 +871,27 @@ function handleSearch(override?: unknown) {
   const isBrazilQuery =
     normalizedQuery === 'brasil' || normalizedQuery === 'brazil' || normalizedQuery === 'br'
   if (!query) return
+
+  const localTransformers = transformerOptions.value.filter((item) => {
+    const haystack = `${item.id} ${item.serial ?? ''} ${item.tag ?? ''} ${item.substation ?? ''}`.toLowerCase()
+    return haystack.includes(query.toLowerCase())
+  })
+  if (localTransformers.length === 1) {
+    focusOnTransformer(localTransformers[0])
+    return
+  }
+  const matchingSubstations = Array.from(
+    new Set(
+      transformerOptions.value
+        .map((item) => item.substation)
+        .filter((name): name is string => Boolean(name))
+        .filter((name) => name.toLowerCase().includes(query.toLowerCase()))
+    )
+  )
+  if (matchingSubstations.length === 1) {
+    focusOnSubstation(matchingSubstations[0])
+    return
+  }
   let googleMaps = googleMapsRef.value || (window as any).google?.maps
   if (!googleMaps?.Geocoder && (window as any).google?.maps?.Geocoder) {
     googleMaps = (window as any).google.maps
@@ -288,23 +925,10 @@ function handleSearch(override?: unknown) {
       searchLoading.value = false
       if (!Array.isArray(results) || results.length === 0) {
         searchError.value = 'Endereço não encontrado.'
+        clearSearchPolygon()
         return
       }
-      const allowedTypes = new Set([
-        'state',
-        'city',
-        'town',
-        'municipality',
-        'village',
-        'suburb',
-        'neighbourhood',
-        'quarter',
-        'road',
-        'street',
-        'residential',
-        'living_street',
-        'hamlet',
-      ])
+      const allowedTypes = new Set(['state', 'city', 'town', 'municipality'])
       if (isBrazilQuery) {
         allowedTypes.add('country')
       }
@@ -315,6 +939,10 @@ function handleSearch(override?: unknown) {
       const map = mapInstance.value
       map.data.forEach((feature: any) => map.data.remove(feature))
       if (result?.geojson) {
+        closeTransformerModal()
+        searchPolygonActive.value = true
+        searchPolygonGeojson.value = result.geojson
+        searchPolygons.value = buildPolygonsFromGeojson(result.geojson)
         const geojson = {
           type: 'FeatureCollection',
           features: [{ type: 'Feature', properties: {}, geometry: result.geojson }],
@@ -341,6 +969,7 @@ function handleSearch(override?: unknown) {
         }
         return
       }
+      clearSearchPolygon()
 
       const bbox = result?.boundingbox
       if (Array.isArray(bbox) && bbox.length === 4) {
@@ -359,6 +988,7 @@ function handleSearch(override?: unknown) {
       searchLoading.value = false
       console.warn('[search] nominatim failed', err)
       searchError.value = 'Erro ao consultar limites.'
+      clearSearchPolygon()
     })
 }
 
@@ -373,14 +1003,211 @@ function clearSuggestions() {
   searchSuggestOpen.value = false
 }
 
+function clearSearchOverlay() {
+  const map = mapInstance.value
+  if (map?.data) {
+    map.data.forEach((feature: any) => map.data.remove(feature))
+  }
+  clearRoute()
+  clearSearchPolygon()
+}
+
+function clearRoute() {
+  if (routePolyline.value) {
+    const raw = toRaw(routePolyline.value)
+    raw?.setMap?.(null)
+    routePolyline.value = null
+  }
+  lastRouteKey.value = null
+}
+
+function clearRouteForce() {
+  pinnedRouteKeys.value.clear()
+  window.localStorage.removeItem(pinnedRouteStorageKey)
+  if (routePolyline.value) {
+    const raw = toRaw(routePolyline.value)
+    raw?.setMap?.(null)
+    routePolyline.value = null
+  }
+  pinnedRouteOverlays.value.forEach((polyline) => {
+    const raw = toRaw(polyline)
+    raw?.setMap?.(null)
+  })
+  pinnedRouteOverlays.value.clear()
+  lastRouteKey.value = null
+}
+
+function hasContingency(transformer: (typeof transformerOptions.value)[number]) {
+  const hasForward =
+    typeof transformer?.contingencyLat === 'number' && typeof transformer?.contingencyLng === 'number'
+  const reverseMatch = transformerOptions.value.find(
+    (item) =>
+      item.contingencySerial &&
+      (item.contingencySerial === transformer.id || item.contingencySerial === transformer.serial)
+  )
+  const hasReverse =
+    reverseMatch && typeof reverseMatch.lat === 'number' && typeof reverseMatch.lng === 'number'
+  return hasForward || hasReverse
+}
+
+function getRouteKey(transformer: (typeof transformerOptions.value)[number]) {
+  const hasForward =
+    typeof transformer?.contingencyLat === 'number' && typeof transformer?.contingencyLng === 'number'
+  const reverseMatch = transformerOptions.value.find(
+    (item) =>
+      item.contingencySerial &&
+      (item.contingencySerial === transformer.id || item.contingencySerial === transformer.serial)
+  )
+  if (hasForward) {
+    return `${transformer.id}:${transformer.contingencyLat},${transformer.contingencyLng}`
+  }
+  if (reverseMatch) {
+    return `${transformer.id}:${reverseMatch.id}`
+  }
+  return null
+}
+
+function findTransformerByRouteKey(key: string) {
+  for (const item of transformerOptions.value) {
+    const itemKey = getRouteKey(item)
+    if (itemKey && itemKey === key) {
+      return item
+    }
+  }
+  return null
+}
+
+function isRoutePinnedFor(transformer: (typeof transformerOptions.value)[number]) {
+  const key = getRouteKey(transformer)
+  return Boolean(key && pinnedRouteKeys.value.has(key))
+}
+
+function toggleRoutePin(transformer: (typeof transformerOptions.value)[number]) {
+  const key = getRouteKey(transformer)
+  if (!key) return
+  if (pinnedRouteKeys.value.has(key)) {
+    pinnedRouteKeys.value.delete(key)
+    const existing = pinnedRouteOverlays.value.get(key)
+    if (existing) {
+      const raw = toRaw(existing)
+      raw?.setMap?.(null)
+      pinnedRouteOverlays.value.delete(key)
+    }
+    window.localStorage.setItem(
+      pinnedRouteStorageKey,
+      JSON.stringify(Array.from(pinnedRouteKeys.value))
+    )
+    return
+  }
+  pinnedRouteKeys.value.add(key)
+  window.localStorage.setItem(
+    pinnedRouteStorageKey,
+    JSON.stringify(Array.from(pinnedRouteKeys.value))
+  )
+  drawContingencyRoute(transformer, { pinned: true })
+}
+
+function drawContingencyRoute(
+  transformer: (typeof transformerOptions.value)[number],
+  options: { pinned?: boolean } = {}
+) {
+  const hasForward =
+    typeof transformer?.contingencyLat === 'number' && typeof transformer?.contingencyLng === 'number'
+  const reverseMatch = transformerOptions.value.find(
+    (item) =>
+      item.contingencySerial &&
+      (item.contingencySerial === transformer.id || item.contingencySerial === transformer.serial)
+  )
+  const hasReverse =
+    reverseMatch && typeof reverseMatch.lat === 'number' && typeof reverseMatch.lng === 'number'
+  if (!hasForward && !hasReverse) {
+    clearRoute()
+    return
+  }
+  const map = mapInstance.value
+  const googleMaps = googleMapsRef.value?.maps ?? googleMapsRef.value
+  if (!map || !googleMaps) return
+  if (!directionsService.value) {
+    directionsService.value = new googleMaps.DirectionsService()
+  }
+  if (typeof transformer.lat !== 'number' || typeof transformer.lng !== 'number') {
+    clearRoute()
+    return
+  }
+  const routeOrigin = { lat: transformer.lat as number, lng: transformer.lng as number }
+  const routeDestination = hasForward
+    ? { lat: transformer.contingencyLat as number, lng: transformer.contingencyLng as number }
+    : { lat: reverseMatch!.lat as number, lng: reverseMatch!.lng as number }
+  const key = hasForward
+    ? `${transformer.id}:${transformer.contingencyLat},${transformer.contingencyLng}`
+    : `${transformer.id}:${reverseMatch!.id}`
+  if (lastRouteKey.value === key && routePolyline.value) return
+  lastRouteKey.value = key
+  if (options.pinned && pinnedRouteOverlays.value.has(key)) {
+    const existing = pinnedRouteOverlays.value.get(key)
+    const raw = toRaw(existing)
+    raw?.setMap?.(map)
+    return
+  }
+  directionsService.value.route(
+    {
+      origin: routeOrigin,
+      destination: routeDestination,
+      travelMode: googleMaps.TravelMode.DRIVING,
+    },
+    (result: any, status: string) => {
+      if (status !== 'OK' || !result?.routes?.length) {
+        clearRoute()
+        return
+      }
+      const path = result.routes[0].overview_path
+      if (options.pinned) {
+        const pinnedPolyline = new googleMaps.Polyline({
+          path,
+          strokeColor: '#1e4e8b',
+          strokeOpacity: 0.9,
+          strokeWeight: 4,
+          map,
+        })
+        pinnedRouteOverlays.value.set(key, pinnedPolyline)
+        return
+      }
+      if (routePolyline.value) {
+        const raw = toRaw(routePolyline.value)
+        raw?.setMap?.(null)
+      }
+      routePolyline.value = new googleMaps.Polyline({
+        path,
+        strokeColor: '#1e4e8b',
+        strokeOpacity: 0.9,
+        strokeWeight: 4,
+        map,
+      })
+    }
+  )
+}
+
 function handleSuggestSelect(suggestion: any) {
   searchSuggestSuppress.value = true
+  if (suggestion?.kind === 'transformer' && suggestion.transformer) {
+    searchQuery.value = suggestion.label
+    focusOnTransformer(suggestion.transformer)
+    clearSuggestions()
+    return
+  }
+  if (suggestion?.kind === 'substation' && suggestion.substation) {
+    searchQuery.value = suggestion.label
+    const focused = focusOnSubstation(suggestion.substation)
+    if (!focused) handleSearch(suggestion.substation)
+    clearSuggestions()
+    return
+  }
   const raw = searchQuery.value.trim()
   const normalized = raw.toLowerCase()
   if (normalized.startsWith('estado ') || normalized.startsWith('estado de ')) {
     handleSearch(raw)
   } else {
-    searchQuery.value = suggestion.display_name || raw
+    searchQuery.value = suggestion.place?.display_name || suggestion.label || raw
     handleSearch(searchQuery.value)
   }
   clearSuggestions()
@@ -395,7 +1222,49 @@ async function handleMapReady(googleMaps: any) {
   if (!(mapInstance.value) && (window as any).__gm_map) {
     mapInstance.value = (window as any).__gm_map
   }
+  if (searchPolygonGeojson.value) {
+    searchPolygons.value = buildPolygonsFromGeojson(searchPolygonGeojson.value)
+  }
+  if (pendingFocusTransformer.value) {
+    const target = transformerOptions.value.find((item) => item.id === pendingFocusTransformer.value)
+    if (target) {
+      pendingFocusTransformer.value = null
+      focusOnTransformer(target)
+      return
+    }
+  }
+  if (pendingFocusSubstation.value) {
+    const target = pendingFocusSubstation.value
+    pendingFocusSubstation.value = null
+    focusOnSubstation(target)
+  }
 }
+
+watch(
+  () => route.query.transformer,
+  (value) => {
+    if (!value) return
+    const id = Array.isArray(value) ? value[0] : String(value)
+    const target = transformerOptions.value.find((item) => item.id === id)
+    if (target) {
+      focusOnTransformer(target)
+    } else {
+      pendingFocusTransformer.value = id
+    }
+  },
+  { immediate: true }
+)
+
+watch(
+  [transformerOptions, mapInstance, googleMapsRef, pendingFocusTransformer],
+  ([options, map, googleMaps, pending]) => {
+    if (!pending || !options.length || !map || !googleMaps) return
+    const target = options.find((item) => item.id === pending)
+    if (!target) return
+    pendingFocusTransformer.value = null
+    focusOnTransformer(target)
+  }
+)
 
 function handleMove(payload: { x: number; y: number }) {
   const rect = mapShellRef.value?.getBoundingClientRect()
@@ -405,6 +1274,11 @@ function handleMove(payload: { x: number; y: number }) {
 }
 
 function handleMapMarkerClick(id: string) {
+  if (id.startsWith('substation:')) {
+    const name = id.replace('substation:', '')
+    if (name) focusOnSubstation(name)
+    return
+  }
   const match = transformerOptions.value.find((item) => item.id === id)
   if (!match) return
   openTransformerModal(match)
@@ -468,6 +1342,7 @@ const mapHoverStyle = computed(() => {
     transform: 'translateX(-50%)',
   }
 })
+const isLogoHidden = computed(() => mapZoom.value >= logoHideZoom)
 
 const viewerSrc = computed(() => {
   if (!selectedTransformer.value) return ''
@@ -486,6 +1361,11 @@ function openViewer3D() {
   viewerOpen.value = true
   viewerReady.value = false
   transformerModalOpen.value = false
+}
+
+function openTransformerReport() {
+  if (!selectedTransformer.value) return
+  router.push({ name: 'transformer-report', params: { id: selectedTransformer.value.id } })
 }
 
 function closeViewer3D() {
@@ -569,15 +1449,13 @@ function normalizeCoordinate(value?: string) {
   const num = Number(cleaned)
   return Number.isFinite(num) ? num : undefined
 }
-const displayTension = computed(() => {
-  if (!displayInfo.value) return ''
-  const base = 69 + (displayInfo.value.value % 4) * 23
-  return `${base} kV`
-})
-const displayPower = computed(() => {
-  if (!displayInfo.value) return ''
-  const base = 8 + (displayInfo.value.value % 7)
-  return `${base.toFixed(1)} MVA`
+const displayWorstStatus = computed(() => {
+  const transformers = displayInfo.value?.transformers
+  if (!transformers?.length) return ''
+  return transformers.reduce((acc, item) => {
+    const normalized = normalizeStatus(item.status)
+    return statusRank[normalized] > statusRank[acc] ? normalized : acc
+  }, 'Normal' as keyof typeof statusRank)
 })
 
 function goBrasil() {
@@ -600,10 +1478,23 @@ watch(
 )
 
 onMounted(async () => {
-  transformerOptions.value = [
+  const storedLocation = window.localStorage.getItem('axol.userLocation')
+  if (storedLocation) {
+    try {
+      const parsed = JSON.parse(storedLocation)
+      if (typeof parsed?.lat === 'number' && typeof parsed?.lng === 'number') {
+        mapCenter.value = { lat: parsed.lat, lng: parsed.lng }
+        mapZoom.value = typeof parsed?.zoom === 'number' ? parsed.zoom : 10
+      }
+    } catch (err) {
+      console.warn('[map] invalid stored location', err)
+    }
+  }
+  const rawSubstations = (transformersData as any)?.subestacoes || []
+  const baseTransformers = [
     {
-      id: '9701-A01',
-      serial: 'A01',
+      id: 'MG-9701-A01',
+      serial: 'MG-A01',
       tag: '9701',
       substation: 'SE VISCONDE DO RIO BRANCO',
       status: 'Normal',
@@ -619,10 +1510,19 @@ onMounted(async () => {
       location: 'SE VISCONDE DO RIO BRANCO',
       lat: normalizeCoordinate('-19.912998'),
       lng: normalizeCoordinate('-43.940933'),
+      regionId: 'SE',
+      stateId: 'MG',
+      cityId: 'BH',
+      contingencySerial: 'MG-2CTMTR01-A05',
+      contingencyStatus: 'Alerta',
+      contingencySubstation: 'SE COUTO MAGALHAES',
+      contingencyPower: '1 MVA',
+      contingencyLat: normalizeCoordinate('-19.8945'),
+      contingencyLng: normalizeCoordinate('-44.1377'),
     },
     {
-      id: '9701-A02',
-      serial: 'A02',
+      id: 'MG-9701-A02',
+      serial: 'MG-A02',
       tag: '9701',
       substation: 'SE SERENO',
       status: 'Alerta',
@@ -638,10 +1538,13 @@ onMounted(async () => {
       location: 'SE SERENO',
       lat: normalizeCoordinate('-21.316.419'),
       lng: normalizeCoordinate('-42.650.596'),
+      regionId: 'SE',
+      stateId: 'MG',
+      cityId: 'BH',
     },
     {
-      id: 'A03',
-      serial: 'A03',
+      id: 'MG-A03',
+      serial: 'MG-A03',
       tag: '',
       substation: 'SE CANARANA 138 KV',
       status: 'Ainda nao Analisado',
@@ -657,10 +1560,12 @@ onMounted(async () => {
       location: 'SE CANARANA 138 KV',
       lat: normalizeCoordinate('-20.27848'),
       lng: normalizeCoordinate('-40.30561'),
+      regionId: 'SE',
+      stateId: 'ES',
     },
     {
-      id: '2FTMTR01-A04',
-      serial: 'A04',
+      id: 'MG-2FTMTR01-A04',
+      serial: 'MG-A04',
       tag: '2FTMTR01',
       substation: 'SE FATIMA',
       status: 'Alerta',
@@ -676,10 +1581,13 @@ onMounted(async () => {
       location: 'SE FATIMA',
       lat: normalizeCoordinate('-20.663567'),
       lng: normalizeCoordinate('-43.783096'),
+      regionId: 'SE',
+      stateId: 'MG',
+      cityId: 'BH',
     },
     {
-      id: '2CTMTR01-A05',
-      serial: 'A05',
+      id: 'MG-2CTMTR01-A05',
+      serial: 'MG-A05',
       tag: '2CTMTR01',
       substation: 'SE COUTO MAGALHAES',
       status: 'Alerta',
@@ -695,9 +1603,80 @@ onMounted(async () => {
       location: 'SE COUTO MAGALHAES',
       lat: normalizeCoordinate('-19.8945'),
       lng: normalizeCoordinate('-44.1377'),
+      regionId: 'SE',
+      stateId: 'MG',
+      cityId: 'BH',
     },
   ]
+  const jsonTransformers = rawSubstations.flatMap((substation: any) => {
+    const name = substation?.NOME || substation?.SUBESTACAO || 'Subestação'
+    const reference = substation?.REFERENCIA ? ` • ${substation.REFERENCIA}` : ''
+    return (substation?.transformadores || []).map((trafo: any) => ({
+      id: trafo?.TAG ? `${trafo.TAG}-${trafo.SERIAL}` : String(trafo?.SERIAL || ''),
+      serial: trafo?.SERIAL,
+      tag: trafo?.TAG,
+      substation: trafo?.SUBESTACAO || name,
+      status: pickWorstStatus(trafo?.ESTADO, trafo?.ESTADO_ANALISTA),
+      analystStatus: formatStatus(trafo?.ESTADO_ANALISTA),
+      analystNote: trafo?.DESCRICAO_ANALISTA,
+      analyst: trafo?.ANALISTA,
+      power: trafo?.POTENCIA ? `${trafo.POTENCIA} MVA` : '-',
+      voltage: trafo?.T_MAIOR ? `${trafo.T_MAIOR} kV` : '-',
+      oil: trafo?.OLEO_FLUIDO || '-',
+      manufacturer: trafo?.FABRICANTE,
+      year: trafo?.ANO_FABRICACAO,
+      commutator: trafo?.COMUTADOR,
+      location: `${name}${reference}`,
+      lat: normalizeCoordinate(trafo?.LATITUDE),
+      lng: normalizeCoordinate(trafo?.LONGITUDE),
+      regionId: 'SE',
+      stateId: 'SP',
+      cityId: 'SPC',
+      contingencySerial: trafo?.CONTINGENCIA?.SERIAL,
+      contingencyStatus: trafo?.CONTINGENCIA?.STATUS,
+      contingencySubstation: trafo?.CONTINGENCIA?.SUBESTACAO,
+      contingencyPower: trafo?.CONTINGENCIA?.POTENCIA ? `${trafo.CONTINGENCIA.POTENCIA} MVA` : undefined,
+      contingencyLat: normalizeCoordinate(trafo?.CONTINGENCIA?.LATITUDE),
+      contingencyLng: normalizeCoordinate(trafo?.CONTINGENCIA?.LONGITUDE),
+    }))
+  })
+  transformerOptions.value = [...baseTransformers, ...jsonTransformers]
 })
+
+watch(
+  [mapInstance, googleMapsRef, transformerOptions],
+  ([map, googleMaps, transformers]) => {
+    if (pinnedRouteRestored.value) return
+    if (!map || !googleMaps || !transformers.length) return
+    const stored = window.localStorage.getItem(pinnedRouteStorageKey)
+    if (!stored) {
+      pinnedRouteRestored.value = true
+      return
+    }
+    const keys = (() => {
+      try {
+        return JSON.parse(stored) as string[]
+      } catch {
+        return [stored]
+      }
+    })()
+    const restored: string[] = []
+    keys.forEach((key) => {
+      const transformer = findTransformerByRouteKey(key)
+      if (!transformer) return
+      pinnedRouteKeys.value.add(key)
+      restored.push(key)
+      drawContingencyRoute(transformer, { pinned: true })
+    })
+    if (!restored.length) {
+      window.localStorage.removeItem(pinnedRouteStorageKey)
+    } else {
+      window.localStorage.setItem(pinnedRouteStorageKey, JSON.stringify(restored))
+    }
+    pinnedRouteRestored.value = true
+  },
+  { immediate: true }
+)
 
 watch(
   () => viewerOpen.value,
@@ -714,6 +1693,10 @@ watch(
   () => searchQuery.value,
   () => {
     if (searchError.value) searchError.value = ''
+    if (!searchQuery.value.trim()) {
+      clearSearchOverlay()
+      return
+    }
     if (searchSuggestSuppress.value) {
       searchSuggestSuppress.value = false
       return
@@ -746,8 +1729,36 @@ watch(
             const type = String(item?.addresstype || item?.type || '').toLowerCase()
             return searchSuggestAllowedTypes.has(type)
           })
-          searchSuggestions.value = filtered
-          searchSuggestOpen.value = filtered.length > 0
+          const localTransformers = transformerOptions.value
+            .filter((item) => {
+              const haystack = `${item.id} ${item.serial ?? ''} ${item.tag ?? ''}`.toLowerCase()
+              return haystack.includes(q.toLowerCase())
+            })
+            .map((item) => ({
+              kind: 'transformer' as const,
+              label: `Transformador ${item.id}`,
+              transformer: item,
+            }))
+          const localSubstations = Array.from(
+            new Set(
+              transformerOptions.value
+                .map((item) => item.substation)
+                .filter((name): name is string => Boolean(name))
+                .filter((name) => name.toLowerCase().includes(q.toLowerCase()))
+            )
+          ).map((name) => ({
+            kind: 'substation' as const,
+            label: `Subestação ${name}`,
+            substation: name,
+          }))
+          const placeSuggestions = filtered.map((item) => ({
+            kind: 'place' as const,
+            label: item.display_name,
+            place: item,
+          }))
+          const merged = [...localTransformers, ...localSubstations, ...placeSuggestions]
+          searchSuggestions.value = merged
+          searchSuggestOpen.value = merged.length > 0
         })
         .catch((err) => {
           if (err?.name === 'AbortError') return
@@ -765,7 +1776,7 @@ watch(
     <SideMenu />
 
     <div class="content">
-      <div class="brand-header">
+      <div class="brand-header" :class="{ hidden: isLogoHidden }">
         <img src="@/assets/logo_siaro.png" alt="Siaro" class="brand-logo" />
       </div>
       <div class="search-under-logo">
@@ -784,11 +1795,11 @@ watch(
               <div v-if="searchSuggestOpen" class="search-suggest">
                 <div
                   v-for="suggestion in searchSuggestions"
-                  :key="suggestion.place_id"
+                  :key="suggestion.label"
                   class="search-suggest-item"
                   @mousedown.prevent="handleSuggestSelect(suggestion)"
                 >
-                  {{ suggestion.display_name }}
+                  {{ suggestion.label }}
                 </div>
                 <div v-if="searchSuggestLoading" class="search-suggest-loading">Carregando...</div>
               </div>
@@ -801,38 +1812,44 @@ watch(
         </div>
       </div>
 
-      <section ref="mapShellRef" class="map-shell">
+      <section ref="mapShellRef" class="map-shell" @mousemove="handleMapMouseMove" @mouseleave="handleMapMouseLeave">
         <div class="kpi-stack">
           <div class="kpi-col">
             <KpiCard
               class="kpi"
-              :title="stateNode?.label || 'Brasil'"
-              value="Estado geral"
-              :subtitle="kpis.cards[0].subtitle"
-              :rows="kpis.cards[0].rows"
+              :title="kpiCards[0].title"
+              :value="kpiCards[0].value"
+              :subtitle="kpiCards[0].subtitle"
+              :subtitleTone="worstStatusTone"
+              :rows="kpiCards[0].rows"
+              :chart="kpiCards[0].chart"
+              :defaultOpen="true"
             />
             <KpiCard
               class="kpi"
-              :title="kpis.cards[2].title"
-              :value="kpis.cards[2].value"
-              :subtitle="kpis.cards[2].subtitle"
-              :rows="kpis.cards[2].rows"
+              :title="kpiCards[3].title"
+              :value="kpiCards[3].value"
+              :subtitle="kpiCards[3].subtitle"
+              :rows="kpiCards[3].rows"
+              :defaultOpen="true"
             />
           </div>
           <div class="kpi-col">
             <KpiCard
               class="kpi"
-              :title="kpis.cards[1].title"
-              :value="kpis.cards[1].value"
-              :subtitle="kpis.cards[1].subtitle"
-              :rows="kpis.cards[1].rows"
+              :title="kpiCards[1].title"
+              :value="kpiCards[1].value"
+              :subtitle="kpiCards[1].subtitle"
+              :rows="kpiCards[1].rows"
+              :defaultOpen="true"
             />
             <KpiCard
               class="kpi"
-              :title="kpis.cards[3].title"
-              :value="kpis.cards[3].value"
-              :subtitle="kpis.cards[3].subtitle"
-              :rows="kpis.cards[3].rows"
+              :title="kpiCards[2].title"
+              :value="kpiCards[2].value"
+              :subtitle="kpiCards[2].subtitle"
+              :rows="kpiCards[2].rows"
+              :defaultOpen="true"
             />
           </div>
         </div>
@@ -842,12 +1859,14 @@ watch(
             <GoogleMapBase
               :center="mapCenter"
               :zoom="mapZoom"
-              :markers="transformerMarkers"
+              :markers="activeMapMarkers"
               @update:center="mapCenter = $event"
               @update:zoom="mapZoom = $event"
+              @update:bounds="mapBounds = $event"
               @markerClick="handleMapMarkerClick"
               @markerHover="handleMarkerHover"
               @markerLeave="handleMarkerLeave"
+              @interaction="handleMapInteraction"
               @ready="handleMapReady"
             />
           </div>
@@ -873,9 +1892,43 @@ watch(
             <div>
               <strong>{{ displayInfo.name }} - {{ displayInfo.sigla }}</strong>
             </div>
+            <button
+              v-if="displayInfo.transformers?.length === 1 && hasContingency(displayInfo.transformers[0])"
+              type="button"
+              class="map-hover-pin"
+              :class="{ active: isRoutePinnedFor(displayInfo.transformers[0]) }"
+              aria-label="Fixar rota de contingência"
+              :aria-pressed="isRoutePinnedFor(displayInfo.transformers[0])"
+              @click.stop="toggleRoutePin(displayInfo.transformers[0])"
+            >
+              <svg v-if="isRoutePinnedFor(displayInfo.transformers[0])" viewBox="0 0 16 16" aria-hidden="true">
+                <path
+                  fill="currentColor"
+                  d="M9.25 1.75a1.75 1.75 0 1 1 3.5 0V4a2.25 2.25 0 0 1-1.5 2.12V8l1.53 1.53a.75.75 0 0 1-.53 1.28H9.5V14a.5.5 0 0 1-1 0v-3.19H5.75a.75.75 0 0 1-.53-1.28L6.75 8V6.12A2.25 2.25 0 0 1 5.25 4V1.75a1.75 1.75 0 1 1 3.5 0V4a.75.75 0 0 0 .5.71V1.75Z"
+                />
+                <path
+                  fill="currentColor"
+                  d="M2.47 2.47a.75.75 0 0 1 1.06 0l10 10a.75.75 0 1 1-1.06 1.06l-10-10a.75.75 0 0 1 0-1.06Z"
+                />
+              </svg>
+              <svg v-else viewBox="0 0 16 16" aria-hidden="true">
+                <path
+                  fill="currentColor"
+                  d="M9.25 1.75a1.75 1.75 0 1 1 3.5 0V4a2.25 2.25 0 0 1-1.5 2.12V8l1.53 1.53a.75.75 0 0 1-.53 1.28H9.5V14a.5.5 0 0 1-1 0v-3.19H5.75a.75.75 0 0 1-.53-1.28L6.75 8V6.12A2.25 2.25 0 0 1 5.25 4V1.75a1.75 1.75 0 1 1 3.5 0V4a.75.75 0 0 0 .5.71V1.75Z"
+                />
+              </svg>
+            </button>
           </div>
           <template v-if="displayInfo.transformers?.length">
             <div v-if="displayInfo.transformers.length === 1" class="map-hover-table">
+              <div class="map-hover-row">
+                <span>Serial</span>
+                <b>{{ displayInfo.transformers[0].serial || displayInfo.transformers[0].id }}</b>
+              </div>
+              <div class="map-hover-row">
+                <span>Subestação</span>
+                <b>{{ displayInfo.transformers[0].substation || '—' }}</b>
+              </div>
               <div class="map-hover-row">
                 <span>Status</span>
                 <b>{{ displayInfo.transformers[0].status }}</b>
@@ -888,12 +1941,19 @@ watch(
                 <span>Nível de tensão</span>
                 <b>{{ displayInfo.transformers[0].voltage }}</b>
               </div>
-              <div class="map-hover-row">
-                <span>Óleo</span>
-                <b>{{ displayInfo.transformers[0].oil }}</b>
+              <div v-if="displayInfo.transformers[0].contingencySerial" class="map-hover-row">
+                <span>Contingência</span>
+                <b>
+                  {{ displayInfo.transformers[0].contingencySerial }} •
+                  {{ displayInfo.transformers[0].contingencyStatus || 'Normal' }}
+                </b>
               </div>
             </div>
             <div v-else class="map-hover-list">
+              <div class="map-hover-row">
+                <span>Status (pior)</span>
+                <b>{{ displayWorstStatus }}</b>
+              </div>
               <div class="map-hover-list-head">Transformadores</div>
               <button
                 v-for="transformer in displayInfo.transformers"
@@ -1005,8 +2065,39 @@ watch(
               </a>
             </b>
           </div>
+          <div class="transformer-modal-row" v-if="hasContingency(selectedTransformer)">
+            <span>Fixar Rota de Contingência</span>
+            <button
+              type="button"
+              class="transformer-modal-pin"
+              :class="{ active: isRoutePinnedFor(selectedTransformer) }"
+              aria-label="Fixar rota de contingência"
+              :aria-pressed="isRoutePinnedFor(selectedTransformer)"
+              @click.stop="toggleRoutePin(selectedTransformer)"
+            >
+              <svg v-if="isRoutePinnedFor(selectedTransformer)" viewBox="0 0 16 16" aria-hidden="true">
+                <path
+                  fill="currentColor"
+                  d="M9.25 1.75a1.75 1.75 0 1 1 3.5 0V4a2.25 2.25 0 0 1-1.5 2.12V8l1.53 1.53a.75.75 0 0 1-.53 1.28H9.5V14a.5.5 0 0 1-1 0v-3.19H5.75a.75.75 0 0 1-.53-1.28L6.75 8V6.12A2.25 2.25 0 0 1 5.25 4V1.75a1.75 1.75 0 1 1 3.5 0V4a.75.75 0 0 0 .5.71V1.75Z"
+                />
+                <path
+                  fill="currentColor"
+                  d="M2.47 2.47a.75.75 0 0 1 1.06 0l10 10a.75.75 0 1 1-1.06 1.06l-10-10a.75.75 0 0 1 0-1.06Z"
+                />
+              </svg>
+              <svg v-else viewBox="0 0 16 16" aria-hidden="true">
+                <path
+                  fill="currentColor"
+                  d="M9.25 1.75a1.75 1.75 0 1 1 3.5 0V4a2.25 2.25 0 0 1-1.5 2.12V8l1.53 1.53a.75.75 0 0 1-.53 1.28H9.5V14a.5.5 0 0 1-1 0v-3.19H5.75a.75.75 0 0 1-.53-1.28L6.75 8V6.12A2.25 2.25 0 0 1 5.25 4V1.75a1.75 1.75 0 1 1 3.5 0V4a.75.75 0 0 0 .5.71V1.75Z"
+                />
+              </svg>
+            </button>
+          </div>
           <button type="button" class="transformer-modal-action" @click="openViewer3D">
             Ampliar 3D
+          </button>
+          <button type="button" class="transformer-modal-action secondary" @click="openTransformerReport">
+            Ver relatório
           </button>
         </div>
       </div>
@@ -1040,7 +2131,7 @@ watch(
 .content{
   max-width: 1300px;
   margin: 0 auto;
-  padding: 45px 24px 60px;
+  padding: 32px 24px 60px;
   display: grid;
   gap: 24px;
 }
@@ -1050,20 +2141,45 @@ watch(
   justify-content: center;
   position: relative;
   z-index: 3;
-  margin-top: -8px;
+  margin-top: -20px;
+  transition: opacity 0.35s ease, transform 0.35s ease;
 }
-
 .brand-logo{
-  width: 180px;
+  width: 150px;
   height: auto;
   object-fit: contain;
   padding: 0.5px;
+}
+.brand-header.hidden{
+  opacity: 0;
+  transform: translateY(-10px);
+  pointer-events: none;
+}
+
+@media (max-width: 700px){
+  .brand-header{
+    justify-content: flex-end;
+    margin-top: -20px;
+  }
+  .brand-logo{
+    width: 90px;
+  }
+  .brand-header.hidden{
+    opacity: 1;
+    transform: none;
+    pointer-events: auto;
+  }
 }
 
 .search-wrap{
   display: grid;
   justify-items: end;
   gap: 6px;
+}
+
+body.menu-open{
+  overflow: hidden;
+  touch-action: none;
 }
 
 .search-bar{
@@ -1089,6 +2205,7 @@ watch(
   justify-content: center;
   position: relative;
   z-index: 6;
+  margin-top: -10px;
 }
 
 .search-bar input{
@@ -1253,6 +2370,37 @@ watch(
   gap: 12px;
 }
 
+.map-hover-pin{
+  width: 26px;
+  height: 26px;
+  border-radius: 8px;
+  border: 1px solid rgba(15, 23, 42, 0.12);
+  background: transparent;
+  color: #1e4e8b;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  padding: 0;
+  cursor: pointer;
+  transition: transform 150ms ease, background 150ms ease, color 150ms ease;
+}
+
+.map-hover-pin svg{
+  width: 14px;
+  height: 14px;
+}
+
+.map-hover-pin:hover{
+  background: rgba(30, 78, 139, 0.08);
+  transform: translateY(-1px);
+}
+
+.map-hover-pin.active{
+  background: #1e4e8b;
+  border-color: #1e4e8b;
+  color: #ffffff;
+}
+
 .map-hover strong{
   font-size: 13px;
   color: rgba(15, 23, 42, 0.78);
@@ -1382,7 +2530,7 @@ watch(
   left: 12px;
   right: 12px;
   display: grid;
-  grid-template-columns: repeat(2, 220px);
+  grid-template-columns: repeat(2, 250px);
   justify-content: space-between;
   gap: 16px;
   z-index: 3;
@@ -1398,8 +2546,11 @@ watch(
 }
 
 .kpi{
-  width: 220px;
+  width: 250px;
   pointer-events: auto;
+}
+.kpi:has(.card.open){
+  min-height: 320px;
 }
 
 @media (min-width: 901px){
@@ -1418,9 +2569,9 @@ watch(
     height: 100%;
   }
   .kpi-stack{
-    top: 250px;
-    left: 250px;
-    right: 250px;
+    top: 220px;
+    left: 140px;
+    right: 140px;
   }
   .map-hover{
     position: fixed;
@@ -1429,7 +2580,7 @@ watch(
 
 @media (max-width: 1100px){
   .map-shell{ padding: 50px 40px; }
-  .kpi{ width: 200px; }
+  .kpi{ width: 220px; }
 }
 
 @media (max-width: 700px){
@@ -1512,6 +2663,37 @@ watch(
   color: rgba(15, 23, 42, 0.7);
 }
 
+.transformer-modal-pin{
+  width: 26px;
+  height: 26px;
+  border-radius: 8px;
+  border: 1px solid rgba(15, 23, 42, 0.12);
+  background: transparent;
+  color: #1e4e8b;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  padding: 0;
+  cursor: pointer;
+  transition: transform 150ms ease, background 150ms ease, color 150ms ease;
+}
+
+.transformer-modal-pin svg{
+  width: 14px;
+  height: 14px;
+}
+
+.transformer-modal-pin:hover{
+  background: rgba(30, 78, 139, 0.08);
+  transform: translateY(-1px);
+}
+
+.transformer-modal-pin.active{
+  background: #1e4e8b;
+  border-color: #1e4e8b;
+  color: #ffffff;
+}
+
 .transformer-modal-row b{
   color: rgba(15, 23, 42, 0.9);
 }
@@ -1545,6 +2727,11 @@ watch(
   letter-spacing: 0.06em;
   cursor: pointer;
   margin-top: 8px;
+}
+.transformer-modal-action.secondary{
+  background: #ffffff;
+  color: var(--color-accent, #2a364d);
+  border: 1px solid rgba(30, 78, 139, 0.35);
 }
 
 .transformer-modal-action.mobile-only{

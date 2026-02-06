@@ -1,11 +1,32 @@
 <script setup lang="ts">
-import { ref } from 'vue'
+import { onBeforeUnmount, ref, watch } from 'vue'
+import { useRouter } from 'vue-router'
 
 const open = ref(false)
+const router = useRouter()
 
 function toggleMenu() {
   open.value = !open.value
 }
+
+function goToTransformers() {
+  router.push({ name: 'transformer-list' })
+  open.value = false
+}
+
+function updateBodyLock(isOpen: boolean) {
+  if (typeof window === 'undefined') return
+  if (window.innerWidth > 900) return
+  document.body.classList.toggle('menu-open', isOpen)
+}
+
+watch(open, (isOpen) => {
+  updateBodyLock(isOpen)
+})
+
+onBeforeUnmount(() => {
+  document.body.classList.remove('menu-open')
+})
 </script>
 
 <template>
@@ -22,12 +43,12 @@ function toggleMenu() {
 
     <div class="dropdown" :class="{ open }">
       <div class="mobile-menu-head">
-        <span class="mobile-menu-title">MENU</span>
+        <img class="mobile-menu-logo" src="@/assets/logo_siaro.png" alt="Siaro" />
         <button class="mobile-menu-close" type="button" @click="toggleMenu">✕</button>
       </div>
       <div class="item static">Início</div>
       <div class="item-heading">Óleo Isolante</div>
-      <div class="item static">Transformadores</div>
+      <button class="item" type="button" @click="goToTransformers">Transformadores</button>
       <div class="item static">Transformadores Normais</div>
       <div class="item static">Transformadores em Alerta</div>
       <div class="item static">Transformadores em Críticos</div>
@@ -102,6 +123,8 @@ function toggleMenu() {
 }
 
 .item{
+  appearance: none;
+  width: 100%;
   text-align: left;
   padding: 10px 12px;
   border-radius: 12px;
@@ -168,10 +191,20 @@ function toggleMenu() {
     transform: translateX(0);
   }
   .mobile-menu-head{
+    position: relative;
     display: flex;
     align-items: center;
-    justify-content: space-between;
-    margin-bottom: 10px;
+    justify-content: center;
+    margin-bottom: 12px;
+  }
+  .mobile-menu-logo{
+    width: 72px;
+    height: auto;
+    object-fit: contain;
+  }
+  .mobile-menu-close{
+    position: absolute;
+    right: 0;
   }
   .mobile-menu-title{
     font-size: 12px;

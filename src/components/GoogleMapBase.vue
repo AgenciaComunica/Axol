@@ -1,21 +1,40 @@
 <script setup lang="ts">
 import { onBeforeUnmount, onMounted, ref, watch } from 'vue'
 import { Loader } from '@googlemaps/js-api-loader'
+import { MarkerClusterer } from '@googlemaps/markerclusterer'
 
 type LatLng = { lat: number; lng: number }
-type MapMarker = { id: string; position: LatLng; label?: string }
+type MapMarker = { id: string; position: LatLng; label?: string; status?: string }
 
 declare const google: any
 
 const transformerIconUrl = new URL('@/assets/power-transformer_1.svg', import.meta.url).toString()
-const pinSvg = encodeURIComponent(
-  `<svg xmlns="http://www.w3.org/2000/svg" width="40" height="40" viewBox="0 0 40 40">
-    <path fill="#1e4e8b" d="M20 2c-7.2 0-13 5.8-13 13 0 9.2 11 22 12.1 23.3.5.6 1.3.6 1.8 0C22 37 33 24.2 33 15 33 7.8 27.2 2 20 2z"/>
-  </svg>`
-)
-const pinIconUrl = `data:image/svg+xml;utf8,${pinSvg}`
+const pinCache = new Map<string, string>()
 
-function createMarkerContent(onEnter: (event: MouseEvent) => void, onLeave: () => void) {
+function statusTone(status?: string) {
+  const text = status?.toLowerCase() ?? ''
+  if (text.includes('cr') || text.includes('crít')) return '#d14343'
+  if (text.includes('alert')) return '#f2b84b'
+  return '#1e4e8b'
+}
+
+function pinIconUrl(color: string) {
+  if (pinCache.has(color)) return pinCache.get(color) as string
+  const svg = encodeURIComponent(
+    `<svg xmlns="http://www.w3.org/2000/svg" width="40" height="40" viewBox="0 0 40 40">
+      <path fill="${color}" d="M20 2c-7.2 0-13 5.8-13 13 0 9.2 11 22 12.1 23.3.5.6 1.3.6 1.8 0C22 37 33 24.2 33 15 33 7.8 27.2 2 20 2z"/>
+    </svg>`
+  )
+  const url = `data:image/svg+xml;utf8,${svg}`
+  pinCache.set(color, url)
+  return url
+}
+
+function createMarkerContent(
+  color: string,
+  onEnter: (event: MouseEvent) => void,
+  onLeave: () => void
+) {
   const wrapper = document.createElement('div')
   wrapper.style.position = 'relative'
   wrapper.style.width = '34px'
@@ -24,7 +43,7 @@ function createMarkerContent(onEnter: (event: MouseEvent) => void, onLeave: () =
   const pin = document.createElement('div')
   pin.style.width = '34px'
   pin.style.height = '34px'
-  pin.style.backgroundImage = `url('${pinIconUrl}')`
+  pin.style.backgroundImage = `url('${pinIconUrl(color)}')`
   pin.style.backgroundRepeat = 'no-repeat'
   pin.style.backgroundSize = 'contain'
   pin.style.backgroundPosition = 'center'
@@ -50,6 +69,24 @@ function createMarkerContent(onEnter: (event: MouseEvent) => void, onLeave: () =
   return wrapper
 }
 
+function createClusterContent(count: number, color: string) {
+  const wrapper = document.createElement('div')
+  wrapper.style.position = 'relative'
+  wrapper.style.width = '34px'
+  wrapper.style.height = '34px'
+  wrapper.style.backgroundImage = `url('${pinIconUrl(color)}')`
+  wrapper.style.backgroundRepeat = 'no-repeat'
+  wrapper.style.backgroundSize = 'contain'
+  wrapper.style.backgroundPosition = 'center'
+  wrapper.style.display = 'grid'
+  wrapper.style.placeItems = 'center'
+  wrapper.style.color = '#ffffff'
+  wrapper.style.fontSize = '12px'
+  wrapper.style.fontWeight = '700'
+  wrapper.style.textShadow = '0 1px 2px rgba(0, 0, 0, 0.35)'
+  wrapper.textContent = String(count)
+  return wrapper
+}
 const props = defineProps<{
   center: LatLng
   zoom: number
@@ -59,21 +96,30 @@ const props = defineProps<{
 const emit = defineEmits<{
   (e: 'update:center', center: LatLng): void
   (e: 'update:zoom', zoom: number): void
+  (e: 'update:bounds', bounds: { north: number; south: number; east: number; west: number } | null): void
   (e: 'markerClick', id: string): void
   (e: 'markerHover', payload: { id: string; clientX: number; clientY: number }): void
   (e: 'markerLeave', id: string): void
+  (e: 'interaction'): void
   (e: 'ready', googleMaps: typeof google): void
 }>()
 
 const mapRef = ref<HTMLDivElement | null>(null)
 let map: any = null
 let markers: any[] = []
+let clusterer: MarkerClusterer | null = null
 let idleListener: any = null
+let zoomListener: any = null
+let dragListener: any = null
 let projectionOverlay: any = null
 
 function clearMarkers() {
   markers.forEach((marker) => marker.setMap(null))
   markers = []
+  if (clusterer) {
+    clusterer.clearMarkers()
+    clusterer = null
+  }
 }
 
 function getClientPosition(lat: number, lng: number) {
@@ -106,15 +152,18 @@ function syncMarkers() {
   if (!googleMaps) return
   const mapId = import.meta.env.VITE_GOOGLE_MAP_ID
   markers = props.markers.map((marker) => {
+    const color = statusTone(marker.status)
     if (mapId && googleMaps.marker?.AdvancedMarkerElement) {
       const instance = new googleMaps.marker.AdvancedMarkerElement({
         map,
         position: marker.position,
         content: createMarkerContent(
+          color,
           (event) => handleHover(marker, event),
           () => emit('markerLeave', marker.id)
         ),
       })
+      ;(instance as any).__status = marker.status
       instance.addListener('gmp-click', () => emit('markerClick', marker.id))
       return instance
     }
@@ -122,15 +171,65 @@ function syncMarkers() {
       map,
       position: marker.position,
       icon: {
-        url: pinIconUrl,
+        url: pinIconUrl(color),
         scaledSize: new googleMaps.Size(34, 34),
       },
       clickable: true,
     })
+    ;(instance as any).__status = marker.status
     instance.addListener('click', () => emit('markerClick', marker.id))
     instance.addListener('mouseover', (event: any) => handleHover(marker, event))
     instance.addListener('mouseout', () => emit('markerLeave', marker.id))
     return instance
+  })
+  clusterer = new MarkerClusterer({
+    map,
+    markers,
+    onClusterClick: (_event, cluster, mapInstance) => {
+      const bounds = cluster.bounds
+      if (!bounds) return
+      const div = mapRef.value
+      if (div) {
+        const paddingX = Math.round(div.clientWidth * 0.2)
+        const paddingY = Math.round(div.clientHeight * 0.2)
+        mapInstance.fitBounds(bounds, {
+          left: paddingX,
+          right: paddingX,
+          top: paddingY,
+          bottom: paddingY,
+        })
+      } else {
+        mapInstance.fitBounds(bounds, { top: 100, right: 100, bottom: 100, left: 100 })
+      }
+    },
+    renderer: {
+      render({ count, position, markers: clusterMarkers }) {
+        const items = (clusterMarkers || []) as any[]
+        const statuses = items.map((item) => item?.__status).filter(Boolean)
+        const hasCritical = statuses.some((s) => statusTone(s) === '#d14343')
+        const hasAlert = statuses.some((s) => statusTone(s) === '#f2b84b')
+        const color = hasCritical ? '#d14343' : hasAlert ? '#f2b84b' : '#1e4e8b'
+        if (googleMaps.marker?.AdvancedMarkerElement) {
+          return new googleMaps.marker.AdvancedMarkerElement({
+            position,
+            content: createClusterContent(count, color),
+          })
+        }
+        return new googleMaps.Marker({
+          position,
+          icon: {
+            url: pinIconUrl(color),
+            scaledSize: new googleMaps.Size(34, 34),
+          },
+          label: {
+            text: String(count),
+            color: '#ffffff',
+            fontSize: '12px',
+            fontWeight: '700',
+          },
+        })
+      },
+    },
   })
 }
 
@@ -138,7 +237,7 @@ async function initMap() {
   if (!mapRef.value) return
   const apiKey = import.meta.env.VITE_GOOGLE_MAPS_API_KEY
   if (!apiKey) return
-  const loader = new Loader({ apiKey, version: 'weekly', libraries: ['places', 'marker'] })
+  const loader = new Loader({ apiKey, version: 'weekly', libraries: ['places', 'marker', 'geometry'] })
   const googleMaps = await loader.load()
   if (!(window as any).google) {
     ;(window as any).google = googleMaps
@@ -168,7 +267,17 @@ async function initMap() {
       emit('update:center', { lat: center.lat(), lng: center.lng() })
     }
     emit('update:zoom', map.getZoom() || props.zoom)
+    const bounds = map.getBounds()
+    if (!bounds) {
+      emit('update:bounds', null)
+    } else {
+      const ne = bounds.getNorthEast()
+      const sw = bounds.getSouthWest()
+      emit('update:bounds', { north: ne.lat(), east: ne.lng(), south: sw.lat(), west: sw.lng() })
+    }
   })
+  zoomListener = map.addListener('zoom_changed', () => emit('interaction'))
+  dragListener = map.addListener('dragstart', () => emit('interaction'))
   syncMarkers()
 }
 
@@ -178,6 +287,8 @@ onMounted(() => {
 
 onBeforeUnmount(() => {
   if (idleListener) idleListener.remove()
+  if (zoomListener) zoomListener.remove()
+  if (dragListener) dragListener.remove()
   clearMarkers()
   map = null
   projectionOverlay = null
