@@ -2009,7 +2009,11 @@ watch(
       </div>
     </div>
 
-    <div v-if="transformerModalOpen && selectedTransformer" class="transformer-modal">
+    <div
+      v-if="transformerModalOpen && selectedTransformer"
+      class="transformer-modal"
+      @click.self="closeTransformerModal"
+    >
       <div class="transformer-modal-card">
         <button type="button" class="transformer-modal-close" @click="closeTransformerModal">✕</button>
         <div class="transformer-modal-media">
@@ -2613,7 +2617,9 @@ body.menu-open{
 .transformer-modal{
   position: fixed;
   inset: 0;
-  background: rgba(15, 23, 42, 0.4);
+  background: rgba(15, 23, 42, 0.35);
+  backdrop-filter: blur(6px);
+  -webkit-backdrop-filter: blur(6px);
   display: grid;
   place-items: center;
   z-index: 50;
