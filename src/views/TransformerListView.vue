@@ -135,6 +135,8 @@ const exportMenuOpen = ref(false)
 const exportWrapRef = ref<HTMLElement | null>(null)
 const columnsMenuOpen = ref(false)
 const columnsWrapRef = ref<HTMLElement | null>(null)
+const newMenuOpen = ref(false)
+const newWrapRef = ref<HTMLElement | null>(null)
 
 type ColumnConfig = {
   id: string
@@ -198,6 +200,7 @@ function closeActions() {
   openActionId.value = null
   exportMenuOpen.value = false
   columnsMenuOpen.value = false
+  newMenuOpen.value = false
 }
 
 function loadMore() {
@@ -206,6 +209,10 @@ function loadMore() {
 
 function toggleExportMenu() {
   exportMenuOpen.value = !exportMenuOpen.value
+}
+
+function toggleNewMenu() {
+  newMenuOpen.value = !newMenuOpen.value
 }
 
 function toggleColumnsMenu() {
@@ -235,6 +242,10 @@ function handleDocumentClick(event: MouseEvent) {
   if (columnsWrap && !columnsWrap.contains(target)) {
     columnsMenuOpen.value = false
   }
+  const newWrap = newWrapRef.value
+  if (newWrap && !newWrap.contains(target)) {
+    newMenuOpen.value = false
+  }
   const inActionMenu = !!target.closest('.action-menu')
   const inActionTrigger = !!target.closest('.action-trigger')
   if (!inActionMenu && !inActionTrigger) {
@@ -262,6 +273,7 @@ watch(searchQuery, () => {
       eyebrow="Gestão de Transformadores"
       title="Transformadores"
       subtitle="Ordenados por risco operacional (sem exposição de score)."
+      :secondaryAction="{ label: 'Start Óleo', onClick: () => {} }"
       :action="{ label: 'Voltar ao Painel', onClick: () => router.push({ name: 'dashboard' }) }"
     />
 
@@ -293,8 +305,19 @@ watch(searchQuery, () => {
           </div>
         </div>
         <div class="table-head-right">
+          <div class="export-wrap" ref="newWrapRef">
+            <button type="button" class="ghost-btn export-btn" @click="toggleNewMenu">
+              <span class="btn-icon" aria-hidden="true">＋</span>
+              Novo
+            </button>
+            <div v-if="newMenuOpen" class="export-menu">
+              <button type="button">Novo Transformador</button>
+              <button type="button">Importar Transformadores</button>
+            </div>
+          </div>
           <div class="export-wrap" ref="exportWrapRef">
             <button type="button" class="ghost-btn export-btn" @click="toggleExportMenu">
+              <span class="btn-icon" aria-hidden="true">⤴</span>
               Exportar
             </button>
             <div v-if="exportMenuOpen" class="export-menu">
@@ -371,10 +394,18 @@ watch(searchQuery, () => {
                   <div class="actions-cell text-center">
                     <button class="action-trigger" type="button" @click.stop="toggleActions(item.id)">⋯</button>
                     <div v-if="openActionId === item.id" class="action-menu">
-                      <button type="button">Avaliação de Risco</button>
-                      <button type="button">Analise Especialista</button>
-                      <button type="button">Próximas Coletas</button>
-                      <button type="button">Duva</button>
+                      <button type="button" class="action-item action-report">
+                        <span class="action-icon" aria-hidden="true">📄</span>
+                        Relatório
+                      </button>
+                      <button type="button" class="action-item action-edit">
+                        <span class="action-icon" aria-hidden="true">✎</span>
+                        Editar
+                      </button>
+                      <button type="button" class="action-item action-remove">
+                        <span class="action-icon" aria-hidden="true">🗑</span>
+                        Remover
+                      </button>
                     </div>
                   </div>
                 </template>
@@ -529,6 +560,13 @@ watch(searchQuery, () => {
   color: rgba(15, 23, 42, 0.8);
   cursor: pointer;
   background: rgba(255,255,255,0.7);
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.btn-icon{
+  font-size: 12px;
 }
 
 .locate-btn{
@@ -709,6 +747,28 @@ watch(searchQuery, () => {
   font-size: 12px;
   cursor: pointer;
   text-align: left;
+}
+
+.action-item{
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.action-icon{
+  font-size: 12px;
+}
+
+.action-edit{
+  color: #1e4e8b;
+}
+
+.action-remove{
+  color: #dc2626;
+}
+
+.action-report{
+  color: rgba(15, 23, 42, 0.8);
 }
 
 .load-more{
