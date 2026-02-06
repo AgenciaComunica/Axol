@@ -655,6 +655,31 @@ const substationMarkers = computed(() =>
 
 const activeMapMarkers = computed(() => transformerMarkers.value)
 
+const markerBadges = computed(() => {
+  const badges: Record<string, { text: string; tone: 'principal' | 'contingency' }> = {}
+  pinnedRouteKeys.value.forEach((key) => {
+    const transformer = findTransformerByRouteKey(key)
+    if (!transformer) return
+    const pair = getContingencyPair(transformer)
+    if (!pair?.principal) return
+    badges[pair.principal.id] = { text: 'Principal', tone: 'principal' }
+    if (pair.contingency?.id) {
+      badges[pair.contingency.id] = { text: 'Contingência', tone: 'contingency' }
+    }
+  })
+  const info = hoverInfo.value
+  if (!info?.transformers?.length || info.transformers.length !== 1) return badges
+  const transformer = info.transformers[0]
+  if (!hasContingency(transformer)) return badges
+  const pair = getContingencyPair(transformer)
+  if (!pair?.principal) return badges
+  badges[pair.principal.id] = { text: 'Principal', tone: 'principal' }
+  if (pair.contingency?.id) {
+    badges[pair.contingency.id] = { text: 'Contingência', tone: 'contingency' }
+  }
+  return badges
+})
+
 function handleSelect(item: MapItem) {
   pinnedInfo.value = { name: item.name, sigla: item.sigla || '', value: item.qty }
   pinnedItem.value = item
@@ -1063,6 +1088,27 @@ function hasContingency(transformer: (typeof transformerOptions.value)[number]) 
   const hasReverse =
     reverseMatch && typeof reverseMatch.lat === 'number' && typeof reverseMatch.lng === 'number'
   return hasForward || hasReverse
+}
+
+function getContingencyPair(transformer: (typeof transformerOptions.value)[number]) {
+  const hasForward =
+    typeof transformer?.contingencyLat === 'number' && typeof transformer?.contingencyLng === 'number'
+  const reverseMatch = transformerOptions.value.find(
+    (item) =>
+      item.contingencySerial &&
+      (item.contingencySerial === transformer.id || item.contingencySerial === transformer.serial)
+  )
+  if (hasForward) {
+    const contingencyMatch = transformerOptions.value.find(
+      (item) =>
+        item.id === transformer.contingencySerial || item.serial === transformer.contingencySerial
+    )
+    return { principal: transformer, contingency: contingencyMatch || null }
+  }
+  if (reverseMatch) {
+    return { principal: reverseMatch, contingency: transformer }
+  }
+  return null
 }
 
 function getRouteKey(transformer: (typeof transformerOptions.value)[number]) {
@@ -1875,6 +1921,7 @@ watch(
               :center="mapCenter"
               :zoom="mapZoom"
               :markers="activeMapMarkers"
+              :badges="markerBadges"
               @update:center="mapCenter = $event"
               @update:zoom="mapZoom = $event"
               @update:bounds="mapBounds = $event"

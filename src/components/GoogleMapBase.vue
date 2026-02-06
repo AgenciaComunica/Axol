@@ -5,6 +5,7 @@ import { MarkerClusterer } from '@googlemaps/markerclusterer'
 
 type LatLng = { lat: number; lng: number }
 type MapMarker = { id: string; position: LatLng; label?: string; status?: string }
+type MarkerBadge = { text: string; tone: 'principal' | 'contingency' }
 
 declare const google: any
 
@@ -40,6 +41,20 @@ function createMarkerContent(
   wrapper.style.width = '34px'
   wrapper.style.height = '34px'
 
+  const badge = document.createElement('div')
+  badge.style.position = 'absolute'
+  badge.style.left = '50%'
+  badge.style.top = '0'
+  badge.style.transform = 'translate(-50%, -70%)'
+  badge.style.padding = '2px 6px'
+  badge.style.borderRadius = '999px'
+  badge.style.fontSize = '10px'
+  badge.style.fontWeight = '700'
+  badge.style.letterSpacing = '0.02em'
+  badge.style.whiteSpace = 'nowrap'
+  badge.style.boxShadow = '0 6px 12px rgba(15, 23, 42, 0.15)'
+  badge.style.display = 'none'
+
   const pin = document.createElement('div')
   pin.style.width = '34px'
   pin.style.height = '34px'
@@ -64,8 +79,10 @@ function createMarkerContent(
 
   wrapper.appendChild(pin)
   wrapper.appendChild(icon)
+  wrapper.appendChild(badge)
   wrapper.addEventListener('mouseenter', onEnter)
   wrapper.addEventListener('mouseleave', onLeave)
+  ;(wrapper as any).__badgeEl = badge
   return wrapper
 }
 
@@ -91,6 +108,7 @@ const props = defineProps<{
   center: LatLng
   zoom: number
   markers?: MapMarker[]
+  badges?: Record<string, MarkerBadge>
 }>()
 
 const emit = defineEmits<{
@@ -120,6 +138,30 @@ function clearMarkers() {
     clusterer.clearMarkers()
     clusterer = null
   }
+}
+
+function applyBadges() {
+  if (!markers.length) return
+  const badges = props.badges || {}
+  markers.forEach((marker) => {
+    const badge = (marker as any).__badgeEl
+    const id = (marker as any).__markerId
+    if (!badge || !id) return
+    const config = badges[id]
+    if (!config) {
+      badge.style.display = 'none'
+      return
+    }
+    badge.textContent = config.text
+    if (config.tone === 'contingency') {
+      badge.style.background = '#ffe4bf'
+      badge.style.color = '#b45309'
+    } else {
+      badge.style.background = '#dbeafe'
+      badge.style.color = '#1e4e8b'
+    }
+    badge.style.display = 'inline-flex'
+  })
 }
 
 function getClientPosition(lat: number, lng: number) {
@@ -154,16 +196,19 @@ function syncMarkers() {
   markers = props.markers.map((marker) => {
     const color = statusTone(marker.status)
     if (mapId && googleMaps.marker?.AdvancedMarkerElement) {
+      const content = createMarkerContent(
+        color,
+        (event) => handleHover(marker, event),
+        () => emit('markerLeave', marker.id)
+      )
       const instance = new googleMaps.marker.AdvancedMarkerElement({
         map,
         position: marker.position,
-        content: createMarkerContent(
-          color,
-          (event) => handleHover(marker, event),
-          () => emit('markerLeave', marker.id)
-        ),
+        content,
       })
       ;(instance as any).__status = marker.status
+      ;(instance as any).__markerId = marker.id
+      ;(instance as any).__badgeEl = (content as any).__badgeEl
       instance.addListener('gmp-click', () => emit('markerClick', marker.id))
       return instance
     }
@@ -177,11 +222,13 @@ function syncMarkers() {
       clickable: true,
     })
     ;(instance as any).__status = marker.status
+    ;(instance as any).__markerId = marker.id
     instance.addListener('click', () => emit('markerClick', marker.id))
     instance.addListener('mouseover', (event: any) => handleHover(marker, event))
     instance.addListener('mouseout', () => emit('markerLeave', marker.id))
     return instance
   })
+  applyBadges()
   clusterer = new MarkerClusterer({
     map,
     markers,
@@ -323,6 +370,14 @@ watch(
   () => props.markers,
   () => {
     syncMarkers()
+  },
+  { deep: true }
+)
+
+watch(
+  () => props.badges,
+  () => {
+    applyBadges()
   },
   { deep: true }
 )
