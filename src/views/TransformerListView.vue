@@ -703,6 +703,7 @@ watch(searchQuery, () => {
   width: 100%;
   border-collapse: collapse;
   font-size: 13px;
+  font-weight: 500;
 }
 
 .transformer-table th,
@@ -710,6 +711,7 @@ watch(searchQuery, () => {
   padding: 12px 10px;
   border-bottom: 1px solid rgba(15, 23, 42, 0.06);
   text-align: center;
+  font-weight: 500;
 }
 
 .transformer-table .text-center{
@@ -727,7 +729,7 @@ watch(searchQuery, () => {
   text-transform: uppercase;
   letter-spacing: 0.08em;
   color: rgba(15, 23, 42, 0.6);
-  background: rgba(15, 23, 42, 0.02);
+  background: rgba(15, 23, 42, 0.015);
   position: sticky;
   top: 0;
   z-index: 2;
@@ -796,26 +798,42 @@ watch(searchQuery, () => {
 }
 
 .tone-normal{
-  background: rgba(30, 78, 139, 0.1);
+  background: rgba(30, 78, 139, 0.06);
   color: #1e4e8b;
 }
 
 .status-pill.tone-normal{
+  background: rgba(22, 163, 74, 0.2);
   color: #16a34a;
 }
 
 .tone-warning{
-  background: rgba(245, 159, 0, 0.18);
+  background: rgba(245, 159, 0, 0.08);
   color: #b45309;
 }
 
 .tone-danger{
-  background: rgba(220, 38, 38, 0.16);
+  background: rgba(220, 38, 38, 0.08);
   color: #b91c1c;
 }
 
 .tone-neutral{
   background: rgba(148, 163, 184, 0.18);
+  color: rgba(15, 23, 42, 0.55);
+}
+
+.status-pill.tone-warning{
+  background: rgba(245, 159, 0, 0.2);
+  color: #b45309;
+}
+
+.status-pill.tone-danger{
+  background: rgba(220, 38, 38, 0.2);
+  color: #b91c1c;
+}
+
+.status-pill.tone-neutral{
+  background: rgba(148, 163, 184, 0.24);
   color: rgba(15, 23, 42, 0.55);
 }
 
