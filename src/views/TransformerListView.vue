@@ -491,7 +491,15 @@ watch(searchQuery, () => {
                     <div v-if="openActionId === item.id" class="action-menu">
                       <button type="button" class="action-item action-report">
                         <span class="action-icon" aria-hidden="true">📄</span>
-                        Relatório
+                        Relatórios
+                      </button>
+                      <button type="button" class="action-item action-analyze">
+                        <span class="action-icon" aria-hidden="true">🔍</span>
+                        Analisar
+                      </button>
+                      <button type="button" class="action-item action-collect">
+                        <span class="action-icon" aria-hidden="true">📅</span>
+                        Próximas Coletas
                       </button>
                       <button type="button" class="action-item action-edit">
                         <span class="action-icon" aria-hidden="true">✎</span>
