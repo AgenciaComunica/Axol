@@ -427,6 +427,7 @@ watch(searchQuery, () => {
   background: radial-gradient(circle at 20% 20%, #f5f7ff 0%, #f8fafc 45%, #ffffff 100%);
   padding: 32px 32px 60px 96px;
   color: #0f172a;
+  overflow-x: hidden;
 }
 
 
@@ -498,6 +499,8 @@ watch(searchQuery, () => {
   padding: 10px;
   z-index: 6;
   min-width: 220px;
+  max-height: min(60vh, 420px);
+  overflow: auto;
 }
 
 .columns-option{
