@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { computed, onBeforeUnmount, onMounted, ref } from 'vue'
+import { computed, onBeforeUnmount, onMounted, ref, watch } from 'vue'
 import { useRouter } from 'vue-router'
 import SideMenu from '@/components/SideMenu.vue'
 import AppHeader from '@/components/AppHeader.vue'
@@ -48,14 +48,26 @@ type TableTransformer = {
   serial?: string
   substation?: string
   unit?: string
+  equipment?: string
+  commutator?: string
+  oilFluid?: string
   status: string
+  statusTr?: string
   analystStatus?: string
   power: string
   primaryVoltage?: string
+  secondaryVoltage?: string
   voltage: string
   year?: string
   manufacturer?: string
+  volume?: string
+  refrigeration?: string
+  load?: string
+  operating?: string
+  sealed?: string
   location?: string
+  latitude?: string
+  longitude?: string
 }
 
 const transformers = computed<TableTransformer[]>(() => {
@@ -68,20 +80,43 @@ const transformers = computed<TableTransformer[]>(() => {
       serial: trafo?.SERIAL,
       substation: trafo?.SUBESTACAO || name,
       unit: trafo?.UNIDADE,
+      equipment: trafo?.EQUIPAMENTO,
+      commutator: trafo?.COMUTADOR,
+      oilFluid: trafo?.OLEO_FLUIDO,
       status: pickWorstStatus(trafo?.ESTADO, trafo?.ESTADO_ANALISTA),
+      statusTr: pickWorstStatus(trafo?.ESTADO),
       analystStatus: trafo?.ESTADO_ANALISTA ? pickWorstStatus(trafo?.ESTADO_ANALISTA) : 'Normal',
       primaryVoltage: trafo?.T_PRIMARIA ? `${trafo.T_PRIMARIA}` : '-',
+      secondaryVoltage: trafo?.T_SECUNDARIA ? `${trafo.T_SECUNDARIA}` : '-',
       power: trafo?.POTENCIA ? `${trafo.POTENCIA} MVA` : '-',
       voltage: trafo?.T_MAIOR ? `${trafo.T_MAIOR} kV` : '-',
       year: trafo?.ANO_FABRICACAO,
       manufacturer: trafo?.FABRICANTE,
+      volume: trafo?.VOLUME,
+      refrigeration: trafo?.REFRIGERACAO,
+      load: trafo?.CARREGAMENTO,
+      operating: trafo?.OPERANDO,
+      sealed: trafo?.SELADO,
       location: `${name}${reference}`,
+      latitude: trafo?.LATITUDE,
+      longitude: trafo?.LONGITUDE,
     }))
   })
 })
 
+const searchQuery = ref('')
+
+const filteredTransformers = computed(() => {
+  const query = searchQuery.value.trim().toLowerCase()
+  if (!query) return transformers.value
+  return transformers.value.filter((item) => {
+    const values = Object.values(item)
+    return values.some((value) => String(value ?? '').toLowerCase().includes(query))
+  })
+})
+
 const orderedTransformers = computed(() => {
-  return [...transformers.value].sort((a, b) => {
+  return [...filteredTransformers.value].sort((a, b) => {
     const aRank = statusRank[normalizeStatus(a.status)] || 0
     const bRank = statusRank[normalizeStatus(b.status)] || 0
     if (aRank !== bRank) return bRank - aRank
@@ -98,6 +133,52 @@ const visibleTransformers = computed(() => orderedTransformers.value.slice(0, pa
 const openActionId = ref<string | null>(null)
 const exportMenuOpen = ref(false)
 const exportWrapRef = ref<HTMLElement | null>(null)
+const columnsMenuOpen = ref(false)
+const columnsWrapRef = ref<HTMLElement | null>(null)
+
+type ColumnConfig = {
+  id: string
+  label: string
+  align?: 'left' | 'center' | 'right'
+  defaultVisible: boolean
+}
+
+const columns: ColumnConfig[] = [
+  { id: 'serial', label: 'No. Série', align: 'center', defaultVisible: true },
+  { id: 'substation', label: 'Subestacao', align: 'center', defaultVisible: true },
+  { id: 'unit', label: 'Unidade', align: 'center', defaultVisible: true },
+  { id: 'tag', label: 'TAG', align: 'center', defaultVisible: true },
+  { id: 'equipment', label: 'Equipamento', align: 'center', defaultVisible: false },
+  { id: 'commutator', label: 'Comutador', align: 'center', defaultVisible: false },
+  { id: 'oilFluid', label: 'Oleo fluido', align: 'center', defaultVisible: false },
+  { id: 'primaryVoltage', label: 'T. Primária (kV)', align: 'center', defaultVisible: true },
+  { id: 'secondaryVoltage', label: 'T. Secundária (kV)', align: 'center', defaultVisible: false },
+  { id: 'year', label: 'Ano de fabricação', align: 'center', defaultVisible: false },
+  { id: 'power', label: 'Potencia (kVA)', align: 'center', defaultVisible: true },
+  { id: 'manufacturer', label: 'Fabricante', align: 'center', defaultVisible: false },
+  { id: 'volume', label: 'Volume em litros', align: 'center', defaultVisible: false },
+  { id: 'refrigeration', label: 'Refrigeração', align: 'center', defaultVisible: false },
+  { id: 'load', label: 'Carregamento (%)', align: 'center', defaultVisible: false },
+  { id: 'operating', label: 'Operando', align: 'center', defaultVisible: false },
+  { id: 'sealed', label: 'Selado', align: 'center', defaultVisible: false },
+  { id: 'statusTr', label: 'Status TR-Óleo', align: 'center', defaultVisible: true },
+  { id: 'analystStatus', label: 'Status Analista', align: 'center', defaultVisible: true },
+  { id: 'n1', label: 'N1', align: 'center', defaultVisible: true },
+  { id: 'n2', label: 'N2', align: 'center', defaultVisible: true },
+  { id: 'n3', label: 'N3', align: 'center', defaultVisible: true },
+  { id: 'n4', label: 'N4', align: 'center', defaultVisible: true },
+  { id: 'n5', label: 'N5', align: 'center', defaultVisible: true },
+  { id: 'latitude', label: 'Latitude', align: 'center', defaultVisible: false },
+  { id: 'longitude', label: 'Longitude', align: 'center', defaultVisible: false },
+  { id: 'location', label: 'Localização', align: 'center', defaultVisible: true },
+  { id: 'actions', label: 'Ações', align: 'center', defaultVisible: true },
+]
+
+const visibleColumnIds = ref<string[]>(
+  columns.filter((col) => col.defaultVisible).map((col) => col.id)
+)
+
+const visibleColumns = computed(() => columns.filter((col) => visibleColumnIds.value.includes(col.id)))
 
 function toggleActions(id: string) {
   openActionId.value = openActionId.value === id ? null : id
@@ -116,6 +197,7 @@ function openReport(transformer: TableTransformer) {
 function closeActions() {
   openActionId.value = null
   exportMenuOpen.value = false
+  columnsMenuOpen.value = false
 }
 
 function loadMore() {
@@ -126,12 +208,32 @@ function toggleExportMenu() {
   exportMenuOpen.value = !exportMenuOpen.value
 }
 
+function toggleColumnsMenu() {
+  columnsMenuOpen.value = !columnsMenuOpen.value
+}
+
+function toggleColumn(id: string) {
+  if (visibleColumnIds.value.includes(id)) {
+    visibleColumnIds.value = visibleColumnIds.value.filter((item) => item !== id)
+    return
+  }
+  visibleColumnIds.value = [...visibleColumnIds.value, id]
+}
+
+function openLocation(transformer: TableTransformer) {
+  router.push({ name: 'dashboard', query: { transformer: transformer.id } })
+}
+
 function handleDocumentClick(event: MouseEvent) {
   const target = event.target as HTMLElement | null
   if (!target) return
   const exportWrap = exportWrapRef.value
   if (exportWrap && !exportWrap.contains(target)) {
     exportMenuOpen.value = false
+  }
+  const columnsWrap = columnsWrapRef.value
+  if (columnsWrap && !columnsWrap.contains(target)) {
+    columnsMenuOpen.value = false
   }
   const inActionMenu = !!target.closest('.action-menu')
   const inActionTrigger = !!target.closest('.action-trigger')
@@ -147,6 +249,10 @@ onMounted(() => {
 onBeforeUnmount(() => {
   document.removeEventListener('click', handleDocumentClick)
 })
+
+watch(searchQuery, () => {
+  page.value = 1
+})
 </script>
 
 <template>
@@ -161,7 +267,31 @@ onBeforeUnmount(() => {
 
     <section class="table-shell" @mouseleave="closeActions">
       <div class="table-head">
-        <span>Listagem completa</span>
+        <div class="table-head-left">
+          <div class="search-wrap">
+            <input
+              v-model="searchQuery"
+              type="search"
+              placeholder="Pesquisar transformador..."
+              aria-label="Pesquisar transformador"
+            />
+          </div>
+          <div class="columns-wrap" ref="columnsWrapRef">
+            <button type="button" class="ghost-btn columns-btn" @click="toggleColumnsMenu">
+              Colunas
+            </button>
+            <div v-if="columnsMenuOpen" class="columns-menu">
+              <label v-for="col in columns" :key="`col-${col.id}`" class="columns-option">
+                <input
+                  type="checkbox"
+                  :checked="visibleColumnIds.includes(col.id)"
+                  @change="toggleColumn(col.id)"
+                />
+                <span>{{ col.label }}</span>
+              </label>
+            </div>
+          </div>
+        </div>
         <div class="table-head-right">
           <div class="export-wrap" ref="exportWrapRef">
             <button type="button" class="ghost-btn export-btn" @click="toggleExportMenu">
@@ -181,47 +311,73 @@ onBeforeUnmount(() => {
         <table class="transformer-table">
           <thead>
             <tr>
-              <th class="text-center">No. Série</th>
-              <th class="text-right">Subestacao</th>
-              <th class="text-right">Unidade</th>
-              <th class="text-right">TAG</th>
-              <th class="text-left">T. Primária (kV)</th>
-              <th class="text-left">Potencia (kVA)</th>
-              <th class="text-center">Status TR-Óleo</th>
-              <th class="text-center">Status Analista</th>
-              <th class="text-center">N1</th>
-              <th class="text-center">N2</th>
-              <th class="text-center">N3</th>
-              <th class="text-center">N4</th>
-              <th class="text-center">N5</th>
-              <th class="text-center">Ações</th>
+              <th
+                v-for="col in visibleColumns"
+                :key="`head-${col.id}`"
+                :class="`text-${col.align || 'center'}`"
+              >
+                {{ col.label }}
+              </th>
             </tr>
           </thead>
           <tbody>
             <tr v-for="item in visibleTransformers" :key="item.id" :class="statusTone(item.status)">
-              <td class="text-center">{{ item.serial || '-' }}</td>
-              <td class="text-right">{{ item.substation || '-' }}</td>
-              <td class="text-right">{{ item.unit || '-' }}</td>
-              <td class="text-right">{{ item.tag || '-' }}</td>
-              <td class="text-left">{{ item.primaryVoltage || '-' }}</td>
-              <td class="text-left">{{ item.power === '-' ? '-' : item.power.replace('MVA', 'kVA') }}</td>
-              <td class="text-center">
-                <span class="status-pill" :class="statusTone(item.status)">{{ item.status }}</span>
-              </td>
-              <td class="text-center">
-                <span class="status-pill" :class="statusTone(item.analystStatus)">{{ item.analystStatus || '-' }}</span>
-              </td>
-              <td class="text-center">-</td>
-              <td class="text-center">-</td>
-              <td class="text-center">-</td>
-              <td class="text-center">-</td>
-              <td class="text-center">-</td>
-              <td class="actions-cell text-center">
-                <button class="action-trigger" type="button" @click.stop="toggleActions(item.id)">⋯</button>
-                <div v-if="openActionId === item.id" class="action-menu">
-                  <button type="button" @click="locateOnMap(item)">Localizar no mapa</button>
-                  <button type="button" @click="openReport(item)">Abrir relatório</button>
-                </div>
+              <td
+                v-for="col in visibleColumns"
+                :key="`${item.id}-${col.id}`"
+                :class="`text-${col.align || 'center'}`"
+              >
+                <template v-if="col.id === 'serial'">{{ item.serial || '-' }}</template>
+                <template v-else-if="col.id === 'substation'">{{ item.substation || '-' }}</template>
+                <template v-else-if="col.id === 'unit'">{{ item.unit || '-' }}</template>
+                <template v-else-if="col.id === 'tag'">{{ item.tag || '-' }}</template>
+                <template v-else-if="col.id === 'equipment'">{{ item.equipment || '-' }}</template>
+                <template v-else-if="col.id === 'commutator'">{{ item.commutator || '-' }}</template>
+                <template v-else-if="col.id === 'oilFluid'">{{ item.oilFluid || '-' }}</template>
+                <template v-else-if="col.id === 'primaryVoltage'">{{ item.primaryVoltage || '-' }}</template>
+                <template v-else-if="col.id === 'secondaryVoltage'">{{ item.secondaryVoltage || '-' }}</template>
+                <template v-else-if="col.id === 'year'">{{ item.year || '-' }}</template>
+                <template v-else-if="col.id === 'power'">
+                  {{ item.power === '-' ? '-' : item.power.replace('MVA', 'kVA') }}
+                </template>
+                <template v-else-if="col.id === 'manufacturer'">{{ item.manufacturer || '-' }}</template>
+                <template v-else-if="col.id === 'volume'">{{ item.volume || '-' }}</template>
+                <template v-else-if="col.id === 'refrigeration'">{{ item.refrigeration || '-' }}</template>
+                <template v-else-if="col.id === 'load'">{{ item.load || '-' }}</template>
+                <template v-else-if="col.id === 'operating'">{{ item.operating || '-' }}</template>
+                <template v-else-if="col.id === 'sealed'">{{ item.sealed || '-' }}</template>
+                <template v-else-if="col.id === 'location'">
+                  <button type="button" class="ghost-btn locate-btn" @click="openLocation(item)">
+                    <svg class="pin-icon" viewBox="0 0 24 24" aria-hidden="true">
+                      <path d="M12 2c-3.31 0-6 2.69-6 6 0 4.5 6 12 6 12s6-7.5 6-12c0-3.31-2.69-6-6-6zm0 8.5c-1.38 0-2.5-1.12-2.5-2.5S10.62 5.5 12 5.5s2.5 1.12 2.5 2.5S13.38 10.5 12 10.5z"></path>
+                    </svg>
+                    Localizar
+                  </button>
+                </template>
+                <template v-else-if="col.id === 'statusTr'">
+                  <span class="status-pill" :class="statusTone(item.statusTr)">{{ item.statusTr }}</span>
+                </template>
+                <template v-else-if="col.id === 'analystStatus'">
+                  <span class="status-pill" :class="statusTone(item.analystStatus)">{{ item.analystStatus || '-' }}</span>
+                </template>
+                <template v-else-if="col.id === 'n1'">-</template>
+                <template v-else-if="col.id === 'n2'">-</template>
+                <template v-else-if="col.id === 'n3'">-</template>
+                <template v-else-if="col.id === 'n4'">-</template>
+                <template v-else-if="col.id === 'n5'">-</template>
+                <template v-else-if="col.id === 'latitude'">{{ item.latitude || '-' }}</template>
+                <template v-else-if="col.id === 'longitude'">{{ item.longitude || '-' }}</template>
+                <template v-else-if="col.id === 'actions'">
+                  <div class="actions-cell text-center">
+                    <button class="action-trigger" type="button" @click.stop="toggleActions(item.id)">⋯</button>
+                    <div v-if="openActionId === item.id" class="action-menu">
+                      <button type="button">Avaliação de Risco</button>
+                      <button type="button">Analise Especialista</button>
+                      <button type="button">Próximas Coletas</button>
+                      <button type="button">Duva</button>
+                    </div>
+                  </div>
+                </template>
               </td>
             </tr>
           </tbody>
@@ -291,11 +447,70 @@ onBeforeUnmount(() => {
   padding: 0 6px 12px;
 }
 
+.table-head-left{
+  display: inline-flex;
+  align-items: center;
+  gap: 12px;
+}
+
 .table-head-right{
   display: inline-flex;
   align-items: center;
   gap: 12px;
   position: relative;
+}
+
+.search-wrap input{
+  height: 36px;
+  border-radius: 999px;
+  border: 1px solid rgba(15, 23, 42, 0.12);
+  padding: 0 14px;
+  font-size: 13px;
+  min-width: 240px;
+  background: rgba(255,255,255,0.8);
+}
+
+.columns-wrap{
+  position: relative;
+}
+
+.columns-btn{
+  padding: 8px 16px;
+  font-size: 13px;
+  box-shadow: 0 6px 14px rgba(15, 23, 42, 0.08);
+  border: 1px solid rgba(15, 23, 42, 0.12);
+  border-radius: 999px;
+  color: rgba(15, 23, 42, 0.8);
+  cursor: pointer;
+  background: rgba(255,255,255,0.7);
+}
+
+.columns-menu{
+  position: absolute;
+  left: 0;
+  top: 36px;
+  background: #fff;
+  border: 1px solid rgba(15, 23, 42, 0.12);
+  border-radius: 12px;
+  box-shadow: 0 16px 32px rgba(15, 23, 42, 0.12);
+  display: grid;
+  gap: 8px;
+  padding: 10px;
+  z-index: 6;
+  min-width: 220px;
+}
+
+.columns-option{
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 12px;
+  color: rgba(15, 23, 42, 0.75);
+  cursor: pointer;
+}
+
+.columns-option input{
+  accent-color: #1e4e8b;
 }
 
 .export-wrap{
@@ -311,6 +526,26 @@ onBeforeUnmount(() => {
   color: rgba(15, 23, 42, 0.8);
   cursor: pointer;
   background: rgba(255,255,255,0.7);
+}
+
+.locate-btn{
+  padding: 8px 16px;
+  font-size: 13px;
+  box-shadow: 0 6px 14px rgba(15, 23, 42, 0.08);
+  border: 1px solid rgba(15, 23, 42, 0.12);
+  border-radius: 999px;
+  color: rgba(15, 23, 42, 0.8);
+  cursor: pointer;
+  background: rgba(255,255,255,0.7);
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.pin-icon{
+  width: 14px;
+  height: 14px;
+  fill: currentColor;
 }
 
 .export-menu{
