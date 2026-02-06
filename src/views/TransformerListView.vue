@@ -36,6 +36,7 @@ function pickWorstStatus(primary?: string, secondary?: string) {
 }
 
 function statusTone(status?: string) {
+  if (status && status.toLowerCase().includes('pend')) return 'tone-neutral'
   const normalized = normalizeStatus(status)
   if (normalized === 'Critico') return 'tone-danger'
   if (normalized === 'Alerta') return 'tone-warning'
@@ -68,6 +69,59 @@ type TableTransformer = {
   location?: string
   latitude?: string
   longitude?: string
+  levels?: Record<'N1' | 'N2' | 'N3' | 'N4' | 'N5', number | null>
+}
+
+const levelKeys = ['N1', 'N2', 'N3', 'N4', 'N5'] as const
+type LevelKey = (typeof levelKeys)[number]
+
+function hashString(value: string) {
+  let hash = 0
+  for (let i = 0; i < value.length; i += 1) {
+    hash = (hash * 31 + value.charCodeAt(i)) >>> 0
+  }
+  return hash
+}
+
+function makeLevels(seed: string): Record<LevelKey, number | null> {
+  const base = hashString(seed || 'siaro')
+  const mode = base % 5
+  if (mode === 0) {
+    return { N1: null, N2: null, N3: null, N4: null, N5: null }
+  }
+  if (mode === 1) {
+    return { N1: 100, N2: 0, N3: 0, N4: 0, N5: 0 }
+  }
+
+  const indices: LevelKey[] = ['N1', 'N2', 'N3', 'N4', 'N5']
+  const activeCount = 2 + (base % 3)
+  const start = base % indices.length
+  const active = Array.from({ length: activeCount }, (_, i) => indices[(start + i) % indices.length])
+
+  const weights = active.map((_, i) => (base * (i + 3) + i * 17) % 100 + 1)
+  const total = weights.reduce((sum, value) => sum + value, 0)
+
+  const result: Record<LevelKey, number> = { N1: 0, N2: 0, N3: 0, N4: 0, N5: 0 }
+  active.forEach((key, index) => {
+    result[key] = Number(((weights[index] / total) * 100).toFixed(2))
+  })
+  return result
+}
+
+function levelText(item: TableTransformer, key: LevelKey) {
+  const value = item.levels?.[key]
+  if (value === null || value === undefined || Number.isNaN(value)) return '—'
+  return `${value.toFixed(2)}%`
+}
+
+function levelClass(item: TableTransformer, key: LevelKey) {
+  const value = item.levels?.[key]
+  if (value === null || value === undefined || Number.isNaN(value) || value === 0) return 'level-empty'
+  if (value >= 80) return 'level-critical'
+  if (value >= 60) return 'level-high'
+  if (value >= 40) return 'level-medium'
+  if (value >= 20) return 'level-low'
+  return 'level-very-low'
 }
 
 const transformers = computed<TableTransformer[]>(() => {
@@ -84,8 +138,13 @@ const transformers = computed<TableTransformer[]>(() => {
       commutator: trafo?.COMUTADOR,
       oilFluid: trafo?.OLEO_FLUIDO,
       status: pickWorstStatus(trafo?.ESTADO, trafo?.ESTADO_ANALISTA),
-      statusTr: pickWorstStatus(trafo?.ESTADO),
-      analystStatus: trafo?.ESTADO_ANALISTA ? pickWorstStatus(trafo?.ESTADO_ANALISTA) : 'Normal',
+      statusTr: trafo?.SERIAL === 'A01' ? 'Pendente' : pickWorstStatus(trafo?.ESTADO),
+      analystStatus:
+        trafo?.SERIAL === 'A01'
+          ? 'Pendente'
+          : trafo?.ESTADO_ANALISTA
+            ? pickWorstStatus(trafo?.ESTADO_ANALISTA)
+            : 'Normal',
       primaryVoltage: trafo?.T_PRIMARIA ? `${trafo.T_PRIMARIA}` : '-',
       secondaryVoltage: trafo?.T_SECUNDARIA ? `${trafo.T_SECUNDARIA}` : '-',
       power: trafo?.POTENCIA ? `${trafo.POTENCIA} MVA` : '-',
@@ -100,6 +159,7 @@ const transformers = computed<TableTransformer[]>(() => {
       location: `${name}${reference}`,
       latitude: trafo?.LATITUDE,
       longitude: trafo?.LONGITUDE,
+      levels: makeLevels(`${trafo?.TAG || ''}-${trafo?.SERIAL || ''}`),
     }))
   })
 })
@@ -135,6 +195,8 @@ const exportMenuOpen = ref(false)
 const exportWrapRef = ref<HTMLElement | null>(null)
 const columnsMenuOpen = ref(false)
 const columnsWrapRef = ref<HTMLElement | null>(null)
+const newMenuOpen = ref(false)
+const newWrapRef = ref<HTMLElement | null>(null)
 
 type ColumnConfig = {
   id: string
@@ -198,6 +260,7 @@ function closeActions() {
   openActionId.value = null
   exportMenuOpen.value = false
   columnsMenuOpen.value = false
+  newMenuOpen.value = false
 }
 
 function loadMore() {
@@ -206,6 +269,10 @@ function loadMore() {
 
 function toggleExportMenu() {
   exportMenuOpen.value = !exportMenuOpen.value
+}
+
+function toggleNewMenu() {
+  newMenuOpen.value = !newMenuOpen.value
 }
 
 function toggleColumnsMenu() {
@@ -235,6 +302,10 @@ function handleDocumentClick(event: MouseEvent) {
   if (columnsWrap && !columnsWrap.contains(target)) {
     columnsMenuOpen.value = false
   }
+  const newWrap = newWrapRef.value
+  if (newWrap && !newWrap.contains(target)) {
+    newMenuOpen.value = false
+  }
   const inActionMenu = !!target.closest('.action-menu')
   const inActionTrigger = !!target.closest('.action-trigger')
   if (!inActionMenu && !inActionTrigger) {
@@ -262,6 +333,7 @@ watch(searchQuery, () => {
       eyebrow="Gestão de Transformadores"
       title="Transformadores"
       subtitle="Ordenados por risco operacional (sem exposição de score)."
+      :secondaryAction="{ label: 'Start Óleo', onClick: () => {} }"
       :action="{ label: 'Voltar ao Painel', onClick: () => router.push({ name: 'dashboard' }) }"
     />
 
@@ -293,14 +365,40 @@ watch(searchQuery, () => {
           </div>
         </div>
         <div class="table-head-right">
+          <div class="export-wrap" ref="newWrapRef">
+            <button type="button" class="ghost-btn export-btn" @click="toggleNewMenu">
+              <span class="btn-icon" aria-hidden="true">＋</span>
+              Novo
+            </button>
+            <div v-if="newMenuOpen" class="export-menu">
+              <button type="button">
+                <span class="menu-icon" aria-hidden="true">＋</span>
+                Novo Transformador
+              </button>
+              <button type="button">
+                <span class="menu-icon" aria-hidden="true">⤴</span>
+                Importar Transformadores
+              </button>
+            </div>
+          </div>
           <div class="export-wrap" ref="exportWrapRef">
             <button type="button" class="ghost-btn export-btn" @click="toggleExportMenu">
+              <span class="btn-icon" aria-hidden="true">⭳</span>
               Exportar
             </button>
             <div v-if="exportMenuOpen" class="export-menu">
-              <button type="button">Transformadores</button>
-              <button type="button">Níveis</button>
-              <button type="button">Níveis Variáveis</button>
+              <button type="button">
+                <span class="menu-icon" aria-hidden="true">📄</span>
+                Transformadores
+              </button>
+              <button type="button">
+                <span class="menu-icon" aria-hidden="true">📊</span>
+                Níveis
+              </button>
+              <button type="button">
+                <span class="menu-icon" aria-hidden="true">📈</span>
+                Níveis Variáveis
+              </button>
             </div>
           </div>
           <span class="count">{{ orderedTransformers.length }} itens</span>
@@ -360,21 +458,49 @@ watch(searchQuery, () => {
                 <template v-else-if="col.id === 'analystStatus'">
                   <span class="status-pill" :class="statusTone(item.analystStatus)">{{ item.analystStatus || '-' }}</span>
                 </template>
-                <template v-else-if="col.id === 'n1'">-</template>
-                <template v-else-if="col.id === 'n2'">-</template>
-                <template v-else-if="col.id === 'n3'">-</template>
-                <template v-else-if="col.id === 'n4'">-</template>
-                <template v-else-if="col.id === 'n5'">-</template>
+                <template v-else-if="col.id === 'n1'">
+                  <span class="level-pill" :class="levelClass(item, 'N1')">
+                    {{ levelText(item, 'N1') }}
+                  </span>
+                </template>
+                <template v-else-if="col.id === 'n2'">
+                  <span class="level-pill" :class="levelClass(item, 'N2')">
+                    {{ levelText(item, 'N2') }}
+                  </span>
+                </template>
+                <template v-else-if="col.id === 'n3'">
+                  <span class="level-pill" :class="levelClass(item, 'N3')">
+                    {{ levelText(item, 'N3') }}
+                  </span>
+                </template>
+                <template v-else-if="col.id === 'n4'">
+                  <span class="level-pill" :class="levelClass(item, 'N4')">
+                    {{ levelText(item, 'N4') }}
+                  </span>
+                </template>
+                <template v-else-if="col.id === 'n5'">
+                  <span class="level-pill" :class="levelClass(item, 'N5')">
+                    {{ levelText(item, 'N5') }}
+                  </span>
+                </template>
                 <template v-else-if="col.id === 'latitude'">{{ item.latitude || '-' }}</template>
                 <template v-else-if="col.id === 'longitude'">{{ item.longitude || '-' }}</template>
                 <template v-else-if="col.id === 'actions'">
                   <div class="actions-cell text-center">
                     <button class="action-trigger" type="button" @click.stop="toggleActions(item.id)">⋯</button>
                     <div v-if="openActionId === item.id" class="action-menu">
-                      <button type="button">Avaliação de Risco</button>
-                      <button type="button">Analise Especialista</button>
-                      <button type="button">Próximas Coletas</button>
-                      <button type="button">Duva</button>
+                      <button type="button" class="action-item action-report">
+                        <span class="action-icon" aria-hidden="true">📄</span>
+                        Relatório
+                      </button>
+                      <button type="button" class="action-item action-edit">
+                        <span class="action-icon" aria-hidden="true">✎</span>
+                        Editar
+                      </button>
+                      <button type="button" class="action-item action-remove">
+                        <span class="action-icon" aria-hidden="true">🗑</span>
+                        Remover
+                      </button>
                     </div>
                   </div>
                 </template>
@@ -529,6 +655,13 @@ watch(searchQuery, () => {
   color: rgba(15, 23, 42, 0.8);
   cursor: pointer;
   background: rgba(255,255,255,0.7);
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.btn-icon{
+  font-size: 12px;
 }
 
 .locate-btn{
@@ -574,6 +707,13 @@ watch(searchQuery, () => {
   font-size: 12px;
   cursor: pointer;
   text-align: left;
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.menu-icon{
+  font-size: 12px;
 }
 
 .table-scroll{
@@ -585,6 +725,7 @@ watch(searchQuery, () => {
   width: 100%;
   border-collapse: collapse;
   font-size: 13px;
+  font-weight: 500;
 }
 
 .transformer-table th,
@@ -592,6 +733,7 @@ watch(searchQuery, () => {
   padding: 12px 10px;
   border-bottom: 1px solid rgba(15, 23, 42, 0.06);
   text-align: center;
+  font-weight: 500;
 }
 
 .transformer-table .text-center{
@@ -609,7 +751,7 @@ watch(searchQuery, () => {
   text-transform: uppercase;
   letter-spacing: 0.08em;
   color: rgba(15, 23, 42, 0.6);
-  background: rgba(15, 23, 42, 0.02);
+  background: rgba(15, 23, 42, 0.015);
   position: sticky;
   top: 0;
   z-index: 2;
@@ -635,23 +777,86 @@ watch(searchQuery, () => {
   font-weight: 600;
 }
 
+.level-pill{
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 46px;
+  padding: 4px 8px;
+  border-radius: 999px;
+  font-size: 11px;
+  font-weight: 700;
+  color: rgba(15, 23, 42, 0.7);
+}
+
+.level-empty{
+  background: rgba(148, 163, 184, 0.18);
+  color: rgba(15, 23, 42, 0.55);
+}
+
+.level-very-low{
+  background: rgba(16, 185, 129, 0.18);
+  color: #047857;
+}
+
+.level-low{
+  background: rgba(132, 204, 22, 0.2);
+  color: #3f6212;
+}
+
+.level-medium{
+  background: rgba(250, 204, 21, 0.24);
+  color: #92400e;
+}
+
+.level-high{
+  background: rgba(251, 146, 60, 0.25);
+  color: #9a3412;
+}
+
+.level-critical{
+  background: rgba(239, 68, 68, 0.25);
+  color: #991b1b;
+}
+
 .tone-normal{
-  background: rgba(30, 78, 139, 0.1);
+  background: rgba(30, 78, 139, 0.06);
   color: #1e4e8b;
 }
 
 .status-pill.tone-normal{
+  background: rgba(22, 163, 74, 0.2);
   color: #16a34a;
 }
 
 .tone-warning{
-  background: rgba(245, 159, 0, 0.18);
+  background: rgba(245, 159, 0, 0.08);
   color: #b45309;
 }
 
 .tone-danger{
-  background: rgba(220, 38, 38, 0.16);
+  background: rgba(220, 38, 38, 0.08);
   color: #b91c1c;
+}
+
+.tone-neutral{
+  background: rgba(148, 163, 184, 0.18);
+  color: rgba(15, 23, 42, 0.55);
+}
+
+.status-pill.tone-warning{
+  background: rgba(245, 159, 0, 0.2);
+  color: #b45309;
+}
+
+.status-pill.tone-danger{
+  background: rgba(220, 38, 38, 0.2);
+  color: #b91c1c;
+}
+
+.status-pill.tone-neutral{
+  background: rgba(148, 163, 184, 0.24);
+  color: rgba(15, 23, 42, 0.55);
 }
 
 .transformer-table tr.tone-warning td:first-child,
@@ -709,6 +914,28 @@ watch(searchQuery, () => {
   font-size: 12px;
   cursor: pointer;
   text-align: left;
+}
+
+.action-item{
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.action-icon{
+  font-size: 12px;
+}
+
+.action-edit{
+  color: #1e4e8b;
+}
+
+.action-remove{
+  color: #dc2626;
+}
+
+.action-report{
+  color: rgba(15, 23, 42, 0.8);
 }
 
 .load-more{

@@ -4,13 +4,23 @@ import { useRouter } from 'vue-router'
 
 const open = ref(false)
 const router = useRouter()
+const configOpen = ref(false)
 
 function toggleMenu() {
   open.value = !open.value
 }
 
+function toggleConfig() {
+  configOpen.value = !configOpen.value
+}
+
 function goToTransformers() {
   router.push({ name: 'transformer-list' })
+  open.value = false
+}
+
+function goToDashboard() {
+  router.push({ name: 'dashboard' })
   open.value = false
 }
 
@@ -46,21 +56,77 @@ onBeforeUnmount(() => {
         <img class="mobile-menu-logo" src="@/assets/logo_siaro.png" alt="Siaro" />
         <button class="mobile-menu-close" type="button" @click="toggleMenu">✕</button>
       </div>
-      <div class="item static">Início</div>
-      <div class="item-heading">Óleo Isolante</div>
-      <button class="item" type="button" @click="goToTransformers">Transformadores</button>
-      <div class="item static">Transformadores Normais</div>
-      <div class="item static">Transformadores em Alerta</div>
-      <div class="item static">Transformadores em Críticos</div>
-      <div class="item static">Próximas Coletas</div>
-      <div class="item static">Tratamento de Óleo</div>
-      <div class="item-heading">Cadastro OLTC</div>
-      <div class="item static">OLTC</div>
-      <div class="item static">Físicos Químicos</div>
-      <div class="item static">Cromatografias</div>
-      <div class="item static">Físicos Químicos</div>
-      <div class="item static">Ensaios Especiais</div>
-      <div class="item-heading">Sair</div>
+      <button class="item" type="button" @click="goToDashboard">
+        <svg class="item-icon" viewBox="0 0 24 24" aria-hidden="true">
+          <path d="M20.5 3.5a1 1 0 0 0-.95-.07L15 5.1 9 3 3.45 4.84A1 1 0 0 0 3 5.78v13.72a1 1 0 0 0 1.32.95L9 18.9l6 2.1 5.55-1.84a1 1 0 0 0 .95-.95V4.5a1 1 0 0 0-1-1zM10 5.47l4 1.4v11.06l-4-1.4V5.47zm-5 1.38 3-1v11.68l-3 1V6.85zm14 12.3-3 1V7.13l3-1v13.02z"></path>
+        </svg>
+        Painel
+      </button>
+      <div class="item static">
+        <svg class="item-icon" viewBox="0 0 24 24" aria-hidden="true">
+          <path d="M12 2.5c2.7 3.1 6.5 7.8 6.5 11.1a6.5 6.5 0 1 1-13 0C5.5 10.3 9.3 5.6 12 2.5zm0 4.7c-1.8 2.3-4 5.4-4 6.9a4 4 0 0 0 8 0c0-1.5-2.2-4.6-4-6.9z"></path>
+        </svg>
+        Start Oleo
+      </div>
+      <button class="item" type="button" @click="goToTransformers">
+        <svg class="item-icon" viewBox="0 0 24 24" aria-hidden="true">
+          <path d="M3 10h18v8a1 1 0 0 1-1 1H4a1 1 0 0 1-1-1v-8zm2-5h14l2 3H3l2-3zm2 13h3v2H7v-2zm7 0h3v2h-3v-2z"></path>
+        </svg>
+        Transformadores
+      </button>
+      <div class="item static">
+        <svg class="item-icon" viewBox="0 0 24 24" aria-hidden="true">
+          <path d="M7 3h10v2H7V3zm-2 4h14v12a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V7zm3 3v2h8v-2H8zm0 4v2h8v-2H8z"></path>
+        </svg>
+        Próximas Coletas
+      </div>
+      <button class="item item-with-submenu" :class="{ open: configOpen }" type="button" @click="toggleConfig">
+        <div class="item-label">
+          <svg class="item-icon" viewBox="0 0 24 24" aria-hidden="true">
+            <path d="M19.4 13a7.8 7.8 0 0 0 .1-2l2-1.5-2-3.4-2.3.8a7.6 7.6 0 0 0-1.7-1L15 2h-4l-.5 3a7.6 7.6 0 0 0-1.7 1l-2.3-.8-2 3.4L6.6 11a7.8 7.8 0 0 0 .1 2l-2 1.5 2 3.4 2.3-.8a7.6 7.6 0 0 0 1.7 1l.5 3h4l.5-3a7.6 7.6 0 0 0 1.7-1l2.3.8 2-3.4-2-1.5zM12 15a3 3 0 1 1 0-6 3 3 0 0 1 0 6z"></path>
+          </svg>
+          Configurações
+          <span class="submenu-chevron" :class="{ open: configOpen }">⌄</span>
+        </div>
+        <div v-if="configOpen" class="submenu">
+          <div class="submenu-item">
+            <svg class="submenu-icon" viewBox="0 0 24 24" aria-hidden="true">
+              <path d="M4 6h16v12H4V6zm4 3h8v2H8V9zm0 4h8v2H8v-2z"></path>
+            </svg>
+            Empresas
+          </div>
+          <div class="submenu-item">
+            <svg class="submenu-icon" viewBox="0 0 24 24" aria-hidden="true">
+              <path d="M12 12a4 4 0 1 0-4-4 4 4 0 0 0 4 4zm-7 8a7 7 0 0 1 14 0H5z"></path>
+            </svg>
+            Usuários
+          </div>
+          <div class="submenu-item">
+            <svg class="submenu-icon" viewBox="0 0 24 24" aria-hidden="true">
+              <path d="M7 10a3 3 0 1 1 3-3 3 3 0 0 1-3 3zm10 0a3 3 0 1 1 3-3 3 3 0 0 1-3 3zM2 20a5 5 0 0 1 10 0H2zm10 0a5 5 0 0 1 10 0H12z"></path>
+            </svg>
+            Grupos
+          </div>
+          <div class="submenu-item">
+            <svg class="submenu-icon" viewBox="0 0 24 24" aria-hidden="true">
+              <path d="M12 2 3 6v6c0 5 3.6 9.7 9 10 5.4-.3 9-5 9-10V6l-9-4zm-1 6h2v7h-2V8zm0 9h2v2h-2v-2z"></path>
+            </svg>
+            Permissões
+          </div>
+          <div class="submenu-item">
+            <svg class="submenu-icon" viewBox="0 0 24 24" aria-hidden="true">
+              <path d="M4 5h16v14H4V5zm3 3h10v2H7V8zm0 4h10v2H7v-2z"></path>
+            </svg>
+            Logs do sistema
+          </div>
+        </div>
+      </button>
+      <button class="item item-danger" type="button">
+        <svg class="item-icon" viewBox="0 0 24 24" aria-hidden="true">
+          <path d="M10 17v-3H4v-4h6V7l5 5-5 5zm2-13h6a2 2 0 0 1 2 2v12a2 2 0 0 1-2 2h-6v-2h6V6h-6V4z"></path>
+        </svg>
+        Sair
+      </button>
     </div>
   </div>
 </template>
@@ -134,17 +200,106 @@ onBeforeUnmount(() => {
   font-size: 13px;
   color: rgba(15, 23, 42, 0.82);
   transition: background 0.15s ease, transform 0.15s ease, border-color 0.15s ease;
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
 }
 .item.static{
   cursor: default;
 }
 .item:hover{ background: rgba(15, 23, 42, 0.06); border-color: rgba(15, 23, 42, 0.08); transform: translateY(-1px); }
 
+.item-danger{
+  color: #dc2626;
+}
+
+.item-danger:hover{
+  background: rgba(220, 38, 38, 0.1);
+  border-color: rgba(220, 38, 38, 0.2);
+}
+
 .item-heading{
   font-size: 12px;
   font-weight: 600;
   color: rgba(15, 23, 42, 0.65);
   padding: 10px 12px 4px;
+}
+
+.item-with-submenu{
+  flex-direction: column;
+  align-items: stretch;
+  gap: 8px;
+  background: rgba(15, 23, 42, 0.02);
+  border: 1px solid rgba(15, 23, 42, 0.06);
+}
+
+.item-with-submenu.open{
+  background: #ffffff;
+  border-color: rgba(15, 23, 42, 0.1);
+}
+
+.item-with-submenu.open:hover{
+  background: #ffffff;
+  border-color: rgba(15, 23, 42, 0.1);
+  transform: none;
+}
+
+.item-label{
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  justify-content: space-between;
+}
+
+.submenu-chevron{
+  margin-left: auto;
+  font-size: 12px;
+  color: rgba(15, 23, 42, 0.65);
+  transition: transform 0.15s ease;
+}
+
+.submenu-chevron.open{
+  transform: rotate(180deg);
+}
+
+.submenu{
+  display: grid;
+  gap: 6px;
+  padding: 0 2px 6px 24px;
+}
+
+.submenu-item{
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 12px;
+  color: rgba(15, 23, 42, 0.82);
+  background: rgba(15, 23, 42, 0.03);
+  padding: 8px 10px;
+  border-radius: 10px;
+  border: 1px solid transparent;
+  cursor: pointer;
+  transition: background 0.15s ease, transform 0.15s ease, border-color 0.15s ease;
+}
+
+.submenu-item:hover{
+  background: rgba(15, 23, 42, 0.06);
+  border-color: rgba(15, 23, 42, 0.08);
+  transform: translateY(-1px);
+}
+
+.submenu-icon{
+  width: 14px;
+  height: 14px;
+  fill: currentColor;
+  flex: 0 0 auto;
+}
+
+.item-icon{
+  width: 16px;
+  height: 16px;
+  fill: currentColor;
+  flex: 0 0 auto;
 }
 
 .mobile-menu-head{

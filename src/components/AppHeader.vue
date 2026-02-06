@@ -9,6 +9,7 @@ defineProps<{
   title: string
   subtitle?: string
   action?: HeaderAction
+  secondaryAction?: HeaderAction
 }>()
 </script>
 
@@ -24,8 +25,14 @@ defineProps<{
         <p v-if="subtitle">{{ subtitle }}</p>
       </div>
     </div>
-    <div v-if="action" class="header-actions">
-      <button type="button" class="ghost-btn" @click="action.onClick">
+    <div v-if="action || secondaryAction" class="header-actions">
+      <button v-if="secondaryAction" type="button" class="ghost-btn" @click="secondaryAction.onClick">
+        <svg class="oil-icon" viewBox="0 0 24 24" aria-hidden="true">
+          <path d="M12 2.5c2.7 3.1 6.5 7.8 6.5 11.1a6.5 6.5 0 1 1-13 0C5.5 10.3 9.3 5.6 12 2.5zm0 4.7c-1.8 2.3-4 5.4-4 6.9a4 4 0 0 0 8 0c0-1.5-2.2-4.6-4-6.9z"></path>
+        </svg>
+        {{ secondaryAction.label }}
+      </button>
+      <button v-if="action" type="button" class="ghost-btn" @click="action.onClick">
         <svg class="map-icon" viewBox="0 0 24 24" aria-hidden="true">
           <path d="M20.5 3.5a1 1 0 0 0-.95-.07L15 5.1 9 3 3.45 4.84A1 1 0 0 0 3 5.78v13.72a1 1 0 0 0 1.32.95L9 18.9l6 2.1 5.55-1.84a1 1 0 0 0 .95-.95V4.5a1 1 0 0 0-1-1zM10 5.47l4 1.4v11.06l-4-1.4V5.47zm-5 1.38 3-1v11.68l-3 1V6.85zm14 12.3-3 1V7.13l3-1v13.02z"></path>
         </svg>
@@ -84,6 +91,7 @@ defineProps<{
 .header-actions{
   display: flex;
   justify-content: flex-end;
+  gap: 10px;
 }
 
 .ghost-btn{
@@ -100,6 +108,12 @@ defineProps<{
 }
 
 .map-icon{
+  width: 16px;
+  height: 16px;
+  fill: currentColor;
+}
+
+.oil-icon{
   width: 16px;
   height: 16px;
   fill: currentColor;
