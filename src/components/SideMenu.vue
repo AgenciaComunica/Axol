@@ -74,12 +74,6 @@ onBeforeUnmount(() => {
         </svg>
         Transformadores
       </button>
-      <div class="item static">
-        <svg class="item-icon" viewBox="0 0 24 24" aria-hidden="true">
-          <path d="M7 3h10v2H7V3zm-2 4h14v12a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V7zm3 3v2h8v-2H8zm0 4v2h8v-2H8z"></path>
-        </svg>
-        Próximas Coletas
-      </div>
       <button class="item item-with-submenu" :class="{ open: configOpen }" type="button" @click="toggleConfig">
         <div class="item-label">
           <svg class="item-icon" viewBox="0 0 24 24" aria-hidden="true">
