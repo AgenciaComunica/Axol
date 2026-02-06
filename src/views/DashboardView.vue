@@ -7,6 +7,21 @@ import KpiCard from '@/components/KpiCard.vue'
 import { usePrototypeScopeStore, type MapItem } from '@/stores/prototypeScope'
 import transformersData from '@/assets/transformadores.json'
 type StateSelect = { name: string; sigla: string; value: number; transformers?: any[] }
+type KpiRow = {
+  label: string
+  value: string
+  tone?: 'success' | 'warning' | 'danger' | 'info'
+  tags?: { tone: 'success' | 'warning' | 'danger'; value: string }[]
+  hover?: { columns: string[]; values: string[]; tones?: ('success' | 'warning' | 'danger')[] }
+}
+type KpiCard = {
+  title: string
+  value: string
+  subtitle: string
+  subtitleTone?: 'success' | 'warning' | 'danger' | 'info'
+  chart?: { segments: { label: string; value: number; color: string }[] }
+  rows: KpiRow[]
+}
 
 const store = usePrototypeScopeStore()
 const router = useRouter()
@@ -379,7 +394,7 @@ const statusChart = computed(() => ({
   ],
 }))
 
-const kpiCards = computed(() => {
+const kpiCards = computed<KpiCard[]>(() => {
   const total = scopeTransformers.value.length
   const powerValues = scopeTransformers.value.map((item) => parseNumeric(item.power)).filter((v) => v > 0)
   const voltageValues = scopeTransformers.value.map((item) => parseNumeric(item.voltage)).filter((v) => v > 0)
