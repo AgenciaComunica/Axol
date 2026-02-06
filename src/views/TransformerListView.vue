@@ -36,6 +36,7 @@ function pickWorstStatus(primary?: string, secondary?: string) {
 }
 
 function statusTone(status?: string) {
+  if (status && status.toLowerCase().includes('pend')) return 'tone-neutral'
   const normalized = normalizeStatus(status)
   if (normalized === 'Critico') return 'tone-danger'
   if (normalized === 'Alerta') return 'tone-warning'
@@ -68,6 +69,59 @@ type TableTransformer = {
   location?: string
   latitude?: string
   longitude?: string
+  levels?: Record<'N1' | 'N2' | 'N3' | 'N4' | 'N5', number | null>
+}
+
+const levelKeys = ['N1', 'N2', 'N3', 'N4', 'N5'] as const
+type LevelKey = (typeof levelKeys)[number]
+
+function hashString(value: string) {
+  let hash = 0
+  for (let i = 0; i < value.length; i += 1) {
+    hash = (hash * 31 + value.charCodeAt(i)) >>> 0
+  }
+  return hash
+}
+
+function makeLevels(seed: string): Record<LevelKey, number | null> {
+  const base = hashString(seed || 'siaro')
+  const mode = base % 5
+  if (mode === 0) {
+    return { N1: null, N2: null, N3: null, N4: null, N5: null }
+  }
+  if (mode === 1) {
+    return { N1: 100, N2: 0, N3: 0, N4: 0, N5: 0 }
+  }
+
+  const indices: LevelKey[] = ['N1', 'N2', 'N3', 'N4', 'N5']
+  const activeCount = 2 + (base % 3)
+  const start = base % indices.length
+  const active = Array.from({ length: activeCount }, (_, i) => indices[(start + i) % indices.length])
+
+  const weights = active.map((_, i) => (base * (i + 3) + i * 17) % 100 + 1)
+  const total = weights.reduce((sum, value) => sum + value, 0)
+
+  const result: Record<LevelKey, number> = { N1: 0, N2: 0, N3: 0, N4: 0, N5: 0 }
+  active.forEach((key, index) => {
+    result[key] = Number(((weights[index] / total) * 100).toFixed(2))
+  })
+  return result
+}
+
+function levelText(item: TableTransformer, key: LevelKey) {
+  const value = item.levels?.[key]
+  if (value === null || value === undefined || Number.isNaN(value)) return '—'
+  return `${value.toFixed(2)}%`
+}
+
+function levelClass(item: TableTransformer, key: LevelKey) {
+  const value = item.levels?.[key]
+  if (value === null || value === undefined || Number.isNaN(value) || value === 0) return 'level-empty'
+  if (value >= 80) return 'level-critical'
+  if (value >= 60) return 'level-high'
+  if (value >= 40) return 'level-medium'
+  if (value >= 20) return 'level-low'
+  return 'level-very-low'
 }
 
 const transformers = computed<TableTransformer[]>(() => {
@@ -84,8 +138,13 @@ const transformers = computed<TableTransformer[]>(() => {
       commutator: trafo?.COMUTADOR,
       oilFluid: trafo?.OLEO_FLUIDO,
       status: pickWorstStatus(trafo?.ESTADO, trafo?.ESTADO_ANALISTA),
-      statusTr: pickWorstStatus(trafo?.ESTADO),
-      analystStatus: trafo?.ESTADO_ANALISTA ? pickWorstStatus(trafo?.ESTADO_ANALISTA) : 'Normal',
+      statusTr: trafo?.SERIAL === 'A01' ? 'Pendente' : pickWorstStatus(trafo?.ESTADO),
+      analystStatus:
+        trafo?.SERIAL === 'A01'
+          ? 'Pendente'
+          : trafo?.ESTADO_ANALISTA
+            ? pickWorstStatus(trafo?.ESTADO_ANALISTA)
+            : 'Normal',
       primaryVoltage: trafo?.T_PRIMARIA ? `${trafo.T_PRIMARIA}` : '-',
       secondaryVoltage: trafo?.T_SECUNDARIA ? `${trafo.T_SECUNDARIA}` : '-',
       power: trafo?.POTENCIA ? `${trafo.POTENCIA} MVA` : '-',
@@ -100,6 +159,7 @@ const transformers = computed<TableTransformer[]>(() => {
       location: `${name}${reference}`,
       latitude: trafo?.LATITUDE,
       longitude: trafo?.LONGITUDE,
+      levels: makeLevels(`${trafo?.TAG || ''}-${trafo?.SERIAL || ''}`),
     }))
   })
 })
@@ -383,11 +443,31 @@ watch(searchQuery, () => {
                 <template v-else-if="col.id === 'analystStatus'">
                   <span class="status-pill" :class="statusTone(item.analystStatus)">{{ item.analystStatus || '-' }}</span>
                 </template>
-                <template v-else-if="col.id === 'n1'">-</template>
-                <template v-else-if="col.id === 'n2'">-</template>
-                <template v-else-if="col.id === 'n3'">-</template>
-                <template v-else-if="col.id === 'n4'">-</template>
-                <template v-else-if="col.id === 'n5'">-</template>
+                <template v-else-if="col.id === 'n1'">
+                  <span class="level-pill" :class="levelClass(item, 'N1')">
+                    {{ levelText(item, 'N1') }}
+                  </span>
+                </template>
+                <template v-else-if="col.id === 'n2'">
+                  <span class="level-pill" :class="levelClass(item, 'N2')">
+                    {{ levelText(item, 'N2') }}
+                  </span>
+                </template>
+                <template v-else-if="col.id === 'n3'">
+                  <span class="level-pill" :class="levelClass(item, 'N3')">
+                    {{ levelText(item, 'N3') }}
+                  </span>
+                </template>
+                <template v-else-if="col.id === 'n4'">
+                  <span class="level-pill" :class="levelClass(item, 'N4')">
+                    {{ levelText(item, 'N4') }}
+                  </span>
+                </template>
+                <template v-else-if="col.id === 'n5'">
+                  <span class="level-pill" :class="levelClass(item, 'N5')">
+                    {{ levelText(item, 'N5') }}
+                  </span>
+                </template>
                 <template v-else-if="col.id === 'latitude'">{{ item.latitude || '-' }}</template>
                 <template v-else-if="col.id === 'longitude'">{{ item.longitude || '-' }}</template>
                 <template v-else-if="col.id === 'actions'">
@@ -673,6 +753,48 @@ watch(searchQuery, () => {
   font-weight: 600;
 }
 
+.level-pill{
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 46px;
+  padding: 4px 8px;
+  border-radius: 999px;
+  font-size: 11px;
+  font-weight: 700;
+  color: rgba(15, 23, 42, 0.7);
+}
+
+.level-empty{
+  background: rgba(148, 163, 184, 0.18);
+  color: rgba(15, 23, 42, 0.55);
+}
+
+.level-very-low{
+  background: rgba(16, 185, 129, 0.18);
+  color: #047857;
+}
+
+.level-low{
+  background: rgba(132, 204, 22, 0.2);
+  color: #3f6212;
+}
+
+.level-medium{
+  background: rgba(250, 204, 21, 0.24);
+  color: #92400e;
+}
+
+.level-high{
+  background: rgba(251, 146, 60, 0.25);
+  color: #9a3412;
+}
+
+.level-critical{
+  background: rgba(239, 68, 68, 0.25);
+  color: #991b1b;
+}
+
 .tone-normal{
   background: rgba(30, 78, 139, 0.1);
   color: #1e4e8b;
@@ -690,6 +812,11 @@ watch(searchQuery, () => {
 .tone-danger{
   background: rgba(220, 38, 38, 0.16);
   color: #b91c1c;
+}
+
+.tone-neutral{
+  background: rgba(148, 163, 184, 0.18);
+  color: rgba(15, 23, 42, 0.55);
 }
 
 .transformer-table tr.tone-warning td:first-child,
