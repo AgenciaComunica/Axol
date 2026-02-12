@@ -417,7 +417,13 @@ const historyChartOptions = computed<ApexOptions>(() => ({
   chart: {
     type: 'line',
     animations: { enabled: true },
-    toolbar: { show: true },
+    toolbar: {
+      show: true,
+      tools: {
+        reset:
+          '<svg viewBox="0 0 24 24" width="18" height="18" aria-hidden="true" style="display:block;transform:translateY(1px)"><path fill="currentColor" d="M4 4h6v2H6v4H4V4zm10 0h6v6h-2V6h-4V4zM4 14h2v4h4v2H4v-6zm14 0h2v6h-6v-2h4v-4z"/></svg>',
+      },
+    },
     zoom: { enabled: true },
     foreColor: '#334155',
     redrawOnParentResize: true,
@@ -454,6 +460,16 @@ const historyChartOptions = computed<ApexOptions>(() => ({
     shared: true,
     intersect: false,
   },
+  responsive: [
+    {
+      breakpoint: 900,
+      options: {
+        xaxis: {
+          labels: { show: false },
+        },
+      },
+    },
+  ],
 }))
 
 const historyChartKey = computed(() => {
@@ -470,6 +486,20 @@ const showHistorySwitch = computed(() => historyActiveTab.value !== 'ensaiosespe
 const historySwitchLabel = computed(() =>
   historyActiveTab.value === 'cromatografia' ? 'Histórico de Gases Combustíveis (un)' : 'Histórico (un)'
 )
+const historyMobileRangeLabel = computed(() => {
+  const categories = activeHistoryModel.value.categories
+  if (!categories.length) return ''
+  const first = categories[0] || ''
+  const last = categories[categories.length - 1] || ''
+  const compact = (value: string) => {
+    const parts = value.split('/')
+    if (parts.length !== 3) return value
+    const year = parts[2]
+    const shortYear = year.length >= 2 ? year.slice(-2) : year
+    return `${parts[0]}/${parts[1]}/${shortYear}`
+  }
+  return `${compact(first)} - ${compact(last)}`
+})
 const historySwitchEnabled = computed({
   get() {
     if (historyActiveTab.value === 'cromatografia') return historyCromDisplayMode.value === 'historico'
@@ -807,6 +837,13 @@ watch([activeTab, selectedId], async () => {
         <article v-if="activeHistoryModel.categories.length" class="history-block-card">
           <div class="history-single">
           <div class="history-line-head">
+            <div class="history-tab-select-wrap">
+              <select v-model="historyActiveTab" class="history-tab-select" aria-label="Selecionar tipo de gráfico">
+                <option value="cromatografia">Cromotografia</option>
+                <option value="fisicoquimica">Físico Químico</option>
+                <option value="ensaiosespeciais">Ensaios Especiais</option>
+              </select>
+            </div>
             <div class="history-tabs-inline history-tabs-main">
               <button
                 type="button"
@@ -853,6 +890,7 @@ watch([activeTab, selectedId], async () => {
                 :series="activeHistoryModel.series"
               />
             </div>
+            <p class="history-mobile-range">{{ historyMobileRangeLabel }}</p>
           </article>
           </div>
         </article>
@@ -2237,6 +2275,36 @@ watch([activeTab, selectedId], async () => {
   margin: 0 auto;
 }
 
+.history-tab-select-wrap{
+  display: none;
+  width: 100%;
+}
+
+.history-tab-select{
+  width: 100%;
+  height: 40px;
+  border-radius: 999px;
+  border: 1px solid rgba(15, 23, 42, 0.12);
+  background: rgba(255, 255, 255, 0.92);
+  color: rgba(15, 23, 42, 0.78);
+  font-size: 12px;
+  font-weight: 600;
+  padding: 0 38px 0 14px;
+  box-shadow: 0 4px 10px rgba(15, 23, 42, 0.06);
+  outline: none;
+  -webkit-appearance: none;
+  appearance: none;
+  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24'%3E%3Cpath fill='%2364748b' d='M7 10l5 5 5-5z'/%3E%3C/svg%3E");
+  background-repeat: no-repeat;
+  background-position: right 12px center;
+  background-size: 16px;
+}
+
+.history-tab-select:focus{
+  border-color: #1e4e8b;
+  box-shadow: 0 0 0 3px rgba(30, 78, 139, 0.14);
+}
+
 .history-tab-btn{
   border: 0;
   min-height: 26px;
@@ -2353,6 +2421,15 @@ watch([activeTab, selectedId], async () => {
   max-width: 100% !important;
 }
 
+.history-mobile-range{
+  display: none;
+  margin: 6px 0 0;
+  text-align: center;
+  font-size: 11px;
+  font-weight: 600;
+  color: rgba(15, 23, 42, 0.72);
+}
+
 @media (max-width: 900px) {
   .report-view{
     padding: 90px 16px 40px;
@@ -2453,6 +2530,17 @@ watch([activeTab, selectedId], async () => {
   }
   .history-chart-host{
     height: 340px;
+  }
+  .history-tabs-main{
+    display: none !important;
+  }
+  .history-tab-select-wrap{
+    display: block;
+    width: min(100%, 320px);
+    margin: 0 auto;
+  }
+  .history-mobile-range{
+    display: block;
   }
   .modal-grid{
     grid-template-columns: 1fr;
