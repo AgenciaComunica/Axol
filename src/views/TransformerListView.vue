@@ -489,7 +489,7 @@ watch(searchQuery, () => {
                   <div class="actions-cell text-center">
                     <button class="action-trigger" type="button" @click.stop="toggleActions(item.id)">⋯</button>
                     <div v-if="openActionId === item.id" class="action-menu">
-                      <button type="button" class="action-item action-report">
+                      <button type="button" class="action-item action-report" @click="openReport(item)">
                         <span class="action-icon" aria-hidden="true">📄</span>
                         Relatórios
                       </button>
