@@ -122,7 +122,6 @@ const tabs = [
   'Avaliação IEEE',
   'Coletas',
   'Tratamento de Óleo',
-  'Cadastro OLTC',
 ] as const
 
 type ReportTab = (typeof tabs)[number]
@@ -598,10 +597,18 @@ type HistoryChartData = { max: number; categories: string[]; series: HistoryChar
 type HistoryChartTab = 'cromatografia' | 'fisicoquimica' | 'ensaiosespeciais'
 type HistoryDisplayMode = 'base' | 'historico'
 type AnalysisColumnGroup = 'Geral' | 'Cromatografia' | 'Físico Químico' | 'Ensaios Especiais'
+type AnalysisRecentTab = 'padrao' | 'oltc'
+type OltcAnalysisColumnGroup = 'Geral' | 'OLTC' | 'Físico Químico'
 type AnalysisColumn = {
   id: string
   label: string
   group: AnalysisColumnGroup
+  defaultVisible: boolean
+}
+type OltcAnalysisColumn = {
+  id: string
+  label: string
+  group: OltcAnalysisColumnGroup
   defaultVisible: boolean
 }
 type UnifiedAnalysisRow = Record<string, string | number> & { id: string; sortTime: number }
@@ -815,19 +822,18 @@ const historySwitchEnabled = computed({
   },
 })
 
-const analysisSearchDate = ref('')
+const analysisSearchQuery = ref('')
+const analysisRecentTab = ref<AnalysisRecentTab>('padrao')
 const analysisColumnsMenuOpen = ref(false)
 const analysisColumnsWrapRef = ref<HTMLElement | null>(null)
 const analysisNewMenuOpen = ref(false)
 const analysisExportMenuOpen = ref(false)
 const analysisNewWrapRef = ref<HTMLElement | null>(null)
 const analysisExportWrapRef = ref<HTMLElement | null>(null)
-const analysisExportOptions = ['Análises', 'Cromatografia', 'Físico Químico']
 const analysisExportSelected = ref<string[]>([])
 const analysisPage = ref(1)
 const analysisRowsPerPage = ref(10)
 const analysisRowsPerPageOptions = [10, 20, 30, 50]
-const analysisSearchInputType = ref<'text' | 'date'>('text')
 const coletasActiveTab = ref<ColetasSubTab>('proximas')
 const coletasNewMenuOpen = ref(false)
 const coletasExportMenuOpen = ref(false)
@@ -856,6 +862,8 @@ const treatmentDetailsModalOpen = ref(false)
 const treatmentCreateModalOpen = ref(false)
 const manualTreatmentRows = ref<TreatmentRow[]>([])
 const treatmentLimitsOpen = ref(false)
+const historyConditionsOpen = ref(true)
+const historyAnalysesOpen = ref(true)
 const treatmentForm = ref({
   statusTratamento: 'Concluído',
   dataColeta: '',
@@ -913,8 +921,42 @@ const analysisColumns: AnalysisColumn[] = [
   { id: 'furanos', label: 'Furanos', group: 'Ensaios Especiais', defaultVisible: false },
 ]
 
+const oltcAnalysisColumns: OltcAnalysisColumn[] = [
+  { id: 'transformador', label: 'Transformador', group: 'Geral', defaultVisible: true },
+  { id: 'dataColeta', label: 'Data Coleta', group: 'Geral', defaultVisible: true },
+  { id: 'subestacao', label: 'Subestação', group: 'Geral', defaultVisible: true },
+  { id: 'unidade', label: 'Unidade', group: 'Geral', defaultVisible: true },
+  { id: 'tag', label: 'Tag', group: 'Geral', defaultVisible: true },
+  { id: 'laboratorio', label: 'Laboratório', group: 'Geral', defaultVisible: true },
+  { id: 'noSerieTransformador', label: 'No. Série Transformador', group: 'OLTC', defaultVisible: true },
+  { id: 'noSerieComutador', label: 'No. Série Comutador', group: 'OLTC', defaultVisible: true },
+  { id: 'rdLimite', label: 'RD (Mín. 40 kV)', group: 'OLTC', defaultVisible: true },
+  { id: 'teorAguaLimite', label: 'Teor de Água (Máx. 30 ppm)', group: 'OLTC', defaultVisible: true },
+  { id: 'statusOltc', label: 'Status OLTC', group: 'OLTC', defaultVisible: true },
+  { id: 'modelo', label: 'Modelo', group: 'OLTC', defaultVisible: false },
+  { id: 'fabricante', label: 'Fabricante', group: 'OLTC', defaultVisible: false },
+  { id: 'filtro', label: 'Filtro', group: 'OLTC', defaultVisible: false },
+  { id: 'anoFabricacao', label: 'Ano de Fabricação', group: 'OLTC', defaultVisible: false },
+  { id: 'dataIntervencao', label: 'Data Intervenção', group: 'Físico Químico', defaultVisible: false },
+  { id: 'tempAmostra', label: 'Temp. Amostra (°C)', group: 'Físico Químico', defaultVisible: false },
+  { id: 'tempOleo', label: 'Temp. Óleo (°C)', group: 'Físico Químico', defaultVisible: false },
+  { id: 'teorAgua', label: 'Teor de Água (ppm)', group: 'Físico Químico', defaultVisible: true },
+  { id: 'rd', label: 'RD (kV)', group: 'Físico Químico', defaultVisible: true },
+  { id: 'tif', label: 'TIF (Dyan/cm)', group: 'Físico Químico', defaultVisible: true },
+  { id: 'indNeutr', label: 'Índ. Neutr. (mgKH0/g)', group: 'Físico Químico', defaultVisible: false },
+  { id: 'cor', label: 'COR', group: 'Físico Químico', defaultVisible: false },
+  { id: 'densRel', label: 'Dens. Rel. 20/4 °C (g/mL)', group: 'Físico Químico', defaultVisible: false },
+  { id: 'fPot25', label: 'F. Pot. 25ºC', group: 'Físico Químico', defaultVisible: false },
+  { id: 'fPot90', label: 'F. Pot. 90ºC', group: 'Físico Químico', defaultVisible: false },
+  { id: 'fPot100', label: 'F. Pot. 100ºC', group: 'Físico Químico', defaultVisible: false },
+  { id: 'ensaioDbpc', label: 'Ensaio de DBPC', group: 'Físico Químico', defaultVisible: false },
+]
+
 const analysisVisibleColumnIds = ref<string[]>(
   analysisColumns.filter((column) => column.defaultVisible).map((column) => column.id)
+)
+const oltcAnalysisVisibleColumnIds = ref<string[]>(
+  oltcAnalysisColumns.filter((column) => column.defaultVisible).map((column) => column.id)
 )
 
 const analysisVisibleColumns = computed(() =>
@@ -929,6 +971,44 @@ const analysisColumnsByGroup = computed(() => {
   })
   return grouped
 })
+const oltcAnalysisVisibleColumns = computed(() =>
+  oltcAnalysisColumns.filter((column) => oltcAnalysisVisibleColumnIds.value.includes(column.id))
+)
+const oltcAnalysisColumnsByGroup = computed(() => {
+  const grouped = new Map<OltcAnalysisColumnGroup, OltcAnalysisColumn[]>()
+  oltcAnalysisColumns.forEach((column) => {
+    if (!grouped.has(column.group)) grouped.set(column.group, [])
+    grouped.get(column.group)!.push(column)
+  })
+  return grouped
+})
+const activeAnalysisVisibleColumns = computed(() =>
+  analysisRecentTab.value === 'oltc' ? oltcAnalysisVisibleColumns.value : analysisVisibleColumns.value
+)
+const activeAnalysisColumnsByGroup = computed(() =>
+  analysisRecentTab.value === 'oltc' ? oltcAnalysisColumnsByGroup.value : analysisColumnsByGroup.value
+)
+const analysisExportOptions = computed(() =>
+  analysisRecentTab.value === 'oltc'
+    ? ['OLTC', 'Físico Químico']
+    : ['Cromatografia', 'Físico Químico', 'Ensaios Especiais']
+)
+
+function isActiveAnalysisColumnChecked(columnId: string) {
+  return analysisRecentTab.value === 'oltc'
+    ? oltcAnalysisVisibleColumnIds.value.includes(columnId)
+    : analysisVisibleColumnIds.value.includes(columnId)
+}
+
+function isActiveAnalysisColumnLocked(columnId: string) {
+  if (analysisRecentTab.value === 'oltc') {
+    return (
+      oltcAnalysisVisibleColumnIds.value.length === 1
+      && oltcAnalysisVisibleColumnIds.value.includes(columnId)
+    )
+  }
+  return analysisVisibleColumnIds.value.length === 1 && analysisVisibleColumnIds.value.includes(columnId)
+}
 
 function toggleAnalysisColumnsMenu() {
   analysisNewMenuOpen.value = false
@@ -1184,6 +1264,23 @@ function toggleAnalysisColumn(columnId: string) {
   analysisVisibleColumnIds.value = [...analysisVisibleColumnIds.value, columnId]
 }
 
+function toggleOltcAnalysisColumn(columnId: string) {
+  if (oltcAnalysisVisibleColumnIds.value.includes(columnId)) {
+    if (oltcAnalysisVisibleColumnIds.value.length === 1) return
+    oltcAnalysisVisibleColumnIds.value = oltcAnalysisVisibleColumnIds.value.filter((id) => id !== columnId)
+    return
+  }
+  oltcAnalysisVisibleColumnIds.value = [...oltcAnalysisVisibleColumnIds.value, columnId]
+}
+
+function toggleActiveAnalysisColumn(columnId: string) {
+  if (analysisRecentTab.value === 'oltc') {
+    toggleOltcAnalysisColumn(columnId)
+    return
+  }
+  toggleAnalysisColumn(columnId)
+}
+
 function normalizeCell(value: unknown) {
   if (value === null || value === undefined) return '-'
   const text = String(value).trim()
@@ -1208,6 +1305,24 @@ function normalizedToken(value: unknown) {
 const analysisDataSerialAliases: Record<string, string[]> = {
   '9701-A01': ['3792', 'OLTC-0001'],
 }
+
+const selectedOltcMeta = computed<BaseRow | null>(() => {
+  const selected = selectedTransformer.value
+  if (!selected) return null
+  const selectedSerial = normalizedToken(selected.serial)
+  const serialAliases = (analysisDataSerialAliases[selected.id] || []).map((value) => normalizedToken(value))
+  const serialCandidates = new Set([selectedSerial, ...serialAliases].filter(Boolean))
+  const selectedTag = normalizedToken(selected.tag)
+  const rows = ((oltcData as any)?.oltc || []) as BaseRow[]
+  return rows.find((row) => {
+    const serialTrafo = normalizedToken(row.SERIAL_TRANSFORMADOR)
+    const serialOltc = normalizedToken(row.SERIAL_OLTC)
+    const tag = normalizedToken(row.TAG)
+    if (serialCandidates.has(serialTrafo)) return true
+    if (serialCandidates.has(serialOltc)) return true
+    return !!selectedTag && tag === selectedTag
+  }) || null
+})
 
 function rowMatchesSelectedTransformer(row: BaseRow) {
   const selected = selectedTransformer.value
@@ -1347,14 +1462,82 @@ const unifiedAnalysisRows = computed<UnifiedAnalysisRow[]>(() => {
   return [...cromRows, ...fisicoRowsAll, ...ensaiosRowsAll].sort((a, b) => b.sortTime - a.sortTime)
 })
 
-const filteredUnifiedAnalysisRows = computed(() => {
-  const query = analysisSearchDate.value.trim()
-  if (!query) return unifiedAnalysisRows.value
-  const formattedQuery = query.includes('-')
-    ? query.split('-').reverse().join('/')
-    : query
-  return unifiedAnalysisRows.value.filter((row) => String(row.dataColeta) === formattedQuery)
+const oltcUnifiedAnalysisRows = computed<UnifiedAnalysisRow[]>(() => {
+  const selected = selectedTransformer.value
+  if (!selected) return []
+  const fallbackSubstation = selected.substation || '-'
+  const fallbackUnit = selected.unit || '-'
+  const fallbackTag = selected.tag || '-'
+  const fallbackTransformer = selected.serial || selected.id || '-'
+  const oltcMeta = selectedOltcMeta.value
+  const noSerieComutador = normalizeCell(oltcMeta?.SERIAL_OLTC)
+  const statusOltc = normalizeCell(oltcMeta?.ESTADO)
+  const modelo = normalizeCell(oltcMeta?.MODELO)
+  const fabricante = normalizeCell(oltcMeta?.FABRICANTE)
+  const filtro = normalizeCell(oltcMeta?.FILTRO)
+  const anoFabricacao = normalizeCell(oltcMeta?.ANO_FABRICACAO)
+
+  return parseLooseJson<BaseRow[]>(fisicoQuimicosOltcRaw)
+    .filter(rowMatchesSelectedTransformer)
+    .map((row, index) => {
+      const rdValue = normalizeCell(row.RD)
+      const teorAguaValue = normalizeCell(row.TEOR_AGUA)
+      const dataColeta = normalizeCell(row.DATA_COLETA)
+      return {
+        id: `oltc-${index}-${dataColeta}`,
+        sortTime: parseBrDate(row.DATA_COLETA),
+        transformador: pickCell(row, 'NUM_SERIE', 'SERIAL_TRANSFORMADOR') || fallbackTransformer,
+        noSerieTransformador: pickCell(row, 'NUM_SERIE', 'SERIAL_TRANSFORMADOR') || fallbackTransformer,
+        dataColeta,
+        subestacao: pickCell(row, 'SUBESTACAO') !== '-' ? pickCell(row, 'SUBESTACAO') : fallbackSubstation,
+        unidade: pickCell(row, 'UNIDADE') !== '-' ? pickCell(row, 'UNIDADE') : fallbackUnit,
+        tag: pickCell(row, 'TAG') !== '-' ? pickCell(row, 'TAG') : fallbackTag,
+        laboratorio: normalizeCell(row.LAB),
+        noSerieComutador,
+        statusOltc,
+        modelo,
+        fabricante,
+        filtro,
+        anoFabricacao,
+        rdLimite: rdValue === '-' ? '-' : `${rdValue}`,
+        teorAguaLimite: teorAguaValue === '-' ? '-' : `${teorAguaValue}`,
+        dataIntervencao: normalizeCell(row.DATA_INTERVENCAO),
+        tempAmostra: normalizeCell(row.TEMP_AMOSTRA),
+        tempOleo: normalizeCell(row.TEMP_OLEO),
+        teorAgua: teorAguaValue,
+        rd: rdValue,
+        tif: normalizeCell(row.TENSAO_INTERFACIAL),
+        indNeutr: normalizeCell(row['IND_NEUTRALIZACAO ']),
+        cor: normalizeCell(row.COR),
+        densRel: normalizeCell(row.DENS_RELATIVA),
+        fPot25: normalizeCell(row.FATOR_POT_25),
+        fPot90: normalizeCell(row.FATOR_POT_90),
+        fPot100: normalizeCell(row.FATOR_POT_100),
+        ensaioDbpc: normalizeCell(row.DBPC),
+      }
+    })
+    .sort((a, b) => b.sortTime - a.sortTime)
 })
+
+const filteredDefaultAnalysisRows = computed(() => {
+  const query = analysisSearchQuery.value.trim().toLowerCase()
+  if (!query) return unifiedAnalysisRows.value
+  return unifiedAnalysisRows.value.filter((row) =>
+    Object.values(row).some((value) => String(value).toLowerCase().includes(query))
+  )
+})
+
+const filteredOltcAnalysisRows = computed(() => {
+  const query = analysisSearchQuery.value.trim().toLowerCase()
+  if (!query) return oltcUnifiedAnalysisRows.value
+  return oltcUnifiedAnalysisRows.value.filter((row) =>
+    Object.values(row).some((value) => String(value).toLowerCase().includes(query))
+  )
+})
+
+const filteredUnifiedAnalysisRows = computed(() =>
+  analysisRecentTab.value === 'oltc' ? filteredOltcAnalysisRows.value : filteredDefaultAnalysisRows.value
+)
 
 const analysisTotalPages = computed(() => {
   const total = filteredUnifiedAnalysisRows.value.length
@@ -1379,9 +1562,27 @@ watch(analysisRowsPerPage, () => {
   analysisPage.value = 1
 })
 
-watch(analysisSearchDate, () => {
+watch(analysisSearchQuery, () => {
   analysisPage.value = 1
 })
+
+watch(analysisRecentTab, () => {
+  analysisPage.value = 1
+  analysisColumnsMenuOpen.value = false
+  analysisExportSelected.value = [...analysisExportOptions.value]
+})
+
+watch(
+  analysisExportOptions,
+  (options) => {
+    if (!analysisExportSelected.value.length) {
+      analysisExportSelected.value = [...options]
+      return
+    }
+    analysisExportSelected.value = analysisExportSelected.value.filter((item) => options.includes(item))
+  },
+  { immediate: true }
+)
 
 watch(selectedId, () => {
   analysisPage.value = 1
@@ -1429,15 +1630,6 @@ const cromatografiaConditions = computed(() => {
     co2: ieeeCondition(co2, 2500, 4000, 10000),
     tgc: ieeeCondition(tgc, 720, 1920, 4630),
   }
-})
-
-const oltcRows = computed(() => {
-  const serial = selectedTransformer.value?.serial
-  if (!serial) return []
-  const rows = ((oltcData as any)?.oltc || []).filter(
-    (row: any) => String(row.SERIAL_TRANSFORMADOR || '') === serial
-  )
-  return rows
 })
 
 function parseIsoDate(value: string) {
@@ -1900,104 +2092,131 @@ watch([activeTab, selectedId], async () => {
 
       <section v-if="activeTab === 'Histórico de Análises'" class="panel table-panel history-panel">
         <article class="history-block-card">
-          <p class="history-conditions-title">Condições: IEEE Std C57.104™-2008</p>
-          <table class="table">
-            <thead>
-              <tr>
-                <th class="text-center">H2</th>
-                <th class="text-center">CH4</th>
-                <th class="text-center">C2H2</th>
-                <th class="text-center">C2H4</th>
-                <th class="text-center">C2H6</th>
-                <th class="text-center">CO</th>
-                <th class="text-center">CO2</th>
-                <th class="text-center">TGC</th>
-              </tr>
-            </thead>
-            <tbody>
-              <tr>
-                <td class="text-center">{{ cromatografiaConditions.h2 }}</td>
-                <td class="text-center">{{ cromatografiaConditions.ch4 }}</td>
-                <td class="text-center">{{ cromatografiaConditions.c2h2 }}</td>
-                <td class="text-center">{{ cromatografiaConditions.c2h4 }}</td>
-                <td class="text-center">{{ cromatografiaConditions.c2h6 }}</td>
-                <td class="text-center">{{ cromatografiaConditions.co }}</td>
-                <td class="text-center">{{ cromatografiaConditions.co2 }}</td>
-                <td class="text-center">{{ cromatografiaConditions.tgc }}</td>
-              </tr>
-            </tbody>
-          </table>
+          <button
+            type="button"
+            class="expandable-head-btn"
+            :class="{ open: historyConditionsOpen }"
+            @click="historyConditionsOpen = !historyConditionsOpen"
+          >
+            <span>Análise Linear</span>
+            <i class="expandable-toggle-icon" aria-hidden="true">{{ historyConditionsOpen ? '−' : '+' }}</i>
+          </button>
+          <template v-if="historyConditionsOpen">
+            <div class="history-linear-children">
+              <article class="history-block-card history-linear-child-card">
+                <table class="table history-conditions-table">
+                  <thead>
+                    <tr>
+                      <th class="text-center" colspan="8">Condições: IEEE Std C57.104™-2008</th>
+                    </tr>
+                    <tr>
+                      <th class="text-center">H2</th>
+                      <th class="text-center">CH4</th>
+                      <th class="text-center">C2H2</th>
+                      <th class="text-center">C2H4</th>
+                      <th class="text-center">C2H6</th>
+                      <th class="text-center">CO</th>
+                      <th class="text-center">CO2</th>
+                      <th class="text-center">TGC</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    <tr>
+                      <td class="text-center">{{ cromatografiaConditions.h2 }}</td>
+                      <td class="text-center">{{ cromatografiaConditions.ch4 }}</td>
+                      <td class="text-center">{{ cromatografiaConditions.c2h2 }}</td>
+                      <td class="text-center">{{ cromatografiaConditions.c2h4 }}</td>
+                      <td class="text-center">{{ cromatografiaConditions.c2h6 }}</td>
+                      <td class="text-center">{{ cromatografiaConditions.co }}</td>
+                      <td class="text-center">{{ cromatografiaConditions.co2 }}</td>
+                      <td class="text-center">{{ cromatografiaConditions.tgc }}</td>
+                    </tr>
+                  </tbody>
+                </table>
+              </article>
+
+              <article v-if="activeHistoryModel.categories.length" class="history-block-card history-linear-child-card">
+                <div class="history-single">
+                <div class="history-line-head coletas-line-head">
+                  <div class="history-tab-select-wrap">
+                    <select v-model="historyActiveTab" class="history-tab-select" aria-label="Selecionar tipo de gráfico">
+                      <option value="cromatografia">Cromotografia</option>
+                      <option value="fisicoquimica">Físico Químico</option>
+                      <option value="ensaiosespeciais">Ensaios Especiais</option>
+                    </select>
+                  </div>
+                  <div class="history-tabs-inline history-tabs-main coletas-tabs-center">
+                    <button
+                      type="button"
+                      class="history-tab-btn"
+                      :class="{ active: historyActiveTab === 'cromatografia' }"
+                      @click="historyActiveTab = 'cromatografia'"
+                    >
+                      Cromotografia
+                    </button>
+                    <button
+                      type="button"
+                      class="history-tab-btn"
+                      :class="{ active: historyActiveTab === 'fisicoquimica' }"
+                      @click="historyActiveTab = 'fisicoquimica'"
+                    >
+                      Físico Químico
+                    </button>
+                    <button
+                      type="button"
+                      class="history-tab-btn"
+                      :class="{ active: historyActiveTab === 'ensaiosespeciais' }"
+                      @click="historyActiveTab = 'ensaiosespeciais'"
+                    >
+                      Ensaios Especiais
+                    </button>
+                  </div>
+                </div>
+                <article class="history-line-card history-line-card-wide">
+                  <div v-if="showHistorySwitch" class="history-switch-wrap history-switch-wrap-top">
+                    <label class="history-switch">
+                      <input v-model="historySwitchEnabled" type="checkbox" />
+                      <span class="history-switch-track">
+                        <i class="history-switch-thumb"></i>
+                      </span>
+                      <b>{{ historySwitchLabel }}</b>
+                    </label>
+                  </div>
+                  <div class="history-chart-host">
+                    <VueApexCharts
+                      :key="historyChartKey"
+                      type="line"
+                      height="100%"
+                      :options="historyChartOptions"
+                      :series="activeHistoryModel.series"
+                    />
+                  </div>
+                  <p class="history-mobile-range">{{ historyMobileRangeLabel }}</p>
+                </article>
+                </div>
+              </article>
+              <p v-else class="empty">Sem histórico suficiente para gráfico.</p>
+            </div>
+          </template>
         </article>
-        <article v-if="activeHistoryModel.categories.length" class="history-block-card">
-          <div class="history-single">
-          <div class="history-line-head coletas-line-head">
-            <div class="history-tab-select-wrap">
-              <select v-model="historyActiveTab" class="history-tab-select" aria-label="Selecionar tipo de gráfico">
-                <option value="cromatografia">Cromotografia</option>
-                <option value="fisicoquimica">Físico Químico</option>
-                <option value="ensaiosespeciais">Ensaios Especiais</option>
-              </select>
-            </div>
-            <div class="history-tabs-inline history-tabs-main coletas-tabs-center">
-              <button
-                type="button"
-                class="history-tab-btn"
-                :class="{ active: historyActiveTab === 'cromatografia' }"
-                @click="historyActiveTab = 'cromatografia'"
-              >
-                Cromotografia
-              </button>
-              <button
-                type="button"
-                class="history-tab-btn"
-                :class="{ active: historyActiveTab === 'fisicoquimica' }"
-                @click="historyActiveTab = 'fisicoquimica'"
-              >
-                Físico Químico
-              </button>
-              <button
-                type="button"
-                class="history-tab-btn"
-                :class="{ active: historyActiveTab === 'ensaiosespeciais' }"
-                @click="historyActiveTab = 'ensaiosespeciais'"
-              >
-                Ensaios Especiais
-              </button>
-            </div>
-          </div>
-          <article class="history-line-card history-line-card-wide">
-            <div v-if="showHistorySwitch" class="history-switch-wrap history-switch-wrap-top">
-              <label class="history-switch">
-                <input v-model="historySwitchEnabled" type="checkbox" />
-                <span class="history-switch-track">
-                  <i class="history-switch-thumb"></i>
-                </span>
-                <b>{{ historySwitchLabel }}</b>
-              </label>
-            </div>
-            <div class="history-chart-host">
-              <VueApexCharts
-                :key="historyChartKey"
-                type="line"
-                height="100%"
-                :options="historyChartOptions"
-                :series="activeHistoryModel.series"
-              />
-            </div>
-            <p class="history-mobile-range">{{ historyMobileRangeLabel }}</p>
-          </article>
-          </div>
-        </article>
-        <p v-else class="empty">Sem histórico suficiente para gráfico.</p>
         <article class="history-block-card history-analyses-card">
-          <p class="history-analyses-title">Análises Recentes</p>
-          <div class="history-analyses-head">
+          <button
+            type="button"
+            class="expandable-head-btn"
+            :class="{ open: historyAnalysesOpen }"
+            @click="historyAnalysesOpen = !historyAnalysesOpen"
+          >
+            <span>Análises Recentes</span>
+            <i class="expandable-toggle-icon" aria-hidden="true">{{ historyAnalysesOpen ? '−' : '+' }}</i>
+          </button>
+          <div v-if="historyAnalysesOpen" class="history-analyses-head">
             <div class="history-analyses-controls">
               <label class="history-analysis-search">
                 <input
-                  v-model="analysisSearchDate"
-                  type="date"
-                  aria-label="Pesquisar por data da coleta"
+                  v-model="analysisSearchQuery"
+                  type="text"
+                  placeholder="Pesquisar..."
+                  aria-label="Pesquisar análises recentes"
                 />
               </label>
               <div ref="analysisColumnsWrapRef" class="history-columns-picker">
@@ -2007,7 +2226,7 @@ watch([activeTab, selectedId], async () => {
                 </button>
                 <div v-if="analysisColumnsMenuOpen" class="history-columns-menu">
                   <section
-                    v-for="[group, columns] in analysisColumnsByGroup"
+                    v-for="[group, columns] in activeAnalysisColumnsByGroup"
                     :key="group"
                     class="history-columns-group"
                   >
@@ -2015,14 +2234,32 @@ watch([activeTab, selectedId], async () => {
                     <label v-for="column in columns" :key="column.id" class="history-columns-option">
                       <input
                         type="checkbox"
-                        :checked="analysisVisibleColumnIds.includes(column.id)"
-                        :disabled="analysisVisibleColumnIds.length === 1 && analysisVisibleColumnIds.includes(column.id)"
-                        @change="toggleAnalysisColumn(column.id)"
+                        :checked="isActiveAnalysisColumnChecked(column.id)"
+                        :disabled="isActiveAnalysisColumnLocked(column.id)"
+                        @change="toggleActiveAnalysisColumn(column.id)"
                       />
                       <span>{{ column.label }}</span>
                     </label>
                   </section>
                 </div>
+              </div>
+              <div class="history-tabs-inline history-tabs-main history-analyses-subtabs">
+                <button
+                  type="button"
+                  class="history-tab-btn"
+                  :class="{ active: analysisRecentTab === 'padrao' }"
+                  @click="analysisRecentTab = 'padrao'"
+                >
+                  Padrão
+                </button>
+                <button
+                  type="button"
+                  class="history-tab-btn"
+                  :class="{ active: analysisRecentTab === 'oltc' }"
+                  @click="analysisRecentTab = 'oltc'"
+                >
+                  OLTC
+                </button>
               </div>
             </div>
             <div class="history-analyses-actions">
@@ -2066,30 +2303,30 @@ watch([activeTab, selectedId], async () => {
               </div>
             </div>
           </div>
-          <div class="mini-table-wrap history-analyses-table-wrap">
+          <div v-if="historyAnalysesOpen" class="mini-table-wrap history-analyses-table-wrap">
             <table class="table compact analysis-table">
               <thead>
                 <tr>
-                  <th v-for="column in analysisVisibleColumns" :key="column.id" class="text-center">
+                  <th v-for="column in activeAnalysisVisibleColumns" :key="column.id" class="text-center">
                     {{ column.label }}
                   </th>
                 </tr>
               </thead>
               <tbody>
                 <tr v-for="row in paginatedUnifiedAnalysisRows" :key="row.id">
-                  <td v-for="column in analysisVisibleColumns" :key="`${row.id}-${column.id}`" class="text-center">
+                  <td v-for="column in activeAnalysisVisibleColumns" :key="`${row.id}-${column.id}`" class="text-center">
                     {{ row[column.id] }}
                   </td>
                 </tr>
                 <tr v-if="!filteredUnifiedAnalysisRows.length">
-                  <td class="text-center" :colspan="analysisVisibleColumns.length">
+                  <td class="text-center" :colspan="activeAnalysisVisibleColumns.length">
                     Nenhuma análise encontrada para o filtro informado.
                   </td>
                 </tr>
               </tbody>
             </table>
           </div>
-          <div class="history-analyses-pagination">
+          <div v-if="historyAnalysesOpen" class="history-analyses-pagination">
             <label class="history-rows-per-page">
               <span>Itens por página</span>
               <select v-model.number="analysisRowsPerPage">
@@ -2875,34 +3112,6 @@ watch([activeTab, selectedId], async () => {
         </article>
       </section>
 
-      <section v-else-if="activeTab === 'Cadastro OLTC'" class="panel table-panel">
-        <table v-if="oltcRows.length" class="table">
-          <thead>
-            <tr>
-              <th>Tag OLTC</th>
-              <th>Serial OLTC</th>
-              <th>Modelo</th>
-              <th>Fabricante</th>
-              <th>Ano</th>
-              <th>Filtro</th>
-              <th>Status</th>
-            </tr>
-          </thead>
-          <tbody>
-            <tr v-for="row in oltcRows" :key="row.ID">
-              <td>{{ row.TAG }}</td>
-              <td>{{ row.SERIAL_OLTC }}</td>
-              <td>{{ row.MODELO }}</td>
-              <td>{{ row.FABRICANTE }}</td>
-              <td>{{ row.ANO_FABRICACAO }}</td>
-              <td>{{ row.FILTRO }}</td>
-              <td><span class="pill" :class="statusClass(String(row.ESTADO || ''))">{{ row.ESTADO }}</span></td>
-            </tr>
-          </tbody>
-        </table>
-        <p v-else class="empty">Sem cadastro OLTC vinculado para este transformador.</p>
-      </section>
-
       <section v-else-if="activeTab === 'Cromatografias'" class="panel table-panel">
         <table class="table">
           <thead>
@@ -3676,6 +3885,20 @@ watch([activeTab, selectedId], async () => {
   background: #64748b !important;
 }
 
+.history-conditions-table{
+  margin-top: 0;
+}
+
+.history-linear-children{
+  display: grid;
+  gap: 12px;
+  margin-top: 10px;
+}
+
+.history-linear-child-card{
+  padding: 12px;
+}
+
 .table tbody tr:nth-child(odd){
   background: rgba(248, 250, 252, 0.75);
 }
@@ -4132,38 +4355,41 @@ watch([activeTab, selectedId], async () => {
 
 .expandable-head-btn{
   width: 100%;
-  border: 1px solid rgba(15, 23, 42, 0.12);
-  border-radius: 10px;
-  background: rgba(248, 250, 252, 0.9);
-  color: rgba(15, 23, 42, 0.88);
-  padding: 10px 12px;
+  position: relative;
+  border: 1px solid #1e4e8b;
+  border-radius: 8px;
+  background: #1e4e8b;
+  color: #fff;
+  padding: 8px 44px 8px 12px;
   font-size: 13px;
   font-weight: 700;
   display: inline-flex;
   align-items: center;
-  justify-content: space-between;
+  justify-content: center;
   gap: 8px;
   cursor: pointer;
+  text-align: center;
 }
 
 .expandable-toggle-icon{
-  margin-left: auto;
+  position: absolute;
+  right: 10px;
   width: 24px;
   height: 24px;
   border-radius: 999px;
-  border: 1px solid rgba(15, 23, 42, 0.22);
+  border: 1px solid rgba(255, 255, 255, 0.45);
   display: inline-flex;
   align-items: center;
   justify-content: center;
   font-size: 18px;
   line-height: 1;
   font-weight: 700;
-  color: rgba(15, 23, 42, 0.85);
-  background: rgba(255, 255, 255, 0.82);
+  color: #ffffff;
+  background: rgba(255, 255, 255, 0.12);
 }
 
 .expandable-head-btn.open{
-  border-color: rgba(30, 78, 139, 0.28);
+  border-color: #1e4e8b;
 }
 
 .limit-table-class-head{
@@ -4483,6 +4709,10 @@ watch([activeTab, selectedId], async () => {
   justify-content: flex-start;
   gap: 6px;
   flex-wrap: wrap;
+}
+
+.history-analyses-subtabs{
+  margin-right: 2px;
 }
 
 .history-analyses-controls-left{
