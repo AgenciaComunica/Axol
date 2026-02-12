@@ -169,6 +169,13 @@ onBeforeUnmount(() => {
   top: 24px;
   left: 24px;
   z-index: 30;
+  pointer-events: none;
+}
+
+.menu-btn,
+.dropdown,
+.menu-backdrop{
+  pointer-events: auto;
 }
 
 .menu-btn{
@@ -371,10 +378,6 @@ onBeforeUnmount(() => {
   flex: 0 0 auto;
 }
 
-.mobile-menu-head{
-  display: none;
-}
-
 .menu-backdrop{
   position: fixed;
   inset: 0;
@@ -383,9 +386,14 @@ onBeforeUnmount(() => {
   pointer-events: none;
   transition: opacity 0.2s ease;
 }
+
 .menu-backdrop.open{
   opacity: 1;
   pointer-events: auto;
+}
+
+.mobile-menu-head{
+  display: none;
 }
 
 @media (max-width: 900px){

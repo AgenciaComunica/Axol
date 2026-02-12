@@ -8,6 +8,8 @@ import oltcData from '../../ArquivoExtRef/oltc.json'
 import cromatografiasRaw from '../../ArquivoExtRef/cromatografias.json?raw'
 import fisicoQuimicosRaw from '../../ArquivoExtRef/fisicoquimicos.json?raw'
 import fisicoQuimicosOltcRaw from '../../ArquivoExtRef/fisicoquimicos_oltc.json?raw'
+import VueApexCharts from 'vue3-apexcharts'
+import type { ApexOptions } from 'apexcharts'
 
 type BaseRow = Record<string, unknown>
 type Transformer = {
@@ -252,6 +254,11 @@ const cromatografiasRows = computed(() => {
     .slice(0, 8)
 })
 
+const latestCromatografiaRow = computed<BaseRow | null>(() => {
+  const data = parseLooseJson<BaseRow[]>(cromatografiasRaw)
+  return [...data].sort((a, b) => parseBrDate(b.DATA_COLETA) - parseBrDate(a.DATA_COLETA))[0] || null
+})
+
 const fisicoRows = computed(() => {
   const data = parseLooseJson<BaseRow[]>(fisicoQuimicosRaw)
   return [...data]
@@ -277,19 +284,19 @@ const historyRows = computed(() => {
     byYear.get(year)![field] += 1
   }
 
-  cromatografiasRows.value.forEach((row) => {
+  parseLooseJson<BaseRow[]>(cromatografiasRaw).forEach((row) => {
     const time = parseBrDate(row.DATA_COLETA)
     if (!time) return
     add(new Date(time).getFullYear(), 'cromatografias')
   })
 
-  fisicoRows.value.forEach((row) => {
+  parseLooseJson<BaseRow[]>(fisicoQuimicosRaw).forEach((row) => {
     const time = parseBrDate(row.DATA_COLETA)
     if (!time) return
     add(new Date(time).getFullYear(), 'fisicoQuimicos')
   })
 
-  fisicoOltcRows.value.forEach((row) => {
+  parseLooseJson<BaseRow[]>(fisicoQuimicosOltcRaw).forEach((row) => {
     const time = parseBrDate(row.DATA_COLETA)
     if (!time) return
     add(new Date(time).getFullYear(), 'fisicoOltc')
@@ -298,12 +305,222 @@ const historyRows = computed(() => {
   return [...byYear.values()].sort((a, b) => a.year - b.year)
 })
 
-const historyMax = computed(() =>
-  Math.max(
-    1,
-    ...historyRows.value.map((row) => Math.max(row.cromatografias, row.fisicoQuimicos, row.fisicoOltc))
-  )
+type HistorySeriesDef = { key: string; label: string; color: string }
+type HistoryChartSeries = { name: string; data: number[] }
+type HistoryChartData = { max: number; categories: string[]; series: HistoryChartSeries[]; colors: string[] }
+type HistoryChartTab = 'cromatografia' | 'fisicoquimica' | 'ensaiosespeciais'
+type HistoryDisplayMode = 'base' | 'historico'
+
+const historyActiveTab = ref<HistoryChartTab>('cromatografia')
+const historyCromDisplayMode = ref<HistoryDisplayMode>('base')
+const historyFisicoDisplayMode = ref<HistoryDisplayMode>('base')
+
+const cromatografiaSeriesDefs: HistorySeriesDef[] = [
+  { key: 'MONOX_CARBONO', label: 'CO', color: '#008ffb' },
+  { key: 'HIDROGENIO', label: 'H2', color: '#00e396' },
+  { key: 'OXIGENIO', label: 'O2', color: '#feb019' },
+  { key: 'NITROGENIO', label: 'N2', color: '#ff4560' },
+  { key: 'METANO', label: 'CH4', color: '#775dd0' },
+  { key: 'DIOX_CARBONO', label: 'CO2', color: '#546e7a' },
+  { key: 'ETILENO', label: 'C2H4', color: '#1e88e5' },
+  { key: 'ETANO', label: 'C2H6', color: '#f9a825' },
+  { key: 'ACETILENO', label: 'C2H2', color: '#ef5350' },
+  { key: 'TOTAL_GASES_COMB', label: 'TGC', color: '#3949ab' },
+]
+
+const fisicoSeriesDefs: HistorySeriesDef[] = [
+  { key: 'TEOR_AGUA', label: 'Água', color: '#0ea5e9' },
+  { key: 'RD', label: 'RD', color: '#22c55e' },
+  { key: 'TENSAO_INTERFACIAL', label: 'TIF', color: '#f59e0b' },
+  { key: 'IND_NEUTRALIZACAO ', label: 'IN', color: '#ef4444' },
+  { key: 'COR', label: 'Cor', color: '#8b5cf6' },
+]
+
+const ensaiosSeriesDefs: HistorySeriesDef[] = [
+  { key: 'TEOR_AGUA', label: 'Água', color: '#0ea5e9' },
+  { key: 'RD', label: 'RD', color: '#22c55e' },
+  { key: 'TENSAO_INTERFACIAL', label: 'TIF', color: '#f59e0b' },
+  { key: 'FATOR_POT_100', label: 'FP100', color: '#ef4444' },
+]
+
+const cromatografiasChartRows = computed(() => {
+  const data = parseLooseJson<BaseRow[]>(cromatografiasRaw)
+  return [...data]
+    .sort((a, b) => parseBrDate(a.DATA_COLETA) - parseBrDate(b.DATA_COLETA))
+    .slice(-40)
+})
+
+const fisicoChartRows = computed(() => {
+  const data = parseLooseJson<BaseRow[]>(fisicoQuimicosRaw)
+  return [...data]
+    .sort((a, b) => parseBrDate(a.DATA_COLETA) - parseBrDate(b.DATA_COLETA))
+    .slice(-40)
+})
+
+const ensaiosChartRows = computed(() => {
+  const data = parseLooseJson<BaseRow[]>(fisicoQuimicosOltcRaw)
+  return [...data]
+    .sort((a, b) => parseBrDate(a.DATA_COLETA) - parseBrDate(b.DATA_COLETA))
+    .slice(-40)
+})
+
+function toSeriesValues(rows: BaseRow[], key: string) {
+  return rows.map((row) => {
+    const raw = row[key]
+    const value = Number(raw ?? 0)
+    return Number.isFinite(value) ? value : 0
+  })
+}
+
+function buildHistoryChartData(rows: BaseRow[], defs: HistorySeriesDef[], mode: HistoryDisplayMode): HistoryChartData {
+  const categories = rows.map((row) => toUiDate(String(row.DATA_COLETA || '')))
+  const transformedByKey = new Map<string, number[]>()
+  defs.forEach((def) => {
+    const values = toSeriesValues(rows, def.key)
+    if (mode === 'base') {
+      transformedByKey.set(def.key, values)
+      return
+    }
+    const peak = Math.max(1, ...values)
+    transformedByKey.set(
+      def.key,
+      values.map((value) => Number(((value / peak) * 100).toFixed(1)))
+    )
+  })
+
+  const globalMax = Math.max(1, ...defs.flatMap((def) => transformedByKey.get(def.key) || [0]))
+  const series = defs.map((def) => {
+    const values = transformedByKey.get(def.key) || []
+    return { name: def.label, data: values }
+  })
+
+  return { max: globalMax, categories, series, colors: defs.map((def) => def.color) }
+}
+
+const historyCromMultiModel = computed(() =>
+  buildHistoryChartData(cromatografiasChartRows.value, cromatografiaSeriesDefs, historyCromDisplayMode.value)
 )
+const historyFisicoMultiModel = computed(() =>
+  buildHistoryChartData(fisicoChartRows.value, fisicoSeriesDefs, historyFisicoDisplayMode.value)
+)
+const historyEnsaiosMultiModel = computed(() =>
+  buildHistoryChartData(ensaiosChartRows.value, ensaiosSeriesDefs, 'base')
+)
+
+const activeHistoryModel = computed(() => {
+  if (historyActiveTab.value === 'fisicoquimica') return historyFisicoMultiModel.value
+  if (historyActiveTab.value === 'ensaiosespeciais') return historyEnsaiosMultiModel.value
+  return historyCromMultiModel.value
+})
+
+const historyChartOptions = computed<ApexOptions>(() => ({
+  chart: {
+    type: 'line',
+    animations: { enabled: true },
+    toolbar: { show: true },
+    zoom: { enabled: true },
+    foreColor: '#334155',
+    redrawOnParentResize: true,
+    redrawOnWindowResize: true,
+  },
+  stroke: {
+    curve: 'straight',
+    width: 2,
+  },
+  colors: activeHistoryModel.value.colors,
+  legend: {
+    show: true,
+    position: 'bottom',
+    horizontalAlign: 'center',
+    fontSize: '12px',
+  },
+  dataLabels: { enabled: false },
+  markers: { size: 0, hover: { sizeOffset: 3 } },
+  grid: { borderColor: 'rgba(15, 23, 42, 0.12)' },
+  xaxis: {
+    categories: activeHistoryModel.value.categories,
+    labels: {
+      rotate: -45,
+      hideOverlappingLabels: true,
+      trim: true,
+    },
+  },
+  yaxis: {
+    min: 0,
+    max: activeHistoryModel.value.max > 0 ? Math.ceil(activeHistoryModel.value.max * 1.1) : 1,
+    forceNiceScale: true,
+  },
+  tooltip: {
+    shared: true,
+    intersect: false,
+  },
+}))
+
+const historyChartKey = computed(() => {
+  const mode =
+    historyActiveTab.value === 'cromatografia'
+      ? historyCromDisplayMode.value
+      : historyActiveTab.value === 'fisicoquimica'
+        ? historyFisicoDisplayMode.value
+        : 'base'
+  return `${activeTab.value}-${historyActiveTab.value}-${mode}-${activeHistoryModel.value.series.length}-${activeHistoryModel.value.categories.length}`
+})
+
+const showHistorySwitch = computed(() => historyActiveTab.value !== 'ensaiosespeciais')
+const historySwitchLabel = computed(() =>
+  historyActiveTab.value === 'cromatografia' ? 'Histórico de Gases Combustíveis (un)' : 'Histórico (un)'
+)
+const historySwitchEnabled = computed({
+  get() {
+    if (historyActiveTab.value === 'cromatografia') return historyCromDisplayMode.value === 'historico'
+    if (historyActiveTab.value === 'fisicoquimica') return historyFisicoDisplayMode.value === 'historico'
+    return false
+  },
+  set(enabled: boolean) {
+    if (historyActiveTab.value === 'cromatografia') {
+      historyCromDisplayMode.value = enabled ? 'historico' : 'base'
+      return
+    }
+    if (historyActiveTab.value === 'fisicoquimica') {
+      historyFisicoDisplayMode.value = enabled ? 'historico' : 'base'
+    }
+  },
+})
+
+function ieeeCondition(value: number, c1: number, c2: number, c3: number) {
+  if (value <= c1) return 'Condição 01'
+  if (value <= c2) return 'Condição 02'
+  if (value <= c3) return 'Condição 03'
+  return 'Condição 04'
+}
+
+function numericValue(row: BaseRow | null, key: string) {
+  if (!row) return 0
+  const value = Number(row[key] ?? 0)
+  return Number.isFinite(value) ? value : 0
+}
+
+const cromatografiaConditions = computed(() => {
+  const row = latestCromatografiaRow.value
+  const h2 = numericValue(row, 'HIDROGENIO')
+  const ch4 = numericValue(row, 'METANO')
+  const c2h2 = numericValue(row, 'ACETILENO')
+  const c2h4 = numericValue(row, 'ETILENO')
+  const c2h6 = numericValue(row, 'ETANO')
+  const co = numericValue(row, 'MONOX_CARBONO')
+  const co2 = numericValue(row, 'DIOX_CARBONO')
+  const tgc = numericValue(row, 'TOTAL_GASES_COMB')
+  return {
+    h2: ieeeCondition(h2, 100, 700, 1800),
+    ch4: ieeeCondition(ch4, 120, 400, 1000),
+    c2h2: ieeeCondition(c2h2, 1, 9, 35),
+    c2h4: ieeeCondition(c2h4, 50, 100, 200),
+    c2h6: ieeeCondition(c2h6, 65, 100, 150),
+    co: ieeeCondition(co, 350, 570, 1400),
+    co2: ieeeCondition(co2, 2500, 4000, 10000),
+    tgc: ieeeCondition(tgc, 720, 1920, 4630),
+  }
+})
 
 const oltcRows = computed(() => {
   const serial = selectedTransformer.value?.serial
@@ -471,6 +688,9 @@ onUnmounted(() => {
 watch([activeTab, selectedId], async () => {
   await nextTick()
   enhanceMobileTables()
+  if (activeTab.value === 'Histórico de Análises' && typeof window !== 'undefined') {
+    window.dispatchEvent(new Event('resize'))
+  }
 })
 </script>
 
@@ -554,52 +774,88 @@ watch([activeTab, selectedId], async () => {
         </button>
       </nav>
 
-      <section v-if="activeTab === 'Histórico de Análises'" class="panel table-panel">
-        <table class="table">
-          <thead>
-            <tr>
-              <th>Ano</th>
-              <th>Cromatografias</th>
-              <th>Físico-Químicos</th>
-              <th>Físico-Químicos OLTC</th>
-            </tr>
-          </thead>
-          <tbody>
-            <tr v-for="row in historyRows" :key="row.year">
-              <td>{{ row.year }}</td>
-              <td>{{ row.cromatografias }}</td>
-              <td>{{ row.fisicoQuimicos }}</td>
-              <td>{{ row.fisicoOltc }}</td>
-            </tr>
-          </tbody>
-        </table>
-        <div v-if="historyRows.length" class="history-chart">
-          <article v-for="row in historyRows" :key="`chart-${row.year}`" class="history-column">
-            <div class="history-bars">
-              <div
-                class="history-bar history-crom"
-                :style="{ height: `${Math.round((row.cromatografias / historyMax) * 100)}%` }"
-                :title="`Cromatografias: ${row.cromatografias}`"
-              ></div>
-              <div
-                class="history-bar history-fq"
-                :style="{ height: `${Math.round((row.fisicoQuimicos / historyMax) * 100)}%` }"
-                :title="`Físico-Químicos: ${row.fisicoQuimicos}`"
-              ></div>
-              <div
-                class="history-bar history-fqoltc"
-                :style="{ height: `${Math.round((row.fisicoOltc / historyMax) * 100)}%` }"
-                :title="`Físico-Químicos OLTC: ${row.fisicoOltc}`"
-              ></div>
+      <section v-if="activeTab === 'Histórico de Análises'" class="panel table-panel history-panel">
+        <article class="history-block-card">
+          <p class="history-conditions-title">Condições: IEEE Std C57.104™-2008</p>
+          <table class="table">
+            <thead>
+              <tr>
+                <th class="text-center">H2</th>
+                <th class="text-center">CH4</th>
+                <th class="text-center">C2H2</th>
+                <th class="text-center">C2H4</th>
+                <th class="text-center">C2H6</th>
+                <th class="text-center">CO</th>
+                <th class="text-center">CO2</th>
+                <th class="text-center">TGC</th>
+              </tr>
+            </thead>
+            <tbody>
+              <tr>
+                <td class="text-center">{{ cromatografiaConditions.h2 }}</td>
+                <td class="text-center">{{ cromatografiaConditions.ch4 }}</td>
+                <td class="text-center">{{ cromatografiaConditions.c2h2 }}</td>
+                <td class="text-center">{{ cromatografiaConditions.c2h4 }}</td>
+                <td class="text-center">{{ cromatografiaConditions.c2h6 }}</td>
+                <td class="text-center">{{ cromatografiaConditions.co }}</td>
+                <td class="text-center">{{ cromatografiaConditions.co2 }}</td>
+                <td class="text-center">{{ cromatografiaConditions.tgc }}</td>
+              </tr>
+            </tbody>
+          </table>
+        </article>
+        <article v-if="activeHistoryModel.categories.length" class="history-block-card">
+          <div class="history-single">
+          <div class="history-line-head">
+            <div class="history-tabs-inline history-tabs-main">
+              <button
+                type="button"
+                class="history-tab-btn"
+                :class="{ active: historyActiveTab === 'cromatografia' }"
+                @click="historyActiveTab = 'cromatografia'"
+              >
+                Cromotografia
+              </button>
+              <button
+                type="button"
+                class="history-tab-btn"
+                :class="{ active: historyActiveTab === 'fisicoquimica' }"
+                @click="historyActiveTab = 'fisicoquimica'"
+              >
+                Físico Químico
+              </button>
+              <button
+                type="button"
+                class="history-tab-btn"
+                :class="{ active: historyActiveTab === 'ensaiosespeciais' }"
+                @click="historyActiveTab = 'ensaiosespeciais'"
+              >
+                Ensaios Especiais
+              </button>
             </div>
-            <small>{{ row.year }}</small>
+          </div>
+          <article class="history-line-card history-line-card-wide">
+            <div v-if="showHistorySwitch" class="history-switch-wrap history-switch-wrap-top">
+              <label class="history-switch">
+                <input v-model="historySwitchEnabled" type="checkbox" />
+                <span class="history-switch-track">
+                  <i class="history-switch-thumb"></i>
+                </span>
+                <b>{{ historySwitchLabel }}</b>
+              </label>
+            </div>
+            <div class="history-chart-host">
+              <VueApexCharts
+                :key="historyChartKey"
+                type="line"
+                height="100%"
+                :options="historyChartOptions"
+                :series="activeHistoryModel.series"
+              />
+            </div>
           </article>
-        </div>
-        <div v-if="historyRows.length" class="history-legend">
-          <span><i class="history-dot history-crom"></i>Cromatografias</span>
-          <span><i class="history-dot history-fq"></i>Físico-Químicos</span>
-          <span><i class="history-dot history-fqoltc"></i>Físico-Químicos OLTC</span>
-        </div>
+          </div>
+        </article>
         <p v-else class="empty">Sem histórico suficiente para gráfico.</p>
       </section>
 
@@ -1891,64 +2147,210 @@ watch([activeTab, selectedId], async () => {
   color: rgba(15, 23, 42, 0.65);
 }
 
-.history-chart{
-  margin-top: 14px;
-  padding: 14px;
+.history-conditions-title{
+  margin: 0 0 8px;
+  padding: 6px 10px;
+  border-radius: 8px;
+  background: #1e4e8b;
+  color: #fff;
+  font-size: 13px;
+  font-weight: 700;
+  text-align: center;
+}
+
+.history-block-card{
+  border: 1px solid rgba(15, 23, 42, 0.12);
   border-radius: 14px;
-  border: 1px solid rgba(15, 23, 42, 0.08);
-  background: rgba(248, 250, 252, 0.85);
-  display: flex;
-  align-items: end;
-  gap: 14px;
-  min-height: 220px;
+  background: #ffffff;
+  padding: 12px;
 }
 
-.history-column{
-  flex: 1 1 0;
+.history-panel{
+  display: block !important;
+}
+
+.history-panel .history-block-card + .history-block-card{
+  margin-top: 14px;
+}
+
+.history-grid{
+  margin-top: 14px;
   display: grid;
-  gap: 8px;
-  justify-items: center;
+  grid-template-columns: 1fr;
+  gap: 12px;
 }
 
-.history-bars{
+.history-single{
+  margin-top: 14px;
+  display: grid;
+  gap: 10px;
+}
+
+.history-line-card{
+  border: 1px solid rgba(15, 23, 42, 0.1);
+  border-radius: 14px;
+  background: rgba(248, 250, 252, 0.9);
+  padding: 12px;
+  overflow: hidden;
+}
+
+.history-line-card-wide{
   width: 100%;
-  max-width: 56px;
-  height: 170px;
+  max-width: none;
+  margin: 0 auto;
+}
+
+.history-card-label{
+  margin: 0;
+  text-align: center;
+  font-size: 11px;
+  font-weight: 600;
+  color: rgba(15, 23, 42, 0.78);
+}
+
+.history-line-head{
   display: flex;
-  align-items: end;
+  align-items: center;
   justify-content: center;
-  gap: 5px;
-}
-
-.history-bar{
-  width: 12px;
-  min-height: 2px;
-  border-radius: 8px 8px 2px 2px;
-}
-
-.history-crom{ background: #2563eb; }
-.history-fq{ background: #f59e0b; }
-.history-fqoltc{ background: #10b981; }
-
-.history-legend{
-  display: flex;
+  gap: 8px;
   flex-wrap: wrap;
-  gap: 14px;
-  margin-top: 8px;
-  font-size: 12px;
-  color: rgba(15, 23, 42, 0.75);
 }
 
-.history-legend span{
+.history-line-head h4{
+  margin: 0;
+  font-size: 13px;
+  color: #0f172a;
+}
+
+.history-tabs-inline{
+  display: inline-flex;
+  flex-wrap: wrap;
+  justify-content: center;
+  gap: 4px;
+  padding: 2px;
+  border-radius: 10px;
+  border: 1px solid rgba(15, 23, 42, 0.1);
+  background: rgba(255, 255, 255, 0.92);
+}
+
+.history-tabs-main{
+  margin: 0 auto;
+}
+
+.history-tab-btn{
+  border: 0;
+  min-height: 26px;
+  padding: 0 10px;
+  border-radius: 8px;
+  background: transparent;
+  color: rgba(15, 23, 42, 0.7);
+  font-size: 11px;
+  line-height: 1.2;
+  white-space: normal;
+  text-align: center;
+  font-weight: 600;
+  cursor: pointer;
+}
+
+.history-tab-btn.active{
+  background: #1e4e8b;
+  color: #fff;
+}
+
+.history-scale{
+  margin-top: 8px;
+  display: flex;
+  justify-content: center;
+  gap: 10px;
+  font-size: 11px;
+  color: rgba(15, 23, 42, 0.65);
+}
+
+.history-switch-wrap{
+  margin-top: 8px;
+  display: flex;
+  justify-content: center;
+}
+
+.history-switch-wrap-top{
+  margin-top: 0;
+  margin-bottom: 6px;
+  justify-content: flex-start;
+}
+
+.history-switch{
   display: inline-flex;
   align-items: center;
-  gap: 6px;
+  gap: 8px;
+  font-size: 12px;
+  font-weight: 600;
+  color: rgba(15, 23, 42, 0.8);
+  cursor: pointer;
 }
 
-.history-dot{
-  width: 10px;
-  height: 10px;
+.history-switch input{
+  position: absolute;
+  opacity: 0;
+  pointer-events: none;
+}
+
+.history-switch b{
+  font-size: 12px;
+  font-weight: 600;
+  cursor: pointer;
+}
+
+.history-switch-track{
+  width: 40px;
+  height: 22px;
   border-radius: 999px;
+  background: #94a3b8;
+  border: 1px solid rgba(15, 23, 42, 0.18);
+  position: relative;
+  display: inline-flex;
+  align-items: center;
+  padding: 2px;
+  transition: background-color 0.2s ease;
+  cursor: pointer;
+}
+
+.history-switch-thumb{
+  width: 16px;
+  height: 16px;
+  border-radius: 999px;
+  background: #fff;
+  box-shadow: 0 1px 2px rgba(15, 23, 42, 0.25);
+  transform: translateX(0);
+  transition: transform 0.2s ease;
+  cursor: pointer;
+}
+
+.history-switch input:checked + .history-switch-track{
+  background: #22c55e;
+  border-color: #16a34a;
+}
+
+.history-switch input:checked + .history-switch-track .history-switch-thumb{
+  transform: translateX(18px);
+}
+
+.history-chart-host{
+  width: 100%;
+  height: 460px;
+  display: block;
+  margin-top: 8px;
+  background: rgba(255, 255, 255, 0.7);
+  border-radius: 10px;
+  padding: 8px 8px 2px;
+  overflow: hidden;
+}
+
+.history-chart-host :deep(.apexcharts-canvas){
+  max-width: 100% !important;
+}
+
+.history-chart-host :deep(svg){
+  max-width: 100% !important;
 }
 
 @media (max-width: 900px) {
@@ -2046,12 +2448,11 @@ watch([activeTab, selectedId], async () => {
     margin-right: auto;
     padding-right: 10px;
   }
-  .history-chart{
-    overflow-x: auto;
-    min-height: 200px;
+  .history-grid{
+    grid-template-columns: 1fr;
   }
-  .history-column{
-    min-width: 54px;
+  .history-chart-host{
+    height: 340px;
   }
   .modal-grid{
     grid-template-columns: 1fr;
