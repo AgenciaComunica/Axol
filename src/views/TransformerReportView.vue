@@ -664,7 +664,6 @@ watch([activeTab, selectedId], async () => {
             histórico de gás dissolvido, para operação contínua em vários níveis de gás combustível. O critério usa
             ambos, concentrações para gases separados e a concentração total de todos os gases combustíveis (TGC).
           </p>
-          <p><b>Tabela 1 – Principais limites de concentração de gases dissolvidos (ppm)</b></p>
           <div class="mini-table-wrap">
             <table class="table compact mini-table">
               <thead>
@@ -916,37 +915,141 @@ watch([activeTab, selectedId], async () => {
       </section>
 
       <section v-else-if="activeTab === 'Avaliação IEEE'" class="panel table-panel">
-        <table class="table">
-          <thead>
-            <tr>
-              <th>Critério IEEE</th>
-              <th>Descrição</th>
-              <th>Situação atual</th>
-            </tr>
-          </thead>
-          <tbody>
-            <tr>
-              <td>Condição do óleo isolante</td>
-              <td>Verificação de degradação, umidade e contaminação</td>
-              <td>{{ selectedTransformer?.status || '-' }}</td>
-            </tr>
-            <tr>
-              <td>Desempenho térmico</td>
-              <td>Avaliação de carga e resposta térmica do ativo</td>
-              <td>{{ selectedTransformer?.load || '-' }}</td>
-            </tr>
-            <tr>
-              <td>Sistema de comutação</td>
-              <td>Condição operacional do OLTC/comutador</td>
-              <td>{{ selectedTransformer?.commutator || '-' }}</td>
-            </tr>
-            <tr>
-              <td>Diagnóstico geral</td>
-              <td>Consolidação do risco e recomendação técnica</td>
-              <td>{{ selectedTransformer?.statusAnalyst || '-' }}</td>
-            </tr>
-          </tbody>
-        </table>
+        <article class="tile tile-wide">
+          <h4>Guia IEEE Std C57.104™- 2008 para a Interpretação de gases dissolvidos no óleo isolante dos transformadores</h4>
+          <p>
+            Foi desenvolvido um critério de quatro níveis para classificar os riscos aos transformadores, quando não há histórico de gás dissolvido,
+            para operação contínua em vários níveis de gás combustível. O critério usa ambos, concentrações para gases separados e a concentração
+            total de todos os gases combustíveis (TGC).
+          </p>
+          <p class="section-strong">DEFINIÇÃO DAS QUATRO CONDIÇÕES DE CLASSIFICAÇÃO DO GUIA:</p>
+          <ul class="ieee-conditions">
+            <li><b>Condição 01:</b> Quando o total de gases combustíveis (TGC) está em condições satisfatórias de operação. Se há algum gás excedendo esse limite, deve ser investigado.</li>
+            <li><b>Condição 02:</b> Quando o total de gases combustíveis (TGC) está fora do normal. Se há algum gás excedendo esse limite, deve ser investigado.</li>
+            <li><b>Condição 03:</b> Quando o total de gases combustíveis (TGC) está dentro desta faixa indica um alto nível de decomposição. Se há algum gás excedendo esse limite, deve ser feita uma investigação adicional.</li>
+            <li><b>Condição 04:</b> Quando o total de gases combustíveis (TGC) está com provável nível de decomposição excessiva, pode indicar falha na operação do transformador.</li>
+          </ul>
+          <p>
+            A Tabela 1 lista as concentrações de gases dissolvidos individuais e as concentrações de TGC (total de gases combustíveis), para as
+            condições de 1 até 4. Esta tabela é usada para fazer a avaliação de uma condição de gaseificação em um transformador novo ou
+            recentemente reparado. Pode ser utilizada quando não houver ensaios prévios no transformador para gases dissolvidos ou quando não há
+            histórico recente das análises cromatográficas.
+          </p>
+          <div class="mini-table-wrap">
+            <table class="table compact mini-table">
+              <thead>
+                <tr>
+                  <th class="text-center">Status</th>
+                  <th class="text-center">H2</th>
+                  <th class="text-center">CH4</th>
+                  <th class="text-center">C2H2</th>
+                  <th class="text-center">C2H4</th>
+                  <th class="text-center">C2H6</th>
+                  <th class="text-center">CO</th>
+                  <th class="text-center">CO2</th>
+                  <th class="text-center">TGC</th>
+                </tr>
+              </thead>
+              <tbody>
+                <tr>
+                  <td class="text-center">Condição 01</td>
+                  <td class="text-center">100</td>
+                  <td class="text-center">120</td>
+                  <td class="text-center">1</td>
+                  <td class="text-center">50</td>
+                  <td class="text-center">65</td>
+                  <td class="text-center">350</td>
+                  <td class="text-center">2500</td>
+                  <td class="text-center">720</td>
+                </tr>
+                <tr>
+                  <td class="text-center">Condição 02</td>
+                  <td class="text-center">101-700</td>
+                  <td class="text-center">121-400</td>
+                  <td class="text-center">2-9</td>
+                  <td class="text-center">51-100</td>
+                  <td class="text-center">66-100</td>
+                  <td class="text-center">351-570</td>
+                  <td class="text-center">2500-4000</td>
+                  <td class="text-center">721-1920</td>
+                </tr>
+                <tr>
+                  <td class="text-center">Condição 03</td>
+                  <td class="text-center">701-1800</td>
+                  <td class="text-center">401-1000</td>
+                  <td class="text-center">10-35</td>
+                  <td class="text-center">101-200</td>
+                  <td class="text-center">101-150</td>
+                  <td class="text-center">571-1400</td>
+                  <td class="text-center">4001-10000</td>
+                  <td class="text-center">1921-4630</td>
+                </tr>
+                <tr>
+                  <td class="text-center">Condição 04</td>
+                  <td class="text-center">&gt;1800</td>
+                  <td class="text-center">&gt;1000</td>
+                  <td class="text-center">&gt;35</td>
+                  <td class="text-center">&gt;200</td>
+                  <td class="text-center">&gt;150</td>
+                  <td class="text-center">&gt;1400</td>
+                  <td class="text-center">&gt;10000</td>
+                  <td class="text-center">&gt;4630</td>
+                </tr>
+              </tbody>
+            </table>
+          </div>
+          <p class="table-legend">Tabela 1 – Principais limites de concentração de gases dissolvidos (ppm)</p>
+          <div class="mini-table-wrap">
+            <table class="table compact mini-table">
+              <thead>
+                <tr>
+                  <th class="text-center" colspan="9">Resultados da última amostra (ppm)</th>
+                </tr>
+                <tr>
+                  <th class="text-center">Data Coleta</th>
+                  <th class="text-center">H2</th>
+                  <th class="text-center">CH4</th>
+                  <th class="text-center">C2H2</th>
+                  <th class="text-center">C2H4</th>
+                  <th class="text-center">C2H6</th>
+                  <th class="text-center">CO</th>
+                  <th class="text-center">CO2</th>
+                  <th class="text-center">TGC</th>
+                </tr>
+              </thead>
+              <tbody>
+                <tr>
+                  <td class="text-center" rowspan="2">25-03-2024</td>
+                  <td class="text-center">Condição 01</td>
+                  <td class="text-center">Condição 01</td>
+                  <td class="text-center">Condição 02</td>
+                  <td class="text-center">Condição 01</td>
+                  <td class="text-center">Condição 01</td>
+                  <td class="text-center">Condição 01</td>
+                  <td class="text-center">Condição 01</td>
+                  <td class="text-center">Condição 02</td>
+                </tr>
+                <tr>
+                  <td class="text-center">10</td>
+                  <td class="text-center">7</td>
+                  <td class="text-center">3</td>
+                  <td class="text-center">10</td>
+                  <td class="text-center">1</td>
+                  <td class="text-center">81</td>
+                  <td class="text-center">908</td>
+                  <td class="text-center">1020</td>
+                </tr>
+              </tbody>
+            </table>
+          </div>
+          <p class="table-legend">Concentração de gases dissolvidos da última amostra (ppm)</p>
+          <p>
+            <b class="label-strong">Observação:</b> Os usuários do guia IEEE Std C57.104™- 2008 são avisados de que as concentrações de gases dissolvidos contidas na
+            Tabela 1 apresenta valores de consenso baseados nas experiências de muitas empresas. O operador do transformador pode decidir em usar
+            diferentes concentrações de gás dissolvido para os gases individuais (particularmente acetileno) e o TGC (total de gases combustíveis)
+            é baseado em julgamento de engenharia de manutenção e experiência com outros transformadores similares.
+          </p>
+        </article>
       </section>
 
       <section v-else-if="activeTab === 'Próximas Coletas'" class="panel">
@@ -1461,6 +1564,13 @@ watch([activeTab, selectedId], async () => {
   white-space: nowrap;
 }
 
+.tile p.table-legend{
+  margin: 10px 0 6px;
+  font-size: 10px;
+  color: rgba(15, 23, 42, 0.56);
+  text-align: center;
+}
+
 .duval-grid{
   display: grid;
   grid-template-columns: repeat(2, minmax(0, 1fr));
@@ -1623,6 +1733,33 @@ watch([activeTab, selectedId], async () => {
 .panel-eval .tile p b{
   color: #123a6d;
   font-weight: 700;
+}
+
+.ieee-conditions{
+  margin: 8px 0 12px;
+  padding-left: 18px;
+  display: grid;
+  gap: 8px;
+}
+
+.ieee-conditions li{
+  font-size: 13px;
+  line-height: 1.5;
+  color: rgba(15, 23, 42, 0.82);
+}
+
+.ieee-conditions{
+  margin-bottom: 18px;
+}
+
+.section-strong{
+  font-weight: 700;
+  color: #123a6d;
+}
+
+.label-strong{
+  font-weight: 700;
+  color: #123a6d;
 }
 
 .panel-eval .eval-card-5 .table th,
