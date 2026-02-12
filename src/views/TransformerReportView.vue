@@ -40,6 +40,12 @@ type Transformer = {
   longitude: string
 }
 
+type SpecialistOverride = {
+  statusAnalyst: string
+  analystNote: string
+  failureMode: string
+}
+
 const route = useRoute()
 const router = useRouter()
 const rawSubstations = (transformersData as any)?.subestacoes || []
@@ -82,7 +88,6 @@ function parseBrDate(value: unknown) {
 const tabs = [
   'Avaliação Completa',
   'Histórico de Análises',
-  'Avaliação do Especialista',
   'Avaliação IEEE',
   'Próximas Coletas',
   'Tratamento de Óleo',
@@ -182,6 +187,63 @@ watch(activeTab, (value) => {
 const selectedTransformer = computed(
   () => transformerOptions.value.find((item) => item.id === selectedId.value) || null
 )
+
+const specialistEdits = ref<Record<string, SpecialistOverride>>({})
+const specialistModalOpen = ref(false)
+const analystStatusOptions = ['Normal', 'Alerta', 'Crítico', 'Pendente']
+const failureModeOptions = [
+  'Degradação por pirólise do Óleo Isolante do Transformador',
+  'Descargas parciais',
+  'Falha térmica de baixa energia',
+  'Falha térmica de alta energia',
+  'Sem modo de falha definido',
+]
+const specialistForm = ref<SpecialistOverride>({
+  statusAnalyst: 'Pendente',
+  analystNote: '',
+  failureMode: '',
+})
+
+const specialistView = computed<SpecialistOverride>(() => {
+  const base = selectedTransformer.value
+  const override = selectedId.value ? specialistEdits.value[selectedId.value] : undefined
+  return {
+    statusAnalyst: override?.statusAnalyst || base?.statusAnalyst || 'Pendente',
+    analystNote: override?.analystNote || base?.analystNote || 'Sem observações registradas.',
+    failureMode:
+      override?.failureMode ||
+      base?.failureMode ||
+      'Degradação por pirólise do Óleo Isolante do Transformador',
+  }
+})
+
+function openSpecialistModal() {
+  if (!selectedTransformer.value) return
+  specialistForm.value = {
+    statusAnalyst: specialistView.value.statusAnalyst,
+    analystNote:
+      specialistView.value.analystNote === 'Sem observações registradas.'
+        ? ''
+        : specialistView.value.analystNote,
+    failureMode: specialistView.value.failureMode,
+  }
+  specialistModalOpen.value = true
+}
+
+function closeSpecialistModal() {
+  specialistModalOpen.value = false
+}
+
+function saveSpecialistModal() {
+  if (!selectedId.value) return
+  specialistEdits.value[selectedId.value] = {
+    statusAnalyst: specialistForm.value.statusAnalyst || 'Pendente',
+    analystNote: specialistForm.value.analystNote?.trim() || 'Sem observações registradas.',
+    failureMode:
+      specialistForm.value.failureMode || 'Degradação por pirólise do Óleo Isolante do Transformador',
+  }
+  specialistModalOpen.value = false
+}
 
 const cromatografiasRows = computed(() => {
   const data = parseLooseJson<BaseRow[]>(cromatografiasRaw)
@@ -342,11 +404,22 @@ const oilVariablesByLevel = computed(() => {
 })
 
 function statusClass(value: string) {
-  const text = (value || '').toLowerCase()
+  const text = (value || '')
+    .toLowerCase()
+    .normalize('NFD')
+    .replace(/[\u0300-\u036f]/g, '')
   if (text.includes('crit')) return 'tone-danger'
   if (text.includes('alert') || text.includes('alta')) return 'tone-warning'
   if (text.includes('pend')) return 'tone-neutral'
   return 'tone-normal'
+}
+
+function statusOptionStyle(value: string) {
+  const tone = statusClass(value)
+  if (tone === 'tone-danger') return { color: '#b91c1c', backgroundColor: 'rgba(220, 38, 38, 0.12)', fontWeight: '700' }
+  if (tone === 'tone-warning') return { color: '#b45309', backgroundColor: 'rgba(245, 158, 11, 0.14)', fontWeight: '700' }
+  if (tone === 'tone-neutral') return { color: '#475569', backgroundColor: 'rgba(148, 163, 184, 0.16)', fontWeight: '700' }
+  return { color: '#15803d', backgroundColor: 'rgba(22, 163, 74, 0.12)', fontWeight: '700' }
 }
 
 function enhanceMobileTables() {
@@ -562,17 +635,25 @@ watch([activeTab, selectedId], async () => {
           <p>Óleo isolante em condições normais, nenhuma atividade recomendada.</p>
         </article>
         <article class="tile eval-card-2">
-          <h4>2 - Avaliação do Especialista</h4>
+          <div class="tile-head-actions">
+            <h4>2 - Avaliação do Especialista</h4>
+            <button type="button" class="edit-specialist-btn" @click="openSpecialistModal">
+              <svg class="edit-icon" viewBox="0 0 24 24" aria-hidden="true">
+                <path d="M3 17.25V21h3.75L17.8 9.94l-3.75-3.75L3 17.25zm2.92 2.33H5v-.92l8.06-8.06.92.92L5.92 19.58zM20.71 7.04a1.003 1.003 0 0 0 0-1.42l-2.34-2.34a1.003 1.003 0 0 0-1.42 0l-1.83 1.83 3.75 3.75 1.84-1.82z"/>
+              </svg>
+              Editar avaliação
+            </button>
+          </div>
           <p>
             <b>Status:</b>
-            <span class="pill eval-status" :class="statusClass(selectedTransformer?.statusAnalyst || 'Pendente')">
-              {{ selectedTransformer?.statusAnalyst || 'Pendente' }}
+            <span class="pill eval-status" :class="statusClass(specialistView.statusAnalyst)">
+              {{ specialistView.statusAnalyst }}
             </span>
           </p>
-          <p><b>Observações:</b> {{ selectedTransformer?.analystNote || 'Sem observações registradas.' }}</p>
+          <p><b>Observações:</b> {{ specialistView.analystNote }}</p>
           <p>
             <b>Modo de falha selecionado:</b>
-            Degradação por pirólise do Óleo Isolante do Transformador
+            {{ specialistView.failureMode }}
           </p>
         </article>
         <article class="tile eval-card-3">
@@ -834,22 +915,6 @@ watch([activeTab, selectedId], async () => {
         </article>
       </section>
 
-      <section v-else-if="activeTab === 'Avaliação do Especialista'" class="panel">
-        <article class="tile">
-          <h4>Checklist do especialista</h4>
-          <p><b>Integridade de buchas:</b> Conforme inspeção visual</p>
-          <p><b>Condição do comutador:</b> {{ selectedTransformer?.commutator || '-' }}</p>
-          <p><b>Histórico de intervenções:</b> Validar registros recentes do ativo</p>
-          <p><b>Conclusão técnica:</b> {{ selectedTransformer?.analystNote || 'Sem observações adicionais.' }}</p>
-        </article>
-        <article class="tile">
-          <h4>Ações recomendadas</h4>
-          <p>1. Confirmar aderência do plano de coletas para o transformador selecionado.</p>
-          <p>2. Revisar sinais de aquecimento e comportamento de carregamento.</p>
-          <p>3. Registrar parecer final para encerramento da análise especializada.</p>
-        </article>
-      </section>
-
       <section v-else-if="activeTab === 'Avaliação IEEE'" class="panel table-panel">
         <table class="table">
           <thead>
@@ -1012,6 +1077,48 @@ watch([activeTab, selectedId], async () => {
           <p><b>Recomendação:</b> {{ test.recommendation }}</p>
         </article>
       </section>
+
+      <div v-if="specialistModalOpen" class="modal-overlay" @click="closeSpecialistModal">
+        <div class="modal-card" @click.stop>
+          <h4>Editar avaliação do especialista</h4>
+          <div class="modal-grid">
+            <label>
+              <span>Status</span>
+              <select
+                v-model="specialistForm.statusAnalyst"
+                :style="statusOptionStyle(specialistForm.statusAnalyst)"
+              >
+                <option
+                  v-for="item in analystStatusOptions"
+                  :key="item"
+                  :value="item"
+                  :style="statusOptionStyle(item)"
+                >
+                  {{ item }}
+                </option>
+              </select>
+            </label>
+            <label>
+              <span>Modo de falha selecionado</span>
+              <select v-model="specialistForm.failureMode">
+                <option v-for="item in failureModeOptions" :key="item" :value="item">{{ item }}</option>
+              </select>
+            </label>
+            <label class="full">
+              <span>Observações</span>
+              <textarea
+                v-model="specialistForm.analystNote"
+                rows="4"
+                placeholder="Digite as observações do especialista"
+              ></textarea>
+            </label>
+          </div>
+          <div class="modal-actions">
+            <button type="button" class="secondary-btn" @click="closeSpecialistModal">Cancelar</button>
+            <button type="button" class="primary-btn" @click="saveSpecialistModal">Salvar</button>
+          </div>
+        </div>
+      </div>
     </section>
   </div>
 </template>
@@ -1267,6 +1374,18 @@ watch([activeTab, selectedId], async () => {
   color: #123a6d;
 }
 
+.tile-head-actions{
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  margin-bottom: 8px;
+}
+
+.tile-head-actions h4{
+  margin: 0;
+}
+
 .tile p{
   margin: 6px 0;
   font-size: 13px;
@@ -1518,6 +1637,118 @@ watch([activeTab, selectedId], async () => {
   font-weight: 700;
 }
 
+.edit-specialist-btn{
+  height: 34px;
+  padding: 0 12px;
+  border-radius: 999px;
+  border: 1px solid rgba(15, 23, 42, 0.12);
+  background: rgba(255, 255, 255, 0.7);
+  color: rgba(15, 23, 42, 0.8);
+  font-size: 13px;
+  font-weight: 600;
+  cursor: pointer;
+  box-shadow: 0 6px 14px rgba(15, 23, 42, 0.08);
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.edit-specialist-btn:hover{
+  background: rgba(15, 23, 42, 0.06);
+}
+
+.edit-icon{
+  width: 14px;
+  height: 14px;
+  fill: currentColor;
+}
+
+.modal-overlay{
+  position: fixed;
+  inset: 0;
+  background: rgba(15, 23, 42, 0.45);
+  backdrop-filter: blur(3px);
+  display: grid;
+  place-items: center;
+  z-index: 80;
+  padding: 16px;
+}
+
+.modal-card{
+  width: min(720px, 100%);
+  background: #fff;
+  border-radius: 14px;
+  border: 1px solid rgba(15, 23, 42, 0.12);
+  box-shadow: 0 18px 36px rgba(15, 23, 42, 0.2);
+  padding: 14px;
+}
+
+.modal-card h4{
+  margin: 0 0 12px;
+  color: #123a6d;
+}
+
+.modal-grid{
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 10px;
+}
+
+.modal-grid label{
+  display: grid;
+  gap: 6px;
+}
+
+.modal-grid label span{
+  font-size: 11px;
+  color: rgba(15, 23, 42, 0.7);
+  font-weight: 600;
+}
+
+.modal-grid select,
+.modal-grid textarea{
+  width: 100%;
+  border: 1px solid rgba(15, 23, 42, 0.18);
+  border-radius: 10px;
+  background: #fff;
+  padding: 8px 10px;
+  font-size: 13px;
+  color: #0f172a;
+}
+
+.modal-grid .full{
+  grid-column: 1 / -1;
+}
+
+.modal-actions{
+  margin-top: 12px;
+  display: flex;
+  justify-content: flex-end;
+  gap: 8px;
+}
+
+.primary-btn,
+.secondary-btn{
+  height: 34px;
+  padding: 0 12px;
+  border-radius: 10px;
+  font-size: 12px;
+  font-weight: 600;
+  cursor: pointer;
+}
+
+.primary-btn{
+  border: 1px solid #1e4e8b;
+  background: #1e4e8b;
+  color: #fff;
+}
+
+.secondary-btn{
+  border: 1px solid rgba(15, 23, 42, 0.16);
+  background: #fff;
+  color: rgba(15, 23, 42, 0.8);
+}
+
 .empty{
   margin: 8px 0 0;
   color: rgba(15, 23, 42, 0.65);
@@ -1684,6 +1915,9 @@ watch([activeTab, selectedId], async () => {
   }
   .history-column{
     min-width: 54px;
+  }
+  .modal-grid{
+    grid-template-columns: 1fr;
   }
 }
 </style>
