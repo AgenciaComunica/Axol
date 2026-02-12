@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { computed, ref, watch } from 'vue'
+import { computed, nextTick, onMounted, onUnmounted, ref, watch } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import SideMenu from '@/components/SideMenu.vue'
 import AppHeader from '@/components/AppHeader.vue'
@@ -316,6 +316,31 @@ const specialTests = computed(() => {
   ]
 })
 
+const riskProbabilities = computed(() => {
+  const status = normalizeStatus(selectedTransformer.value?.statusAnalyst || selectedTransformer.value?.status || '')
+  if (status === 'Crítico') return [8.5, 12.2, 19.8, 27.5, 32.0]
+  if (status === 'Alerta') return [0, 0, 85.14, 14.86, 0]
+  return [100, 0, 0, 0, 0]
+})
+
+const oilVariablesByLevel = computed(() => {
+  const base = riskProbabilities.value
+  const labels = ['TEMP', 'H2O', 'TIF', 'RD', 'EC', 'H2', 'DBDS', 'CARRE', 'GP', 'DGAF', 'CO', 'CO2', 'C2h4', 'C2H2']
+  return base.map((value, index) => {
+    const scale = Math.max(value, 8)
+    const vars = labels.map((_, labelIndex) => {
+      const ratio = 0.15 + ((labelIndex % 7) * 0.06) + index * 0.015
+      return Number((scale * ratio).toFixed(2))
+    })
+    return {
+      title: `Nível-${index + 1}`,
+      labels,
+      vars,
+      max: Math.max(...vars, 1),
+    }
+  })
+})
+
 function statusClass(value: string) {
   const text = (value || '').toLowerCase()
   if (text.includes('crit')) return 'tone-danger'
@@ -323,6 +348,57 @@ function statusClass(value: string) {
   if (text.includes('pend')) return 'tone-neutral'
   return 'tone-normal'
 }
+
+function enhanceMobileTables() {
+  if (typeof window === 'undefined') return
+  const tables = Array.from(document.querySelectorAll('.report-shell table.table')) as HTMLTableElement[]
+  const isMobile = window.innerWidth <= 900
+
+  tables.forEach((table) => {
+    if (!isMobile) {
+      table.classList.remove('mobile-card-table')
+      table.querySelectorAll('tbody td').forEach((cell) => {
+        cell.removeAttribute('data-label')
+      })
+      return
+    }
+
+    table.classList.add('mobile-card-table')
+    const headerRows = Array.from(table.querySelectorAll('thead tr'))
+    let headerTexts: string[] = []
+    headerRows.forEach((row) => {
+      const ths = Array.from(row.querySelectorAll('th'))
+      const normalized = ths
+        .filter((th) => (Number(th.getAttribute('colspan') || '1') === 1))
+        .map((th) => (th.textContent || '').trim())
+        .filter(Boolean)
+      if (normalized.length > headerTexts.length) headerTexts = normalized
+    })
+
+    table.querySelectorAll('tbody tr').forEach((row) => {
+      const tds = Array.from(row.querySelectorAll('td'))
+      tds.forEach((cell, index) => {
+        const label = headerTexts[index] || `Campo ${index + 1}`
+        cell.setAttribute('data-label', label)
+      })
+    })
+  })
+}
+
+onMounted(async () => {
+  await nextTick()
+  enhanceMobileTables()
+  window.addEventListener('resize', enhanceMobileTables)
+})
+
+onUnmounted(() => {
+  window.removeEventListener('resize', enhanceMobileTables)
+})
+
+watch([activeTab, selectedId], async () => {
+  await nextTick()
+  enhanceMobileTables()
+})
 </script>
 
 <template>
@@ -346,6 +422,17 @@ function statusClass(value: string) {
             </option>
           </select>
         </div>
+        <button
+          type="button"
+          class="locate-btn"
+          :disabled="!selectedTransformer"
+          @click="selectedTransformer && router.push({ name: 'dashboard', query: { transformer: selectedTransformer.id } })"
+        >
+          <svg class="pin-icon" viewBox="0 0 24 24" aria-hidden="true">
+            <path d="M12 2c-3.31 0-6 2.69-6 6 0 4.5 6 12 6 12s6-7.5 6-12c0-3.31-2.69-6-6-6zm0 8.5c-1.38 0-2.5-1.12-2.5-2.5S10.62 5.5 12 5.5s2.5 1.12 2.5 2.5S13.38 10.5 12 10.5z"></path>
+          </svg>
+          Localizar
+        </button>
       </div>
 
       <div v-if="selectedTransformer" class="summary-grid">
@@ -443,20 +530,307 @@ function statusClass(value: string) {
         <p v-else class="empty">Sem histórico suficiente para gráfico.</p>
       </section>
 
-      <section v-else-if="activeTab === 'Avaliação Completa'" class="panel">
-        <article class="tile">
-          <h4>Resumo de risco operacional</h4>
-          <p><b>Status TR-Óleo:</b> {{ selectedTransformer?.status || '-' }}</p>
-          <p><b>Status Analista:</b> {{ selectedTransformer?.statusAnalyst || '-' }}</p>
-          <p><b>Modo de falha:</b> {{ selectedTransformer?.failureMode || '-' }}</p>
-          <p><b>Observação do analista:</b> {{ selectedTransformer?.analystNote || '-' }}</p>
+      <section v-else-if="activeTab === 'Avaliação Completa'" class="panel panel-eval">
+        <article class="tile eval-card-1">
+          <h4>1 - Resultado das avaliações</h4>
+          <p><b>Avaliação do risco operacional do transformador:</b></p>
+          <p>
+            Transformador encontra-se com status de normal conforme avaliações realizadas nos históricos das variáveis
+            de entrada da plataforma.
+          </p>
+          <p>
+            Inspeções periódicas devem ser realizadas normalmente de acordo com as frequências estabelecidas nas normas
+            vigentes e nas políticas de manutenção da Energisa. Verificar se existe alguma variável fora da condição
+            normal estabelecida pela tabela de condições definida no documento de requisitos funcionais da plataforma e
+            continuar o monitoramento.
+          </p>
+          <p><b>Resultado da concentração de gases combustíveis (TGC) segundo o Guia IEEE Std C57.104™- 2008:</b></p>
+          <p>
+            “Condição 02: Quando o total de gases combustíveis (TGC) está fora do normal. Se há algum gás excedendo
+            esse limite, deve ser investigado.”
+          </p>
+          <p>
+            <b>Resultado do método de identificação de falhas: triângulos e pentágonos de DUVAL, segundo o Guia IEEE
+              Std C57.104™- 2019:</b>
+          </p>
+          <p>Triângulo de DUVAL 1: DT - Ocorrência simultânea de falta térmica e arco elétrico.</p>
+          <p>Triângulo de DUVAL 4: C - Possível carbonização do papel.</p>
+          <p>Triângulo de DUVAL 5: T3 - Falha térmica, t &gt; 700 ºC.</p>
+          <p>Pentágono 1: D2 - Descargas de alta energia.</p>
+          <p>Pentágono 2: D2 - Descargas de alta energia.</p>
+          <p><b>Tratamento do óleo isolante:</b></p>
+          <p>Óleo isolante em condições normais, nenhuma atividade recomendada.</p>
         </article>
-        <article class="tile">
-          <h4>Indicadores rápidos</h4>
-          <p><b>Potência:</b> {{ selectedTransformer?.power || '-' }}</p>
-          <p><b>Nível de tensão:</b> {{ selectedTransformer?.voltage || '-' }}</p>
-          <p><b>Carregamento:</b> {{ selectedTransformer?.load || '-' }}</p>
-          <p><b>Tratamento de óleo:</b> {{ selectedTransformer?.treatment || '-' }}</p>
+        <article class="tile eval-card-2">
+          <h4>2 - Avaliação do Especialista</h4>
+          <p>
+            <b>Status:</b>
+            <span class="pill eval-status" :class="statusClass(selectedTransformer?.statusAnalyst || 'Pendente')">
+              {{ selectedTransformer?.statusAnalyst || 'Pendente' }}
+            </span>
+          </p>
+          <p><b>Observações:</b> {{ selectedTransformer?.analystNote || 'Sem observações registradas.' }}</p>
+          <p>
+            <b>Modo de falha selecionado:</b>
+            Degradação por pirólise do Óleo Isolante do Transformador
+          </p>
+        </article>
+        <article class="tile eval-card-3">
+          <h4>3 - Última Coleta</h4>
+          <p><b>Guia IEEE Std C57.104™- 2008 para a Interpretação de gases dissolvidos no óleo isolante dos transformadores</b></p>
+          <p>
+            Foi desenvolvido um critério de quatro níveis para classificar os riscos aos transformadores, quando não há
+            histórico de gás dissolvido, para operação contínua em vários níveis de gás combustível. O critério usa
+            ambos, concentrações para gases separados e a concentração total de todos os gases combustíveis (TGC).
+          </p>
+          <p><b>Tabela 1 – Principais limites de concentração de gases dissolvidos (ppm)</b></p>
+          <div class="mini-table-wrap">
+            <table class="table compact mini-table">
+              <thead>
+                <tr>
+                  <th class="text-center">Status</th>
+                  <th class="text-center">H2</th>
+                  <th class="text-center">CH4</th>
+                  <th class="text-center">C2H2</th>
+                  <th class="text-center">C2H4</th>
+                  <th class="text-center">C2H6</th>
+                  <th class="text-center">CO</th>
+                  <th class="text-center">CO2</th>
+                  <th class="text-center">TGC</th>
+                </tr>
+              </thead>
+              <tbody>
+                <tr>
+                  <td class="text-center">Condição 01</td>
+                  <td class="text-center">100</td>
+                  <td class="text-center">120</td>
+                  <td class="text-center">1</td>
+                  <td class="text-center">50</td>
+                  <td class="text-center">65</td>
+                  <td class="text-center">350</td>
+                  <td class="text-center">2500</td>
+                  <td class="text-center">720</td>
+                </tr>
+                <tr>
+                  <td class="text-center">Condição 02</td>
+                  <td class="text-center">101-700</td>
+                  <td class="text-center">121-400</td>
+                  <td class="text-center">2-9</td>
+                  <td class="text-center">51-100</td>
+                  <td class="text-center">66-100</td>
+                  <td class="text-center">351-570</td>
+                  <td class="text-center">2500-4000</td>
+                  <td class="text-center">721-1920</td>
+                </tr>
+                <tr>
+                  <td class="text-center">Condição 03</td>
+                  <td class="text-center">701-1800</td>
+                  <td class="text-center">401-1000</td>
+                  <td class="text-center">10-35</td>
+                  <td class="text-center">101-200</td>
+                  <td class="text-center">101-150</td>
+                  <td class="text-center">571-1400</td>
+                  <td class="text-center">4001-10000</td>
+                  <td class="text-center">1921-4630</td>
+                </tr>
+                <tr>
+                  <td class="text-center">Condição 04</td>
+                  <td class="text-center">&gt;1800</td>
+                  <td class="text-center">&gt;1000</td>
+                  <td class="text-center">&gt;35</td>
+                  <td class="text-center">&gt;200</td>
+                  <td class="text-center">&gt;150</td>
+                  <td class="text-center">&gt;1400</td>
+                  <td class="text-center">&gt;10000</td>
+                  <td class="text-center">&gt;4630</td>
+                </tr>
+              </tbody>
+            </table>
+          </div>
+          <p><b>Resultados da última coleta:</b></p>
+          <div class="mini-table-wrap">
+            <table class="table compact mini-table">
+              <thead>
+                <tr>
+                  <th class="text-center">Data da coleta</th>
+                  <th class="text-center">H2</th>
+                  <th class="text-center">CH4</th>
+                  <th class="text-center">C2H2</th>
+                  <th class="text-center">C2H4</th>
+                  <th class="text-center">C2H6</th>
+                  <th class="text-center">CO</th>
+                  <th class="text-center">CO2</th>
+                  <th class="text-center">TGC</th>
+                </tr>
+              </thead>
+              <tbody>
+                <tr>
+                  <td rowspan="2">25-03-2024</td>
+                  <td>Condição 01</td>
+                  <td>Condição 01</td>
+                  <td>Condição 02</td>
+                  <td>Condição 01</td>
+                  <td>Condição 01</td>
+                  <td>Condição 01</td>
+                  <td>Condição 01</td>
+                  <td>Condição 02</td>
+                </tr>
+                <tr>
+                  <td>10</td>
+                  <td>7</td>
+                  <td>3</td>
+                  <td>10</td>
+                  <td>1</td>
+                  <td>81</td>
+                  <td>908</td>
+                  <td>1020</td>
+                </tr>
+              </tbody>
+            </table>
+          </div>
+          <p>
+            <b>Observação:</b>
+            O operador do transformador pode decidir em usar diferentes concentrações de gás dissolvido para os
+            gases individuais (particularmente acetileno) e o TGC (total de gases combustíveis) é baseado em
+            julgamento de engenharia e experiência com outros transformadores similares. O critério usa ambos,
+            concentrações para gases separados e a concentração total de todos os gases combustíveis (TGC).
+          </p>
+        </article>
+        <article class="tile eval-card-4">
+          <h4>4 - Avaliação do risco operacional do transformador</h4>
+          <p>
+            As probabilidades calculadas representam as probabilidades de residência nos cinco níveis de estados
+            operativos do transformador para no ano seguinte ao histórico.
+          </p>
+          <p><b>Probabilidade (%) de operação em risco para o próximo ano</b></p>
+
+          <div class="risk-pies">
+            <article v-for="(probability, index) in riskProbabilities" :key="`risk-${index}`" class="risk-pie-card">
+              <h5>Nível-{{ index + 1 }}</h5>
+              <div class="risk-pie" :style="{ '--pct': `${probability}%` }"></div>
+              <b>{{ probability.toFixed(2) }} %</b>
+            </article>
+          </div>
+
+          <p><b>Variáveis do óleo que levaram o transformador aos estados de risco:</b></p>
+          <p>
+            A seguir são apresentadas as variáveis do óleo isolante que levaram o transformador a operar nas regiões
+            de risco (N1 a N5).
+          </p>
+
+          <div class="risk-bars-grid">
+            <article v-for="(level, idx) in oilVariablesByLevel" :key="`bar-${idx}`" class="risk-bar-card">
+              <h5>{{ level.title }}</h5>
+              <div class="risk-bars">
+                <div v-for="(value, varIdx) in level.vars" :key="`${level.title}-${varIdx}`" class="risk-bar-item">
+                  <span class="risk-bar-label">{{ level.labels[varIdx] }}</span>
+                  <div class="risk-bar-track">
+                    <div class="risk-bar-fill" :style="{ width: `${(value / level.max) * 100}%` }"></div>
+                  </div>
+                  <span class="risk-bar-value">{{ value }}</span>
+                </div>
+              </div>
+            </article>
+          </div>
+        </article>
+        <article class="tile eval-card-5">
+          <h4>5 - Métodos de identificação de falhas: Triângulos e Pentágonos de Duval.</h4>
+          <div class="duval-grid">
+            <article class="duval-table-card">
+              <table class="table compact mini-table">
+                <thead>
+                  <tr>
+                    <th colspan="2" class="text-center">Resultado da última amostra - 25-03-2024</th>
+                  </tr>
+                  <tr>
+                    <th class="text-left">Gás</th>
+                    <th class="text-left">Valores</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  <tr><td>Hidrogênio (H2)</td><td class="text-center">10.000</td></tr>
+                  <tr><td>Metano (CH4)</td><td class="text-center">7.000</td></tr>
+                  <tr><td>Etano (C2H6)</td><td class="text-center">1.000</td></tr>
+                  <tr><td>Etileno (C2H4)</td><td class="text-center">10.000</td></tr>
+                  <tr><td>Aceliteno (C2H2)</td><td class="text-center">3.000</td></tr>
+                  <tr><td>Mon. Carbono (CO)</td><td class="text-center">81.000</td></tr>
+                  <tr><td>Dióx. Carbono (CO2)</td><td class="text-center">908.000</td></tr>
+                </tbody>
+              </table>
+            </article>
+
+            <article class="duval-table-card">
+              <table class="table compact mini-table">
+                <thead>
+                  <tr>
+                    <th colspan="3" class="text-center">Tabela 1 IEEE C57.104-2019 (ppm)</th>
+                  </tr>
+                  <tr>
+                    <th class="text-left">Gás</th>
+                    <th class="text-left">O2/N2 razão ≤ 0.2</th>
+                    <th class="text-left">O2/N2 razão ≥ 0.2</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  <tr><td>Hidrogênio (H2)</td><td class="text-center">80</td><td class="text-center">40</td></tr>
+                  <tr><td>Metano (CH4)</td><td class="text-center">90</td><td class="text-center">20</td></tr>
+                  <tr><td>Etano (C2H6)</td><td class="text-center">90</td><td class="text-center">15</td></tr>
+                  <tr><td>Etileno (C2H4)</td><td class="text-center">50</td><td class="text-center">50</td></tr>
+                  <tr><td>Aceliteno (C2H2)</td><td class="text-center">20</td><td class="text-center">20</td></tr>
+                  <tr><td>Mon. Carbono (CO)</td><td class="text-center">900</td><td class="text-center">500</td></tr>
+                  <tr><td>Dióx. Carbono (CO2)</td><td class="text-center">9000</td><td class="text-center">5000</td></tr>
+                </tbody>
+              </table>
+            </article>
+          </div>
+        </article>
+        <article class="tile eval-card-6">
+          <h4>6 - Tratamentos no óleo isolante</h4>
+          <p>
+            Devem ser realizados de acordo com os resultados dos ensaios físico-químicos do óleo isolante, observando
+            os limites mínimos e máximos estabelecidos para cada variável de interesse, conforme orientações da norma
+            NBR 10576/2017.
+          </p>
+          <div class="mini-table-wrap desktop-only">
+            <table class="table compact mini-table">
+              <thead>
+                <tr>
+                  <th class="text-center">Data Coleta</th>
+                  <th class="text-center">Teor de Água (ppm)</th>
+                  <th class="text-center">RD (kV)</th>
+                  <th class="text-center">TIF (Dyan/cm)</th>
+                  <th class="text-center">Índ. Neutr. (mgKH0/g)</th>
+                  <th class="text-center">F. Pot. 25ºC</th>
+                  <th class="text-center">F. Pot. 90ºC</th>
+                  <th class="text-center">F. Pot. 100ºC</th>
+                </tr>
+              </thead>
+              <tbody>
+                <tr>
+                  <td class="text-center">17-01-2024</td>
+                  <td class="text-center">17.000</td>
+                  <td class="text-center">54.000</td>
+                  <td class="text-center">34.400</td>
+                  <td class="text-center">0.0300</td>
+                  <td class="text-center"></td>
+                  <td class="text-center"></td>
+                  <td class="text-center"></td>
+                </tr>
+              </tbody>
+            </table>
+          </div>
+          <div class="mobile-only mobile-kv-card">
+            <h5>Coleta 17-01-2024</h5>
+            <div class="mobile-kv-list">
+              <div><span>Teor de Água (ppm)</span><b>17.000</b></div>
+              <div><span>RD (kV)</span><b>54.000</b></div>
+              <div><span>TIF (Dyan/cm)</span><b>34.400</b></div>
+              <div><span>Índ. Neutr. (mgKH0/g)</span><b>0.0300</b></div>
+              <div><span>F. Pot. 25ºC</span><b>-</b></div>
+              <div><span>F. Pot. 90ºC</span><b>-</b></div>
+              <div><span>F. Pot. 100ºC</span><b>-</b></div>
+            </div>
+          </div>
         </article>
       </section>
 
@@ -648,6 +1022,7 @@ function statusClass(value: string) {
   background: radial-gradient(circle at 20% 10%, #f4f7ff 0%, #f8fafc 45%, #ffffff 100%);
   padding: 32px 32px 60px 96px;
   color: #0f172a;
+  overflow-x: hidden;
 }
 
 .report-shell{
@@ -656,11 +1031,13 @@ function statusClass(value: string) {
   background: #fff;
   box-shadow: 0 20px 50px rgba(15, 23, 42, 0.08);
   padding: 18px;
+  min-width: 0;
 }
 
 .report-toolbar{
   display: flex;
   justify-content: space-between;
+  align-items: end;
   gap: 16px;
   margin-bottom: 14px;
 }
@@ -686,11 +1063,45 @@ function statusClass(value: string) {
   padding: 0 12px;
 }
 
+.locate-btn{
+  height: 38px;
+  padding: 8px 16px;
+  font-size: 13px;
+  box-shadow: 0 6px 14px rgba(15, 23, 42, 0.08);
+  border: 1px solid rgba(15, 23, 42, 0.12);
+  border-radius: 999px;
+  color: rgba(15, 23, 42, 0.8);
+  cursor: pointer;
+  background: rgba(255,255,255,0.7);
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.locate-btn:hover{
+  background: rgba(15, 23, 42, 0.06);
+}
+
+.locate-btn:disabled{
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+.pin-icon{
+  width: 14px;
+  height: 14px;
+  fill: currentColor;
+}
+
 .summary-grid{
   display: grid;
   grid-template-columns: minmax(0, 1fr) minmax(0, 2fr);
   gap: 12px;
   margin-bottom: 14px;
+}
+
+.summary-grid > *{
+  min-width: 0;
 }
 
 .summary-card{
@@ -794,6 +1205,44 @@ function statusClass(value: string) {
   gap: 10px;
 }
 
+.panel > *{
+  min-width: 0;
+}
+
+.tile-wide{
+  grid-column: 1 / -1;
+}
+
+.panel-eval .eval-card-1{
+  grid-column: 1;
+  grid-row: 1;
+}
+
+.panel-eval .eval-card-2{
+  grid-column: 1;
+  grid-row: 2;
+}
+
+.panel-eval .eval-card-3{
+  grid-column: 2;
+  grid-row: 1 / span 2;
+}
+
+.panel-eval .eval-card-4{
+  grid-column: 1 / -1;
+  grid-row: 3;
+}
+
+.panel-eval .eval-card-5{
+  grid-column: 1;
+  grid-row: 4;
+}
+
+.panel-eval .eval-card-6{
+  grid-column: 2;
+  grid-row: 4;
+}
+
 .panel.table-panel{
   display: block;
 }
@@ -808,41 +1257,265 @@ function statusClass(value: string) {
   border: 1px solid rgba(15, 23, 42, 0.08);
   border-radius: 14px;
   padding: 12px;
-  background: #fff;
+  background: #ffffff;
+  box-shadow: 0 8px 18px rgba(15, 23, 42, 0.06);
 }
 
 .tile h4{
-  margin: 0 0 8px;
+  margin: 0 0 10px;
+  font-size: 15px;
+  color: #123a6d;
 }
 
 .tile p{
-  margin: 4px 0;
+  margin: 6px 0;
   font-size: 13px;
+  color: rgba(15, 23, 42, 0.82);
+  overflow-wrap: anywhere;
+  word-break: break-word;
+}
+
+.tile h5{
+  margin: 0 0 8px;
+  font-size: 13px;
+  color: #123a6d;
 }
 
 .table{
   width: 100%;
+  border: 1px solid rgba(30, 78, 139, 0.16);
+  border-radius: 12px;
   border-collapse: collapse;
   font-size: 12px;
+  overflow: hidden;
 }
 
 .table th,
 .table td{
-  border-bottom: 1px solid rgba(15, 23, 42, 0.08);
+  border-bottom: 1px solid rgba(15, 23, 42, 0.07);
   padding: 10px 8px;
   text-align: left;
 }
 
 .table th{
-  color: rgba(15, 23, 42, 0.6);
+  color: #ffffff;
+  background: #64748b;
   text-transform: uppercase;
   letter-spacing: 0.08em;
   font-size: 11px;
 }
 
+.table thead th{
+  background: #64748b !important;
+}
+
+.table tbody tr:nth-child(odd){
+  background: rgba(248, 250, 252, 0.75);
+}
+
+.table tbody tr:hover{
+  background: rgba(30, 78, 139, 0.08);
+}
+
 .table.compact th,
 .table.compact td{
   padding: 8px 6px;
+}
+
+.text-center{
+  text-align: center !important;
+}
+
+.text-left{
+  text-align: left !important;
+}
+
+.mini-table-wrap{
+  overflow-x: auto;
+  margin: 8px 0 10px;
+  border: 1px solid rgba(30, 78, 139, 0.16);
+  border-radius: 10px;
+  background: #ffffff;
+}
+
+.mini-table td{
+  white-space: nowrap;
+}
+
+.duval-grid{
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 10px;
+  margin-top: 8px;
+}
+
+.duval-table-card{
+  border: 1px solid rgba(15, 23, 42, 0.08);
+  border-radius: 10px;
+  overflow: hidden;
+}
+
+.duval-table-card .table{
+  border: 0;
+  border-radius: 0;
+}
+
+.desktop-only{
+  display: block;
+}
+
+.mobile-only{
+  display: none;
+}
+
+.mobile-kv-card{
+  padding: 10px;
+}
+
+.mobile-kv-card h5{
+  margin: 0 0 10px;
+  font-size: 13px;
+  color: #123a6d;
+  font-weight: 700;
+}
+
+.mobile-kv-list{
+  display: grid;
+  gap: 8px;
+}
+
+.mobile-kv-list > div{
+  border: 1px solid rgba(15, 23, 42, 0.1);
+  border-radius: 10px;
+  padding: 8px 10px;
+  background: rgba(248, 250, 252, 0.8);
+  display: grid;
+  gap: 4px;
+}
+
+.mobile-kv-list > div span{
+  font-size: 11px;
+  color: rgba(15, 23, 42, 0.7);
+}
+
+.mobile-kv-list > div b{
+  font-size: 12px;
+  color: #123a6d;
+}
+
+.mobile-kv-list.triple > div{
+  grid-template-columns: 1fr;
+}
+
+.risk-pies{
+  display: grid;
+  grid-template-columns: repeat(5, minmax(0, 1fr));
+  gap: 10px;
+  margin: 10px 0 14px;
+}
+
+.risk-pie-card{
+  border: 1px solid rgba(15, 23, 42, 0.08);
+  border-radius: 10px;
+  padding: 10px;
+  text-align: center;
+  background: rgba(248, 250, 252, 0.65);
+}
+
+.risk-pie-card h5,
+.risk-bar-card h5{
+  text-align: center;
+  font-weight: 700;
+}
+
+.risk-pie{
+  --pct: 0%;
+  width: 72px;
+  height: 72px;
+  margin: 6px auto 8px;
+  border-radius: 999px;
+  background: conic-gradient(#1e4e8b var(--pct), rgba(148, 163, 184, 0.25) 0);
+  position: relative;
+}
+
+.risk-pie::after{
+  content: '';
+  position: absolute;
+  inset: 12px;
+  border-radius: 999px;
+  background: #fff;
+}
+
+.risk-bars-grid{
+  display: grid;
+  grid-template-columns: repeat(5, minmax(0, 1fr));
+  gap: 10px;
+  margin-top: 10px;
+}
+
+.risk-bar-card{
+  border: 1px solid rgba(15, 23, 42, 0.08);
+  border-radius: 10px;
+  padding: 10px;
+  background: rgba(248, 250, 252, 0.65);
+}
+
+.risk-bars{
+  display: grid;
+  gap: 6px;
+}
+
+.risk-bar-item{
+  display: grid;
+  grid-template-columns: 54px 1fr auto;
+  align-items: center;
+  gap: 8px;
+}
+
+.risk-bar-label{
+  font-size: 10px;
+  font-weight: 600;
+  color: rgba(15, 23, 42, 0.75);
+  text-align: left;
+}
+
+.risk-bar-track{
+  width: 100%;
+  height: 7px;
+  border-radius: 999px;
+  background: rgba(148, 163, 184, 0.25);
+  overflow: hidden;
+}
+
+.risk-bar-fill{
+  height: 100%;
+  border-radius: inherit;
+  background: #1e4e8b;
+}
+
+.risk-bar-value{
+  font-size: 10px;
+  font-weight: 600;
+  color: rgba(15, 23, 42, 0.62);
+  min-width: 34px;
+  text-align: right;
+}
+
+.panel-eval .tile p b{
+  color: #123a6d;
+  font-weight: 700;
+}
+
+.panel-eval .eval-card-5 .table th,
+.panel-eval .eval-card-5 .table td{
+  text-align: center !important;
+}
+
+.eval-status{
+  margin-left: 8px;
+  padding: 4px 10px;
+  font-size: 12px;
+  font-weight: 700;
 }
 
 .empty{
@@ -917,6 +1590,13 @@ function statusClass(value: string) {
   .selector select{
     min-width: 100%;
   }
+  .report-toolbar{
+    flex-direction: column;
+    align-items: stretch;
+  }
+  .locate-btn{
+    width: 100%;
+  }
   .summary-grid{
     grid-template-columns: 1fr;
   }
@@ -926,8 +1606,77 @@ function statusClass(value: string) {
   .panel{
     grid-template-columns: 1fr;
   }
+  .panel-eval .eval-card-1,
+  .panel-eval .eval-card-2,
+  .panel-eval .eval-card-3,
+  .panel-eval .eval-card-4,
+  .panel-eval .eval-card-5,
+  .panel-eval .eval-card-6{
+    grid-column: auto;
+    grid-row: auto;
+  }
+  .risk-pies,
+  .risk-bars-grid{
+    grid-template-columns: 1fr 1fr;
+  }
+  .duval-grid{
+    grid-template-columns: 1fr;
+  }
+  .desktop-only{
+    display: none !important;
+  }
+  .mobile-only{
+    display: block;
+  }
   .panel.table-panel.split{
     grid-template-columns: 1fr;
+  }
+  .panel.table-panel,
+  .panel.table-panel article,
+  .mini-table-wrap{
+    overflow-x: auto;
+    -webkit-overflow-scrolling: touch;
+  }
+  .table{
+    min-width: 760px;
+  }
+  .table.mobile-card-table{
+    min-width: 0 !important;
+    border: 0;
+    background: transparent;
+  }
+  .table.mobile-card-table thead{
+    display: none;
+  }
+  .table.mobile-card-table tbody{
+    display: grid;
+    gap: 8px;
+  }
+  .table.mobile-card-table tbody tr{
+    display: block;
+    border: 1px solid rgba(15, 23, 42, 0.12);
+    border-radius: 10px;
+    background: rgba(248, 250, 252, 0.85);
+    padding: 8px 10px;
+  }
+  .table.mobile-card-table tbody td{
+    display: flex;
+    align-items: flex-start;
+    justify-content: space-between;
+    gap: 10px;
+    border: 0;
+    padding: 6px 0;
+    text-align: right !important;
+    white-space: normal;
+  }
+  .table.mobile-card-table tbody td::before{
+    content: attr(data-label);
+    color: rgba(15, 23, 42, 0.68);
+    font-size: 11px;
+    font-weight: 600;
+    text-align: left;
+    margin-right: auto;
+    padding-right: 10px;
   }
   .history-chart{
     overflow-x: auto;

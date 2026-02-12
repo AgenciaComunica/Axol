@@ -6,7 +6,7 @@ import transformersData from '@/assets/transformadores.json'
 const open = ref(false)
 const router = useRouter()
 const configOpen = ref(false)
-const reportOpen = ref(false)
+const transformerOpen = ref(false)
 
 const firstTransformerId = (() => {
   const firstSubstation = (transformersData as any)?.subestacoes?.[0]
@@ -23,8 +23,8 @@ function toggleConfig() {
   configOpen.value = !configOpen.value
 }
 
-function toggleReport() {
-  reportOpen.value = !reportOpen.value
+function toggleTransformers() {
+  transformerOpen.value = !transformerOpen.value
 }
 
 function goToTransformers() {
@@ -91,47 +91,27 @@ onBeforeUnmount(() => {
         </svg>
         Start Oleo
       </div>
-      <button class="item" type="button" @click="goToTransformers">
-        <svg class="item-icon" viewBox="0 0 24 24" aria-hidden="true">
-          <path d="M3 10h18v8a1 1 0 0 1-1 1H4a1 1 0 0 1-1-1v-8zm2-5h14l2 3H3l2-3zm2 13h3v2H7v-2zm7 0h3v2h-3v-2z"></path>
-        </svg>
-        Transformadores
-      </button>
-      <button class="item item-with-submenu" :class="{ open: reportOpen }" type="button" @click="toggleReport">
+      <div class="item item-with-submenu" :class="{ open: transformerOpen }">
         <div class="item-label">
-          <svg class="item-icon" viewBox="0 0 24 24" aria-hidden="true">
-            <path d="M5 3h10l4 4v14H5V3zm9 1.5V8h3.5L14 4.5zM8 11h8v2H8v-2zm0 4h8v2H8v-2z"></path>
-          </svg>
-          Relatórios
-          <span class="submenu-chevron" :class="{ open: reportOpen }">⌄</span>
+          <button class="item-link" type="button" @click="goToTransformers">
+            <svg class="item-icon" viewBox="0 0 24 24" aria-hidden="true">
+              <path d="M3 10h18v8a1 1 0 0 1-1 1H4a1 1 0 0 1-1-1v-8zm2-5h14l2 3H3l2-3zm2 13h3v2H7v-2zm7 0h3v2h-3v-2z"></path>
+            </svg>
+            Transformadores
+          </button>
+          <button class="submenu-toggle" type="button" @click="toggleTransformers">
+            <span class="submenu-chevron" :class="{ open: transformerOpen }">⌄</span>
+          </button>
         </div>
-        <div v-if="reportOpen" class="submenu">
+        <div v-if="transformerOpen" class="submenu">
           <button class="submenu-item" type="button" @click.stop="goToReport('Avaliação Completa')">
             <svg class="submenu-icon" viewBox="0 0 24 24" aria-hidden="true">
-              <path d="M4 4h16v16H4V4zm3 10h2V8H7v6zm4 2h2V6h-2v10zm4-4h2V9h-2v3z"></path>
+              <path d="M5 3h10l4 4v14H5V3zm9 1.5V8h3.5L14 4.5zM8 11h8v2H8v-2zm0 4h8v2H8v-2z"></path>
             </svg>
-            Avaliação Completa
-          </button>
-          <button class="submenu-item" type="button" @click.stop="goToReport('Histórico de Análises')">
-            <svg class="submenu-icon" viewBox="0 0 24 24" aria-hidden="true">
-              <path d="M3 3h2v18H3V3zm16 16h2v2h-2v-2zM7 13h2v8H7v-8zm4-6h2v14h-2V7zm4 4h2v10h-2V11z"></path>
-            </svg>
-            Histórico de Análises
-          </button>
-          <button class="submenu-item" type="button" @click.stop="goToReport('Avaliação do Especialista')">
-            <svg class="submenu-icon" viewBox="0 0 24 24" aria-hidden="true">
-              <path d="M12 2 4 6v6c0 5 3.4 9.6 8 10 4.6-.4 8-5 8-10V6l-8-4zm-1 13-3-3 1.4-1.4 1.6 1.6 3.6-3.6L16 10l-5 5z"></path>
-            </svg>
-            Avaliação do Especialista
-          </button>
-          <button class="submenu-item" type="button" @click.stop="goToReport('Avaliação IEEE')">
-            <svg class="submenu-icon" viewBox="0 0 24 24" aria-hidden="true">
-              <path d="M5 3h14v18H5V3zm2 3v2h10V6H7zm0 4v2h10v-2H7zm0 4v2h7v-2H7z"></path>
-            </svg>
-            Avaliação IEEE
+            Relatórios
           </button>
         </div>
-      </button>
+      </div>
       <button class="item item-with-submenu" :class="{ open: configOpen }" type="button" @click="toggleConfig">
         <div class="item-label">
           <svg class="item-icon" viewBox="0 0 24 24" aria-hidden="true">
@@ -303,11 +283,45 @@ onBeforeUnmount(() => {
   justify-content: space-between;
 }
 
+.item-link{
+  appearance: none;
+  border: 0;
+  background: transparent;
+  color: inherit;
+  font: inherit;
+  padding: 0;
+  margin: 0;
+  cursor: pointer;
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.submenu-toggle{
+  appearance: none;
+  border: 0;
+  background: transparent;
+  color: inherit;
+  padding: 6px 10px;
+  margin: -6px -10px;
+  cursor: pointer;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: 8px;
+}
+
+.submenu-toggle:hover{
+  background: rgba(15, 23, 42, 0.06);
+}
+
 .submenu-chevron{
   margin-left: auto;
-  font-size: 12px;
+  font-size: 16px;
+  font-weight: 700;
   color: rgba(15, 23, 42, 0.65);
   transition: transform 0.15s ease;
+  line-height: 1;
 }
 
 .submenu-chevron.open{
