@@ -47,6 +47,29 @@ type SpecialistOverride = {
   analystNote: string
   failureMode: string
 }
+type AnalysisModalTab = 'cromatografia' | 'fisicoquimico' | 'ensaiosespeciais'
+type AnalysisFieldType = 'text' | 'number' | 'date' | 'select'
+type AnalysisFieldDef = {
+  key: string
+  label: string
+  hint?: string
+  type?: AnalysisFieldType
+  options?: string[]
+}
+type ColetasSubTab = 'proximas' | 'realizadas'
+type ColetaRow = {
+  id: string
+  transformador: string
+  statusUltimaColeta: string
+  dataColeta: string
+  subestacao: string
+  unidade: string
+  tag: string
+  tipoAnalise: string
+  faltamDias: number
+  status: 'Pendente' | 'Atrasada' | 'Coletado'
+  categoria: ColetasSubTab
+}
 
 const route = useRoute()
 const router = useRouter()
@@ -91,18 +114,16 @@ const tabs = [
   'Avaliação Completa',
   'Histórico de Análises',
   'Avaliação IEEE',
-  'Próximas Coletas',
+  'Coletas',
   'Tratamento de Óleo',
   'Cadastro OLTC',
-  'Cromatografias',
-  'Físicos Químicos',
-  'Ensaios Especiais',
 ] as const
 
 type ReportTab = (typeof tabs)[number]
 
 function toValidTab(value: unknown): ReportTab {
   const text = String(value || '')
+  if (text === 'Próximas Coletas') return 'Coletas'
   return (tabs.find((tab) => tab === text) as ReportTab) || 'Avaliação Completa'
 }
 
@@ -205,6 +226,135 @@ const specialistForm = ref<SpecialistOverride>({
   analystNote: '',
   failureMode: '',
 })
+const analysisModalOpen = ref(false)
+const analysisModalTab = ref<AnalysisModalTab>('cromatografia')
+const analysisSendReport = ref<Record<AnalysisModalTab, boolean>>({
+  cromatografia: false,
+  fisicoquimico: false,
+  ensaiosespeciais: false,
+})
+const analysisCromForm = ref<Record<string, string>>({
+  transformador: '',
+  dataColeta: '',
+  dataIntervencao: '',
+  intervencao: '',
+  tempAmostra: '',
+  tempOleo: '',
+  tempEnrolam: '',
+  hidrogenio: '',
+  oxigenio: '',
+  nitrogenio: '',
+  monCarbono: '',
+  metano: '',
+  dioxCarbono: '',
+  etileno: '',
+  etano: '',
+  acetileno: '',
+  totalGases: '',
+  tgc: '',
+  laboratorio: '',
+  carregamento: '',
+})
+const analysisFisicoForm = ref<Record<string, string>>({
+  transformador: '',
+  dataColeta: '',
+  dataIntervencao: '',
+  intervencao: '',
+  tempAmostra: '',
+  teorAgua: '',
+  tempOleo: '',
+  tempEnrolam: '',
+  rd: '',
+  tif: '',
+  indNeutr: '',
+  cor: '',
+  densRel: '',
+  fPot25: '',
+  fPot90: '',
+  fPot100: '',
+  ensaioDbpc: '',
+  laboratorio: '',
+})
+const analysisEnsaiosForm = ref<Record<string, string>>({
+  transformador: '',
+  dataColeta: '',
+  enxofreCorrosivo: '',
+  teorDbds: '',
+  teorPassivador: '',
+  enxofreElementar: '',
+  gpFabrica: '',
+  gp: '',
+  furanos: '',
+  laboratorio: '',
+})
+const analysisCromFields: AnalysisFieldDef[] = [
+  { key: 'transformador', label: 'Transformador', hint: '* Digite o serial do Transformador' },
+  { key: 'dataColeta', label: 'Data Coleta', hint: '* Selecione a data da Coleta', type: 'date' },
+  { key: 'dataIntervencao', label: 'Data Intervenção', hint: 'Se existir selecione a Data Intervenção', type: 'date' },
+  { key: 'intervencao', label: 'Intervenção', hint: 'Máximo de 255 dígitos' },
+  { key: 'tempAmostra', label: 'Temp. Amostra (°C)', hint: 'Máximo de 11 dígitos', type: 'number' },
+  { key: 'tempOleo', label: 'Temp. Óleo (°C)', hint: 'Máximo de 11 dígitos', type: 'number' },
+  { key: 'tempEnrolam', label: 'Temp. Enrolam. (°C)', hint: 'Máximo de 11 dígitos', type: 'number' },
+  { key: 'hidrogenio', label: 'Hidrogênio (H2)', hint: '* Mínimo de 1 e máximo de 11 dígitos', type: 'number' },
+  { key: 'oxigenio', label: 'Oxigênio (O2)', hint: '* Mínimo de 1 e máximo de 11 dígitos', type: 'number' },
+  { key: 'nitrogenio', label: 'Nitrogênio (N2)', hint: '* Mínimo de 1 e máximo de 11 dígitos', type: 'number' },
+  { key: 'monCarbono', label: 'Mon. Carbono (CO)', hint: '* Mínimo de 1 e máximo de 11 dígitos', type: 'number' },
+  { key: 'metano', label: 'Metano (CH4)', hint: '* Mínimo de 1 e máximo de 11 dígitos', type: 'number' },
+  { key: 'dioxCarbono', label: 'Dióx. Carbono (CO2)', hint: '* Mínimo de 1 e máximo de 11 dígitos', type: 'number' },
+  { key: 'etileno', label: 'Etileno (C2H4)', hint: '* Mínimo de 1 e máximo de 11 dígitos', type: 'number' },
+  { key: 'etano', label: 'Etano (C2H6)', hint: '* Mínimo de 1 e máximo de 11 dígitos', type: 'number' },
+  { key: 'acetileno', label: 'Acetileno (C2H2)', hint: '* Mínimo de 1 e máximo de 11 dígitos', type: 'number' },
+  { key: 'totalGases', label: 'Total Gases', hint: 'Máximo de 30 dígitos', type: 'number' },
+  { key: 'tgc', label: 'TGC', hint: 'Mínimo de 1 e máximo de 11 dígitos', type: 'number' },
+  { key: 'laboratorio', label: 'Laboratório', hint: 'Máximo de 45 dígitos' },
+  { key: 'carregamento', label: 'Carregamento (%)', hint: '* Mínimo de 1 e máximo de 3 dígitos', type: 'number' },
+]
+const analysisFisicoFields: AnalysisFieldDef[] = [
+  { key: 'transformador', label: 'Transformador', hint: '* Digite o serial do Transformador' },
+  { key: 'dataColeta', label: 'Data Coleta', hint: '* Selecione a data da Coleta', type: 'date' },
+  { key: 'dataIntervencao', label: 'Data Intervenção', hint: 'Se existir selecione a Data Intervenção', type: 'date' },
+  { key: 'intervencao', label: 'Intervenção', hint: 'Máximo de 255 dígitos' },
+  { key: 'tempAmostra', label: 'Temp. Amostra (°C)', hint: 'Máximo de 11 dígitos', type: 'number' },
+  { key: 'teorAgua', label: 'Teor de Água (ppm)', hint: '* Mínimo de 1 e máximo de 11 dígitos', type: 'number' },
+  { key: 'tempOleo', label: 'Temp. Óleo (°C)', hint: 'Máximo de 11 dígitos', type: 'number' },
+  { key: 'tempEnrolam', label: 'Temp. Enrolam. (°C)', hint: 'Máximo de 11 dígitos', type: 'number' },
+  { key: 'rd', label: 'RD (kV)', hint: '* Mínimo de 1 e máximo de 11 dígitos', type: 'number' },
+  { key: 'tif', label: 'TIF. (Dyn/cm)', hint: 'Mínimo de 1 e máximo de 11 dígitos', type: 'number' },
+  { key: 'indNeutr', label: 'Índ. Neutr. (mgKHO/g)', hint: '* Mínimo de 1 e máximo de 12 dígitos', type: 'number' },
+  { key: 'cor', label: 'COR', hint: 'Máximo de 11 dígitos', type: 'number' },
+  { key: 'densRel', label: 'Dens. Rel. 20/4 °C (g/mL)', hint: 'Máximo de 12 dígitos', type: 'number' },
+  { key: 'fPot25', label: 'F. Pot. 25ºC', hint: 'Máximo de 12 dígitos', type: 'number' },
+  { key: 'fPot90', label: 'F. Pot. 90ºC', hint: 'Máximo de 12 dígitos', type: 'number' },
+  { key: 'fPot100', label: 'F. Pot. 100ºC', hint: 'Máximo de 12 dígitos', type: 'number' },
+  { key: 'ensaioDbpc', label: 'Ensaio de DBPC', hint: 'Máximo de 11 dígitos', type: 'number' },
+  { key: 'laboratorio', label: 'Laboratório', hint: 'Máximo de 45 dígitos' },
+]
+const analysisEnsaiosFields: AnalysisFieldDef[] = [
+  { key: 'transformador', label: 'Transformador', hint: '* Digite o serial do Transformador' },
+  { key: 'dataColeta', label: 'Data Coleta', hint: '* Selecione a data da Coleta', type: 'date' },
+  { key: 'enxofreCorrosivo', label: 'Enxofre corrosivo', hint: 'Escolha CORROSIVO ou NAO CORROSIVO', type: 'select', options: ['CORROSIVO', 'NAO CORROSIVO'] },
+  { key: 'teorDbds', label: 'Teor de DBDS (mg/Kg)', hint: 'Máximo de 11 dígitos', type: 'number' },
+  { key: 'teorPassivador', label: 'Teor de Passivador / IRGA (mg/Kg)', hint: 'Máximo de 11 dígitos', type: 'number' },
+  { key: 'enxofreElementar', label: 'Enxofre Elementar', hint: 'Máximo de 11 dígitos', type: 'number' },
+  { key: 'gpFabrica', label: 'GP de Fábrica', hint: 'Máximo de 11 dígitos numéricos inteiros', type: 'number' },
+  { key: 'gp', label: 'GP', hint: 'Máximo de 11 dígitos numéricos inteiros', type: 'number' },
+  { key: 'furanos', label: 'Furanos', hint: 'Máximo de 11 dígitos numéricos inteiros. Ref. Equação de Chendong', type: 'number' },
+  { key: 'laboratorio', label: 'Laboratório', hint: 'Máximo de 45 dígitos' },
+]
+const analysisTransformerOptions = computed(() => {
+  const seen = new Set<string>()
+  return transformerOptions.value
+    .map((item) => {
+      const value = String(item.serial || '')
+      const label = `${item.serial} • ${item.tag} • ${item.substation}`
+      return { value, label }
+    })
+    .filter((item) => {
+      if (!item.value || seen.has(item.value)) return false
+      seen.add(item.value)
+      return true
+    })
+})
 
 const specialistView = computed<SpecialistOverride>(() => {
   const base = selectedTransformer.value
@@ -247,21 +397,135 @@ function saveSpecialistModal() {
   specialistModalOpen.value = false
 }
 
+function openAnalysisModal() {
+  analysisNewMenuOpen.value = false
+  const serial = selectedTransformer.value?.serial || ''
+  analysisSendReport.value = {
+    cromatografia: false,
+    fisicoquimico: false,
+    ensaiosespeciais: false,
+  }
+  analysisCromForm.value = {
+    transformador: serial,
+    dataColeta: '',
+    dataIntervencao: '',
+    intervencao: '',
+    tempAmostra: '',
+    tempOleo: '',
+    tempEnrolam: '',
+    hidrogenio: '',
+    oxigenio: '',
+    nitrogenio: '',
+    monCarbono: '',
+    metano: '',
+    dioxCarbono: '',
+    etileno: '',
+    etano: '',
+    acetileno: '',
+    totalGases: '',
+    tgc: '',
+    laboratorio: '',
+    carregamento: '',
+  }
+  analysisFisicoForm.value = {
+    transformador: serial,
+    dataColeta: '',
+    dataIntervencao: '',
+    intervencao: '',
+    tempAmostra: '',
+    teorAgua: '',
+    tempOleo: '',
+    tempEnrolam: '',
+    rd: '',
+    tif: '',
+    indNeutr: '',
+    cor: '',
+    densRel: '',
+    fPot25: '',
+    fPot90: '',
+    fPot100: '',
+    ensaioDbpc: '',
+    laboratorio: '',
+  }
+  analysisEnsaiosForm.value = {
+    transformador: serial,
+    dataColeta: '',
+    enxofreCorrosivo: '',
+    teorDbds: '',
+    teorPassivador: '',
+    enxofreElementar: '',
+    gpFabrica: '',
+    gp: '',
+    furanos: '',
+    laboratorio: '',
+  }
+  analysisModalTab.value = 'cromatografia'
+  analysisModalOpen.value = true
+}
+
+function closeAnalysisModal() {
+  analysisModalOpen.value = false
+}
+
+function saveAnalysisModal() {
+  analysisModalOpen.value = false
+}
+
+function goToPreviousAnalysisPage() {
+  analysisPage.value = Math.max(1, analysisPage.value - 1)
+}
+
+function goToNextAnalysisPage() {
+  analysisPage.value = Math.min(analysisTotalPages.value, analysisPage.value + 1)
+}
+
+function hasAnalysisData(form: Record<string, string>) {
+  return Object.entries(form).some(([key, value]) => key !== 'transformador' && String(value || '').trim() !== '')
+}
+
+watch(
+  analysisCromForm,
+  (form) => {
+    if (hasAnalysisData(form)) analysisSendReport.value.cromatografia = true
+  },
+  { deep: true }
+)
+
+watch(
+  analysisFisicoForm,
+  (form) => {
+    if (hasAnalysisData(form)) analysisSendReport.value.fisicoquimico = true
+  },
+  { deep: true }
+)
+
+watch(
+  analysisEnsaiosForm,
+  (form) => {
+    if (hasAnalysisData(form)) analysisSendReport.value.ensaiosespeciais = true
+  },
+  { deep: true }
+)
+
 const cromatografiasRows = computed(() => {
   const data = parseLooseJson<BaseRow[]>(cromatografiasRaw)
   return [...data]
+    .filter(rowMatchesSelectedTransformer)
     .sort((a, b) => parseBrDate(b.DATA_COLETA) - parseBrDate(a.DATA_COLETA))
     .slice(0, 8)
 })
 
 const latestCromatografiaRow = computed<BaseRow | null>(() => {
   const data = parseLooseJson<BaseRow[]>(cromatografiasRaw)
-  return [...data].sort((a, b) => parseBrDate(b.DATA_COLETA) - parseBrDate(a.DATA_COLETA))[0] || null
+  return [...data]
+    .filter(rowMatchesSelectedTransformer)
+    .sort((a, b) => parseBrDate(b.DATA_COLETA) - parseBrDate(a.DATA_COLETA))[0] || null
 })
 
 const fisicoRows = computed(() => {
   const data = parseLooseJson<BaseRow[]>(fisicoQuimicosRaw)
   return [...data]
+    .filter(rowMatchesSelectedTransformer)
     .sort((a, b) => parseBrDate(b.DATA_COLETA) - parseBrDate(a.DATA_COLETA))
     .slice(0, 8)
 })
@@ -269,6 +533,7 @@ const fisicoRows = computed(() => {
 const fisicoOltcRows = computed(() => {
   const data = parseLooseJson<BaseRow[]>(fisicoQuimicosOltcRaw)
   return [...data]
+    .filter(rowMatchesSelectedTransformer)
     .sort((a, b) => parseBrDate(b.DATA_COLETA) - parseBrDate(a.DATA_COLETA))
     .slice(0, 8)
 })
@@ -284,19 +549,25 @@ const historyRows = computed(() => {
     byYear.get(year)![field] += 1
   }
 
-  parseLooseJson<BaseRow[]>(cromatografiasRaw).forEach((row) => {
+  parseLooseJson<BaseRow[]>(cromatografiasRaw)
+    .filter(rowMatchesSelectedTransformer)
+    .forEach((row) => {
     const time = parseBrDate(row.DATA_COLETA)
     if (!time) return
     add(new Date(time).getFullYear(), 'cromatografias')
   })
 
-  parseLooseJson<BaseRow[]>(fisicoQuimicosRaw).forEach((row) => {
+  parseLooseJson<BaseRow[]>(fisicoQuimicosRaw)
+    .filter(rowMatchesSelectedTransformer)
+    .forEach((row) => {
     const time = parseBrDate(row.DATA_COLETA)
     if (!time) return
     add(new Date(time).getFullYear(), 'fisicoQuimicos')
   })
 
-  parseLooseJson<BaseRow[]>(fisicoQuimicosOltcRaw).forEach((row) => {
+  parseLooseJson<BaseRow[]>(fisicoQuimicosOltcRaw)
+    .filter(rowMatchesSelectedTransformer)
+    .forEach((row) => {
     const time = parseBrDate(row.DATA_COLETA)
     if (!time) return
     add(new Date(time).getFullYear(), 'fisicoOltc')
@@ -310,6 +581,14 @@ type HistoryChartSeries = { name: string; data: number[] }
 type HistoryChartData = { max: number; categories: string[]; series: HistoryChartSeries[]; colors: string[] }
 type HistoryChartTab = 'cromatografia' | 'fisicoquimica' | 'ensaiosespeciais'
 type HistoryDisplayMode = 'base' | 'historico'
+type AnalysisColumnGroup = 'Geral' | 'Cromatografia' | 'Físico Químico' | 'Ensaios Especiais'
+type AnalysisColumn = {
+  id: string
+  label: string
+  group: AnalysisColumnGroup
+  defaultVisible: boolean
+}
+type UnifiedAnalysisRow = Record<string, string | number> & { id: string; sortTime: number }
 
 const historyActiveTab = ref<HistoryChartTab>('cromatografia')
 const historyCromDisplayMode = ref<HistoryDisplayMode>('base')
@@ -346,6 +625,7 @@ const ensaiosSeriesDefs: HistorySeriesDef[] = [
 const cromatografiasChartRows = computed(() => {
   const data = parseLooseJson<BaseRow[]>(cromatografiasRaw)
   return [...data]
+    .filter(rowMatchesSelectedTransformer)
     .sort((a, b) => parseBrDate(a.DATA_COLETA) - parseBrDate(b.DATA_COLETA))
     .slice(-40)
 })
@@ -353,6 +633,7 @@ const cromatografiasChartRows = computed(() => {
 const fisicoChartRows = computed(() => {
   const data = parseLooseJson<BaseRow[]>(fisicoQuimicosRaw)
   return [...data]
+    .filter(rowMatchesSelectedTransformer)
     .sort((a, b) => parseBrDate(a.DATA_COLETA) - parseBrDate(b.DATA_COLETA))
     .slice(-40)
 })
@@ -360,6 +641,7 @@ const fisicoChartRows = computed(() => {
 const ensaiosChartRows = computed(() => {
   const data = parseLooseJson<BaseRow[]>(fisicoQuimicosOltcRaw)
   return [...data]
+    .filter(rowMatchesSelectedTransformer)
     .sort((a, b) => parseBrDate(a.DATA_COLETA) - parseBrDate(b.DATA_COLETA))
     .slice(-40)
 })
@@ -517,6 +799,438 @@ const historySwitchEnabled = computed({
   },
 })
 
+const analysisSearchDate = ref('')
+const analysisColumnsMenuOpen = ref(false)
+const analysisColumnsWrapRef = ref<HTMLElement | null>(null)
+const analysisNewMenuOpen = ref(false)
+const analysisExportMenuOpen = ref(false)
+const analysisNewWrapRef = ref<HTMLElement | null>(null)
+const analysisExportWrapRef = ref<HTMLElement | null>(null)
+const analysisExportOptions = ['Análises', 'Cromatografia', 'Físico Químico']
+const analysisExportSelected = ref<string[]>([])
+const analysisPage = ref(1)
+const analysisRowsPerPage = ref(10)
+const analysisRowsPerPageOptions = [10, 20, 30, 50]
+const analysisSearchInputType = ref<'text' | 'date'>('text')
+const coletasActiveTab = ref<ColetasSubTab>('proximas')
+const coletasNewMenuOpen = ref(false)
+const coletasExportMenuOpen = ref(false)
+const coletasNewWrapRef = ref<HTMLElement | null>(null)
+const coletasExportWrapRef = ref<HTMLElement | null>(null)
+const coletasExportOptions = ['Próximas', 'Realizadas']
+const coletasExportSelected = ref<string[]>([])
+const coletasModalOpen = ref(false)
+const coletasModalForm = ref({
+  categoria: 'proximas' as ColetasSubTab,
+  transformador: '',
+  statusUltimaColeta: '',
+  dataColeta: '',
+  subestacao: '',
+  unidade: '',
+  tag: '',
+  tipoAnalise: 'Cromatografia',
+})
+const manualColetas = ref<ColetaRow[]>([])
+
+const analysisColumns: AnalysisColumn[] = [
+  { id: 'tipo', label: 'Tipo', group: 'Geral', defaultVisible: true },
+  { id: 'transformador', label: 'Transformador', group: 'Geral', defaultVisible: true },
+  { id: 'dataColeta', label: 'Data Coleta', group: 'Geral', defaultVisible: true },
+  { id: 'subestacao', label: 'Subestação', group: 'Geral', defaultVisible: true },
+  { id: 'unidade', label: 'Unidade', group: 'Geral', defaultVisible: true },
+  { id: 'tag', label: 'Tag', group: 'Geral', defaultVisible: true },
+  { id: 'dataIntervencao', label: 'Data Intervenção', group: 'Geral', defaultVisible: false },
+  { id: 'intervencao', label: 'Intervenção', group: 'Geral', defaultVisible: false },
+  { id: 'tempAmostra', label: 'Temp. Amostra (°C)', group: 'Geral', defaultVisible: false },
+  { id: 'tempOleo', label: 'Temp. Óleo (°C)', group: 'Geral', defaultVisible: false },
+  { id: 'tempEnrolam', label: 'Temp. Enrolam. (°C)', group: 'Geral', defaultVisible: false },
+  { id: 'laboratorio', label: 'Laboratório', group: 'Geral', defaultVisible: true },
+  { id: 'hidrogenio', label: 'Hidrogênio (H2)', group: 'Cromatografia', defaultVisible: true },
+  { id: 'oxigenio', label: 'Oxigênio (O2)', group: 'Cromatografia', defaultVisible: false },
+  { id: 'nitrogenio', label: 'Nitrogênio (N2)', group: 'Cromatografia', defaultVisible: false },
+  { id: 'monCarbono', label: 'Mon. Carbono (CO)', group: 'Cromatografia', defaultVisible: true },
+  { id: 'metano', label: 'Metano (CH4)', group: 'Cromatografia', defaultVisible: true },
+  { id: 'dioxCarbono', label: 'Dióx. Carbono (CO2)', group: 'Cromatografia', defaultVisible: true },
+  { id: 'etileno', label: 'Etileno (C2H4)', group: 'Cromatografia', defaultVisible: false },
+  { id: 'etano', label: 'Etano (C2H6)', group: 'Cromatografia', defaultVisible: false },
+  { id: 'acetileno', label: 'Acetileno (C2H2)', group: 'Cromatografia', defaultVisible: false },
+  { id: 'totalGases', label: 'Total Gases', group: 'Cromatografia', defaultVisible: false },
+  { id: 'tgcb', label: 'TGCB', group: 'Cromatografia', defaultVisible: true },
+  { id: 'teorAgua', label: 'Teor de Água (ppm)', group: 'Físico Químico', defaultVisible: true },
+  { id: 'rd', label: 'RD (kV)', group: 'Físico Químico', defaultVisible: true },
+  { id: 'tif', label: 'TIF (Dyan/cm)', group: 'Físico Químico', defaultVisible: true },
+  { id: 'indNeutr', label: 'Índ. Neutr. (mgKH0/g)', group: 'Físico Químico', defaultVisible: false },
+  { id: 'cor', label: 'COR', group: 'Físico Químico', defaultVisible: false },
+  { id: 'densRel', label: 'Dens. Rel. 20/4 °C (g/mL)', group: 'Físico Químico', defaultVisible: false },
+  { id: 'fPot25', label: 'F. Pot. 25ºC', group: 'Físico Químico', defaultVisible: false },
+  { id: 'fPot90', label: 'F. Pot. 90ºC', group: 'Físico Químico', defaultVisible: false },
+  { id: 'fPot100', label: 'F. Pot. 100ºC', group: 'Físico Químico', defaultVisible: false },
+  { id: 'ensaioDbpc', label: 'Ensaio de DBPC', group: 'Físico Químico', defaultVisible: false },
+  { id: 'enxofreCorrosivo', label: 'Enxofre corrosivo', group: 'Ensaios Especiais', defaultVisible: true },
+  { id: 'teorDbds', label: 'Teor de DBDS (mg/Kg)', group: 'Ensaios Especiais', defaultVisible: true },
+  { id: 'teorPassivador', label: 'Teor de Passivador (mg/Kg)', group: 'Ensaios Especiais', defaultVisible: false },
+  { id: 'enxofreElementar', label: 'Enxofre Elementar', group: 'Ensaios Especiais', defaultVisible: false },
+  { id: 'gpFabrica', label: 'GP de Fábrica', group: 'Ensaios Especiais', defaultVisible: false },
+  { id: 'gp', label: 'GP', group: 'Ensaios Especiais', defaultVisible: false },
+  { id: 'furanos', label: 'Furanos', group: 'Ensaios Especiais', defaultVisible: false },
+]
+
+const analysisVisibleColumnIds = ref<string[]>(
+  analysisColumns.filter((column) => column.defaultVisible).map((column) => column.id)
+)
+
+const analysisVisibleColumns = computed(() =>
+  analysisColumns.filter((column) => analysisVisibleColumnIds.value.includes(column.id))
+)
+
+const analysisColumnsByGroup = computed(() => {
+  const grouped = new Map<AnalysisColumnGroup, AnalysisColumn[]>()
+  analysisColumns.forEach((column) => {
+    if (!grouped.has(column.group)) grouped.set(column.group, [])
+    grouped.get(column.group)!.push(column)
+  })
+  return grouped
+})
+
+function toggleAnalysisColumnsMenu() {
+  analysisNewMenuOpen.value = false
+  analysisExportMenuOpen.value = false
+  analysisColumnsMenuOpen.value = !analysisColumnsMenuOpen.value
+}
+
+function closeAnalysisColumnsOnOutsideClick(event: MouseEvent) {
+  const target = event.target as Node | null
+  if (!target) return
+  if (
+    analysisColumnsWrapRef.value?.contains(target) ||
+    analysisNewWrapRef.value?.contains(target) ||
+    analysisExportWrapRef.value?.contains(target) ||
+    coletasNewWrapRef.value?.contains(target) ||
+    coletasExportWrapRef.value?.contains(target)
+  ) {
+    return
+  }
+  analysisColumnsMenuOpen.value = false
+  analysisNewMenuOpen.value = false
+  analysisExportMenuOpen.value = false
+  coletasNewMenuOpen.value = false
+  coletasExportMenuOpen.value = false
+}
+
+function toggleAnalysisNewMenu() {
+  analysisColumnsMenuOpen.value = false
+  analysisExportMenuOpen.value = false
+  analysisNewMenuOpen.value = !analysisNewMenuOpen.value
+}
+
+function toggleAnalysisExportMenu() {
+  analysisColumnsMenuOpen.value = false
+  analysisNewMenuOpen.value = false
+  analysisExportMenuOpen.value = !analysisExportMenuOpen.value
+}
+
+function toggleColetasNewMenu() {
+  coletasExportMenuOpen.value = false
+  coletasNewMenuOpen.value = !coletasNewMenuOpen.value
+}
+
+function toggleColetasExportMenu() {
+  coletasNewMenuOpen.value = false
+  coletasExportMenuOpen.value = !coletasExportMenuOpen.value
+}
+
+function toggleColetasExportOption(option: string) {
+  if (coletasExportSelected.value.includes(option)) {
+    coletasExportSelected.value = coletasExportSelected.value.filter((item) => item !== option)
+    return
+  }
+  coletasExportSelected.value = [...coletasExportSelected.value, option]
+}
+
+function downloadColetasExports() {
+  if (!coletasExportSelected.value.length) return
+  coletasExportMenuOpen.value = false
+}
+
+function openColetasModal() {
+  const selected = selectedTransformer.value
+  coletasNewMenuOpen.value = false
+  coletasModalForm.value = {
+    categoria: coletasActiveTab.value,
+    transformador: selected?.serial || '',
+    statusUltimaColeta: selected?.status || 'Pendente',
+    dataColeta: '',
+    subestacao: selected?.substation || '',
+    unidade: selected?.unit || '',
+    tag: selected?.tag || '',
+    tipoAnalise: 'Cromatografia',
+  }
+  coletasModalOpen.value = true
+}
+
+function closeColetasModal() {
+  coletasModalOpen.value = false
+}
+
+function saveColetasModal() {
+  const form = coletasModalForm.value
+  if (!form.transformador || !form.dataColeta) return
+  const parsed = parseIsoDate(form.dataColeta)
+  const dateBr = parsed ? formatDateToBr(parsed) : form.dataColeta
+  const faltamDias = parsed ? daysDiffFromToday(parsed) : 0
+  manualColetas.value = [
+    {
+      id: `manual-coleta-${Date.now()}`,
+      transformador: form.transformador,
+      statusUltimaColeta: form.statusUltimaColeta || 'Pendente',
+      dataColeta: dateBr,
+      subestacao: form.subestacao || '-',
+      unidade: form.unidade || '-',
+      tag: form.tag || '-',
+      tipoAnalise: form.tipoAnalise || 'Cromatografia',
+      faltamDias: form.categoria === 'proximas' ? faltamDias : 0,
+      status: form.categoria === 'realizadas' ? 'Coletado' : faltamDias < 0 ? 'Atrasada' : 'Pendente',
+      categoria: form.categoria,
+    },
+    ...manualColetas.value,
+  ]
+  coletasModalOpen.value = false
+}
+
+function toggleAnalysisExportOption(option: string) {
+  if (analysisExportSelected.value.includes(option)) {
+    analysisExportSelected.value = analysisExportSelected.value.filter((item) => item !== option)
+    return
+  }
+  analysisExportSelected.value = [...analysisExportSelected.value, option]
+}
+
+function downloadAnalysisExports() {
+  if (!analysisExportSelected.value.length) return
+  analysisExportMenuOpen.value = false
+}
+
+function toggleAnalysisColumn(columnId: string) {
+  if (analysisVisibleColumnIds.value.includes(columnId)) {
+    if (analysisVisibleColumnIds.value.length === 1) return
+    analysisVisibleColumnIds.value = analysisVisibleColumnIds.value.filter((id) => id !== columnId)
+    return
+  }
+  analysisVisibleColumnIds.value = [...analysisVisibleColumnIds.value, columnId]
+}
+
+function normalizeCell(value: unknown) {
+  if (value === null || value === undefined) return '-'
+  const text = String(value).trim()
+  return text ? text : '-'
+}
+
+function pickCell(row: BaseRow, ...keys: string[]) {
+  for (const key of keys) {
+    if (key in row && row[key] !== null && row[key] !== undefined && String(row[key]).trim()) {
+      return normalizeCell(row[key])
+    }
+  }
+  return '-'
+}
+
+function normalizedToken(value: unknown) {
+  return String(value ?? '')
+    .trim()
+    .toUpperCase()
+}
+
+const analysisDataSerialAliases: Record<string, string[]> = {
+  '9701-A01': ['3792', 'OLTC-0001'],
+}
+
+function rowMatchesSelectedTransformer(row: BaseRow) {
+  const selected = selectedTransformer.value
+  if (!selected) return true
+
+  const selectedSerial = normalizedToken(selected.serial)
+  const serialAliases = (analysisDataSerialAliases[selected.id] || []).map((value) => normalizedToken(value))
+  const serialCandidates = new Set([selectedSerial, ...serialAliases].filter(Boolean))
+  const selectedTag = normalizedToken(selected.tag)
+  const selectedUnit = normalizedToken(selected.unit)
+  const selectedSubstation = normalizedToken(selected.substation)
+
+  const rowSerial = normalizedToken(row.NUM_SERIE ?? row.SERIAL_TRANSFORMADOR)
+  const rowTag = normalizedToken(row.TAG)
+  const rowUnit = normalizedToken(row.UNIDADE)
+  const rowSubstation = normalizedToken(row.SUBESTACAO)
+
+  if (rowSerial) return serialCandidates.has(rowSerial)
+
+  if (rowTag && rowTag !== selectedTag) return false
+  if (rowUnit && rowUnit !== selectedUnit) return false
+  if (rowSubstation && rowSubstation !== selectedSubstation) return false
+
+  return true
+}
+
+const unifiedAnalysisRows = computed<UnifiedAnalysisRow[]>(() => {
+  const selected = selectedTransformer.value
+  const fallbackSubstation = selected?.substation || '-'
+  const fallbackUnit = selected?.unit || '-'
+  const fallbackTag = selected?.tag || '-'
+  const fallbackTransformer = selected?.serial || selected?.id || '-'
+
+  const asCommon = (row: BaseRow, tipo: string, index: number): UnifiedAnalysisRow => {
+    const dataColeta = normalizeCell(row.DATA_COLETA)
+    return {
+      id: `${tipo}-${index}-${dataColeta}`,
+      sortTime: parseBrDate(row.DATA_COLETA),
+      tipo,
+      transformador: pickCell(row, 'NUM_SERIE', 'SERIAL_TRANSFORMADOR') || fallbackTransformer,
+      dataColeta,
+      subestacao: pickCell(row, 'SUBESTACAO') !== '-' ? pickCell(row, 'SUBESTACAO') : fallbackSubstation,
+      unidade: pickCell(row, 'UNIDADE') !== '-' ? pickCell(row, 'UNIDADE') : fallbackUnit,
+      tag: pickCell(row, 'TAG') !== '-' ? pickCell(row, 'TAG') : fallbackTag,
+      dataIntervencao: normalizeCell(row.DATA_INTERVENCAO),
+      intervencao: normalizeCell(row.INTERVENCAO),
+      tempAmostra: normalizeCell(row.TEMP_AMOSTRA),
+      tempOleo: normalizeCell(row.TEMP_OLEO),
+      tempEnrolam: normalizeCell(row.TEMP_ENROLAMENTO),
+      laboratorio: normalizeCell(row.LAB),
+      hidrogenio: '-',
+      oxigenio: '-',
+      nitrogenio: '-',
+      monCarbono: '-',
+      metano: '-',
+      dioxCarbono: '-',
+      etileno: '-',
+      etano: '-',
+      acetileno: '-',
+      totalGases: '-',
+      tgcb: '-',
+      teorAgua: '-',
+      rd: '-',
+      tif: '-',
+      indNeutr: '-',
+      cor: '-',
+      densRel: '-',
+      fPot25: '-',
+      fPot90: '-',
+      fPot100: '-',
+      ensaioDbpc: '-',
+      enxofreCorrosivo: '-',
+      teorDbds: '-',
+      teorPassivador: '-',
+      enxofreElementar: '-',
+      gpFabrica: '-',
+      gp: '-',
+      furanos: '-',
+    }
+  }
+
+  const cromRows = parseLooseJson<BaseRow[]>(cromatografiasRaw)
+    .filter(rowMatchesSelectedTransformer)
+    .map((row, index) => {
+    const base = asCommon(row, 'Cromatografia', index)
+    return {
+      ...base,
+      hidrogenio: normalizeCell(row.HIDROGENIO),
+      oxigenio: normalizeCell(row.OXIGENIO),
+      nitrogenio: normalizeCell(row.NITROGENIO),
+      monCarbono: normalizeCell(row.MONOX_CARBONO),
+      metano: normalizeCell(row.METANO),
+      dioxCarbono: normalizeCell(row.DIOX_CARBONO),
+      etileno: normalizeCell(row.ETILENO),
+      etano: normalizeCell(row.ETANO),
+      acetileno: normalizeCell(row.ACETILENO),
+      totalGases: normalizeCell(row.TOTAL_GASES),
+      tgcb: normalizeCell(row.TOTAL_GASES_COMB),
+    }
+  })
+
+  const fisicoRowsAll = parseLooseJson<BaseRow[]>(fisicoQuimicosRaw)
+    .filter(rowMatchesSelectedTransformer)
+    .map((row, index) => {
+    const base = asCommon(row, 'Físico Químico', index)
+    return {
+      ...base,
+      teorAgua: normalizeCell(row.TEOR_AGUA),
+      rd: normalizeCell(row.RD),
+      tif: normalizeCell(row.TENSAO_INTERFACIAL),
+      indNeutr: normalizeCell(row['IND_NEUTRALIZACAO ']),
+      cor: normalizeCell(row.COR),
+      densRel: normalizeCell(row.DENS_RELATIVA),
+      fPot25: normalizeCell(row.FATOR_POT_25),
+      fPot90: normalizeCell(row.FATOR_POT_90),
+      fPot100: normalizeCell(row.FATOR_POT_100),
+      ensaioDbpc: normalizeCell(row.DBPC),
+    }
+  })
+
+  const ensaiosRowsAll = parseLooseJson<BaseRow[]>(fisicoQuimicosOltcRaw)
+    .filter(rowMatchesSelectedTransformer)
+    .map((row, index) => {
+    const base = asCommon(row, 'Ensaios Especiais', index)
+    return {
+      ...base,
+      enxofreCorrosivo: pickCell(row, 'ENXOFRE_CORROSIVO'),
+      teorDbds: pickCell(row, 'TEOR_DBDS'),
+      teorPassivador: pickCell(row, 'TEOR_PASSIVADOR'),
+      enxofreElementar: pickCell(row, 'ENXOFRE_ELEMENTAR'),
+      gpFabrica: pickCell(row, 'GP_FABRICA'),
+      gp: pickCell(row, 'GP'),
+      furanos: pickCell(row, 'FURANOS'),
+    }
+  })
+
+  return [...cromRows, ...fisicoRowsAll, ...ensaiosRowsAll].sort((a, b) => b.sortTime - a.sortTime)
+})
+
+const filteredUnifiedAnalysisRows = computed(() => {
+  const query = analysisSearchDate.value.trim()
+  if (!query) return unifiedAnalysisRows.value
+  const formattedQuery = query.includes('-')
+    ? query.split('-').reverse().join('/')
+    : query
+  return unifiedAnalysisRows.value.filter((row) => String(row.dataColeta) === formattedQuery)
+})
+
+const analysisTotalPages = computed(() => {
+  const total = filteredUnifiedAnalysisRows.value.length
+  return Math.max(1, Math.ceil(total / analysisRowsPerPage.value))
+})
+
+const paginatedUnifiedAnalysisRows = computed(() => {
+  const start = (analysisPage.value - 1) * analysisRowsPerPage.value
+  const end = start + analysisRowsPerPage.value
+  return filteredUnifiedAnalysisRows.value.slice(start, end)
+})
+
+const analysisRangeLabel = computed(() => {
+  const total = filteredUnifiedAnalysisRows.value.length
+  if (!total) return '0 de 0'
+  const start = (analysisPage.value - 1) * analysisRowsPerPage.value + 1
+  const end = Math.min(analysisPage.value * analysisRowsPerPage.value, total)
+  return `${start}-${end} de ${total}`
+})
+
+watch(analysisRowsPerPage, () => {
+  analysisPage.value = 1
+})
+
+watch(analysisSearchDate, () => {
+  analysisPage.value = 1
+})
+
+watch(selectedId, () => {
+  analysisPage.value = 1
+})
+
+watch(
+  () => filteredUnifiedAnalysisRows.value.length,
+  () => {
+    if (analysisPage.value > analysisTotalPages.value) {
+      analysisPage.value = analysisTotalPages.value
+    }
+  }
+)
+
 function ieeeCondition(value: number, c1: number, c2: number, c3: number) {
   if (value <= c1) return 'Condição 01'
   if (value <= c2) return 'Condição 02'
@@ -561,23 +1275,94 @@ const oltcRows = computed(() => {
   return rows
 })
 
-const nextCollections = computed(() => {
-  if (!selectedTransformer.value) return []
-  const base = new Date()
-  const status = selectedTransformer.value.status
-  const offsets =
-    status === 'Crítico' ? [3, 7, 15] : status === 'Alerta' ? [7, 15, 30] : [15, 30, 60]
-  return offsets.map((days, index) => {
-    const date = new Date(base)
-    date.setDate(base.getDate() + days)
+function parseIsoDate(value: string) {
+  const date = new Date(value)
+  if (Number.isNaN(date.getTime())) return null
+  date.setHours(0, 0, 0, 0)
+  return date
+}
+
+function formatDateToBr(value: Date) {
+  return value.toLocaleDateString('pt-BR')
+}
+
+function daysDiffFromToday(value: Date) {
+  const today = new Date()
+  today.setHours(0, 0, 0, 0)
+  return Math.ceil((value.getTime() - today.getTime()) / 86400000)
+}
+
+const coletasRows = computed(() => {
+  const selected = selectedTransformer.value
+  if (!selected) return { proximas: [] as ColetaRow[], realizadas: [] as ColetaRow[] }
+
+  const now = new Date()
+  now.setHours(0, 0, 0, 0)
+  const offsets = selected.status === 'Crítico' ? [3, 7, 15] : selected.status === 'Alerta' ? [7, 15, 30] : [15, 30, 60]
+  const defaultTipos = ['Cromatografia', 'Físico Químico', 'Ensaios Especiais']
+
+  const proximasBase: ColetaRow[] = offsets.map((days, index) => {
+    const date = new Date(now)
+    date.setDate(now.getDate() + days)
+    const faltamDias = daysDiffFromToday(date)
     return {
-      id: `${selectedTransformer.value?.id}-next-${index}`,
-      type: index === 0 ? 'Cromatografia' : index === 1 ? 'Físico-Químico' : 'Inspeção Especial',
-      scheduledAt: date.toISOString(),
-      priority: index === 0 ? 'Alta' : index === 1 ? 'Média' : 'Planejada',
-      responsible: selectedTransformer.value?.analyst || 'Equipe SIARO',
+      id: `${selected.id}-coleta-prox-${index}`,
+      transformador: selected.serial,
+      statusUltimaColeta: selected.status,
+      dataColeta: formatDateToBr(date),
+      subestacao: selected.substation,
+      unidade: selected.unit,
+      tag: selected.tag,
+      tipoAnalise: defaultTipos[index] || 'Cromatografia',
+      faltamDias,
+      status: faltamDias < 0 ? 'Atrasada' : 'Pendente',
+      categoria: 'proximas',
     }
   })
+
+  const realizadasBase: ColetaRow[] = unifiedAnalysisRows.value
+    .slice(0, 8)
+    .map((row, index) => ({
+      id: `${selected.id}-coleta-real-${index}-${row.id}`,
+      transformador: String(row.transformador || selected.serial),
+      statusUltimaColeta: selected.status,
+      dataColeta: String(row.dataColeta || '-'),
+      subestacao: String(row.subestacao || selected.substation),
+      unidade: String(row.unidade || selected.unit),
+      tag: String(row.tag || selected.tag),
+      tipoAnalise: String(row.tipo || 'Cromatografia'),
+      faltamDias: 0,
+      status: 'Coletado',
+      categoria: 'realizadas',
+    }))
+
+  const manualRows = manualColetas.value.filter((row) => row.transformador === selected.serial)
+
+  const proximasManual = manualRows
+    .filter((row) => row.categoria === 'proximas')
+    .map((row) => {
+      const parsed = parseBrDate(row.dataColeta)
+      const date = parsed ? new Date(parsed) : now
+      const faltamDias = daysDiffFromToday(date)
+      return {
+        ...row,
+        faltamDias,
+        status: faltamDias < 0 ? 'Atrasada' : 'Pendente',
+      }
+    })
+
+  const realizadasManual = manualRows
+    .filter((row) => row.categoria === 'realizadas')
+    .map((row) => ({
+      ...row,
+      faltamDias: 0,
+      status: 'Coletado' as const,
+    }))
+
+  return {
+    proximas: [...proximasManual, ...proximasBase],
+    realizadas: [...realizadasManual, ...realizadasBase],
+  }
 })
 
 const oilTreatments = computed(() => {
@@ -655,6 +1440,8 @@ function statusClass(value: string) {
     .toLowerCase()
     .normalize('NFD')
     .replace(/[\u0300-\u036f]/g, '')
+  if (text.includes('atras')) return 'tone-danger'
+  if (text.includes('colet')) return 'tone-normal'
   if (text.includes('crit')) return 'tone-danger'
   if (text.includes('alert') || text.includes('alta')) return 'tone-warning'
   if (text.includes('pend')) return 'tone-neutral'
@@ -709,15 +1496,27 @@ onMounted(async () => {
   await nextTick()
   enhanceMobileTables()
   window.addEventListener('resize', enhanceMobileTables)
+  document.addEventListener('click', closeAnalysisColumnsOnOutsideClick)
 })
 
 onUnmounted(() => {
   window.removeEventListener('resize', enhanceMobileTables)
+  document.removeEventListener('click', closeAnalysisColumnsOnOutsideClick)
 })
 
 watch([activeTab, selectedId], async () => {
   await nextTick()
   enhanceMobileTables()
+  if (activeTab.value !== 'Histórico de Análises') {
+    analysisColumnsMenuOpen.value = false
+    analysisNewMenuOpen.value = false
+    analysisExportMenuOpen.value = false
+  }
+  if (activeTab.value !== 'Coletas') {
+    coletasNewMenuOpen.value = false
+    coletasExportMenuOpen.value = false
+    coletasModalOpen.value = false
+  }
   if (activeTab.value === 'Histórico de Análises' && typeof window !== 'undefined') {
     window.dispatchEvent(new Event('resize'))
   }
@@ -895,6 +1694,135 @@ watch([activeTab, selectedId], async () => {
           </div>
         </article>
         <p v-else class="empty">Sem histórico suficiente para gráfico.</p>
+        <article class="history-block-card history-analyses-card">
+          <p class="history-analyses-title">Análises Recentes</p>
+          <div class="history-analyses-head">
+            <div class="history-analyses-controls">
+              <label class="history-analysis-search">
+                <input
+                  v-model="analysisSearchDate"
+                  type="date"
+                  aria-label="Pesquisar por data da coleta"
+                />
+              </label>
+              <div ref="analysisColumnsWrapRef" class="history-columns-picker">
+                <button type="button" class="history-columns-trigger" @click="toggleAnalysisColumnsMenu">
+                  <span>Colunas</span>
+                  <i aria-hidden="true">▾</i>
+                </button>
+                <div v-if="analysisColumnsMenuOpen" class="history-columns-menu">
+                  <section
+                    v-for="[group, columns] in analysisColumnsByGroup"
+                    :key="group"
+                    class="history-columns-group"
+                  >
+                    <p>{{ group }}</p>
+                    <label v-for="column in columns" :key="column.id" class="history-columns-option">
+                      <input
+                        type="checkbox"
+                        :checked="analysisVisibleColumnIds.includes(column.id)"
+                        :disabled="analysisVisibleColumnIds.length === 1 && analysisVisibleColumnIds.includes(column.id)"
+                        @change="toggleAnalysisColumn(column.id)"
+                      />
+                      <span>{{ column.label }}</span>
+                    </label>
+                  </section>
+                </div>
+              </div>
+            </div>
+            <div class="history-analyses-actions">
+              <div ref="analysisNewWrapRef" class="history-actions-wrap">
+                <button type="button" class="history-action-btn" @click="toggleAnalysisNewMenu">
+                  <span class="history-action-icon" aria-hidden="true">＋</span>
+                  Novo
+                </button>
+                <div v-if="analysisNewMenuOpen" class="history-actions-menu">
+                  <button type="button" @click="openAnalysisModal">Nova Análise</button>
+                  <button type="button">Importar Análises</button>
+                </div>
+              </div>
+              <div ref="analysisExportWrapRef" class="history-actions-wrap">
+                <button type="button" class="history-action-btn" @click="toggleAnalysisExportMenu">
+                  <span class="history-action-icon" aria-hidden="true">⭳</span>
+                  Exportar
+                </button>
+                <div v-if="analysisExportMenuOpen" class="history-actions-menu">
+                  <label
+                    v-for="option in analysisExportOptions"
+                    :key="`export-option-${option}`"
+                    class="history-export-option"
+                  >
+                    <input
+                      type="checkbox"
+                      :checked="analysisExportSelected.includes(option)"
+                      @change="toggleAnalysisExportOption(option)"
+                    />
+                    <span>{{ option }}</span>
+                  </label>
+                  <button
+                    type="button"
+                    class="history-export-download-btn"
+                    :disabled="!analysisExportSelected.length"
+                    @click="downloadAnalysisExports"
+                  >
+                    Baixar
+                  </button>
+                </div>
+              </div>
+            </div>
+          </div>
+          <div class="mini-table-wrap history-analyses-table-wrap">
+            <table class="table compact analysis-table">
+              <thead>
+                <tr>
+                  <th v-for="column in analysisVisibleColumns" :key="column.id" class="text-center">
+                    {{ column.label }}
+                  </th>
+                </tr>
+              </thead>
+              <tbody>
+                <tr v-for="row in paginatedUnifiedAnalysisRows" :key="row.id">
+                  <td v-for="column in analysisVisibleColumns" :key="`${row.id}-${column.id}`" class="text-center">
+                    {{ row[column.id] }}
+                  </td>
+                </tr>
+                <tr v-if="!filteredUnifiedAnalysisRows.length">
+                  <td class="text-center" :colspan="analysisVisibleColumns.length">
+                    Nenhuma análise encontrada para o filtro informado.
+                  </td>
+                </tr>
+              </tbody>
+            </table>
+          </div>
+          <div class="history-analyses-pagination">
+            <label class="history-rows-per-page">
+              <span>Itens por página</span>
+              <select v-model.number="analysisRowsPerPage">
+                <option v-for="size in analysisRowsPerPageOptions" :key="`rows-${size}`" :value="size">
+                  {{ size }}
+                </option>
+              </select>
+            </label>
+            <span class="history-page-range">{{ analysisRangeLabel }}</span>
+            <button
+              type="button"
+              class="history-page-btn"
+              :disabled="analysisPage <= 1"
+              @click="goToPreviousAnalysisPage"
+            >
+              Anterior
+            </button>
+            <span class="history-page-current">Página {{ analysisPage }} de {{ analysisTotalPages }}</span>
+            <button
+              type="button"
+              class="history-page-btn"
+              :disabled="analysisPage >= analysisTotalPages"
+              @click="goToNextAnalysisPage"
+            >
+              Próxima
+            </button>
+          </div>
+        </article>
       </section>
 
       <section v-else-if="activeTab === 'Avaliação Completa'" class="panel panel-eval">
@@ -1346,12 +2274,109 @@ watch([activeTab, selectedId], async () => {
         </article>
       </section>
 
-      <section v-else-if="activeTab === 'Próximas Coletas'" class="panel">
-        <article v-for="item in nextCollections" :key="item.id" class="tile">
-          <h4>{{ item.type }}</h4>
-          <p><b>Data prevista:</b> {{ toUiDate(item.scheduledAt) }}</p>
-          <p><b>Prioridade:</b> {{ item.priority }}</p>
-          <p><b>Responsável:</b> {{ item.responsible }}</p>
+      <section v-else-if="activeTab === 'Coletas'" class="panel table-panel history-panel">
+        <article class="history-block-card">
+          <div class="history-line-head">
+            <div class="history-tabs-inline history-tabs-main">
+              <button
+                type="button"
+                class="history-tab-btn"
+                :class="{ active: coletasActiveTab === 'proximas' }"
+                @click="coletasActiveTab = 'proximas'"
+              >
+                Próximas
+              </button>
+              <button
+                type="button"
+                class="history-tab-btn"
+                :class="{ active: coletasActiveTab === 'realizadas' }"
+                @click="coletasActiveTab = 'realizadas'"
+              >
+                Realizadas
+              </button>
+            </div>
+            <div class="history-analyses-actions">
+              <div ref="coletasNewWrapRef" class="history-actions-wrap">
+                <button type="button" class="history-action-btn" @click="toggleColetasNewMenu">
+                  <span class="history-action-icon" aria-hidden="true">＋</span>
+                  Novo
+                </button>
+                <div v-if="coletasNewMenuOpen" class="history-actions-menu">
+                  <button type="button" @click="openColetasModal">Nova Coleta</button>
+                  <button type="button">Importar Coletas</button>
+                </div>
+              </div>
+              <div ref="coletasExportWrapRef" class="history-actions-wrap">
+                <button type="button" class="history-action-btn" @click="toggleColetasExportMenu">
+                  <span class="history-action-icon" aria-hidden="true">⭳</span>
+                  Exportar
+                </button>
+                <div v-if="coletasExportMenuOpen" class="history-actions-menu">
+                  <label
+                    v-for="option in coletasExportOptions"
+                    :key="`coleta-export-option-${option}`"
+                    class="history-export-option"
+                  >
+                    <input
+                      type="checkbox"
+                      :checked="coletasExportSelected.includes(option)"
+                      @change="toggleColetasExportOption(option)"
+                    />
+                    <span>{{ option }}</span>
+                  </label>
+                  <button
+                    type="button"
+                    class="history-export-download-btn"
+                    :disabled="!coletasExportSelected.length"
+                    @click="downloadColetasExports"
+                  >
+                    Baixar
+                  </button>
+                </div>
+              </div>
+            </div>
+          </div>
+
+          <div class="mini-table-wrap history-analyses-table-wrap">
+            <table class="table compact analysis-table">
+              <thead>
+                <tr>
+                  <th class="text-center">Transformador</th>
+                  <th class="text-center">Status</th>
+                  <th class="text-center">Status Última Coleta</th>
+                  <th class="text-center">{{ coletasActiveTab === 'proximas' ? 'Próxima Data Coleta' : 'Data Coleta' }}</th>
+                  <th class="text-center">Subestação</th>
+                  <th class="text-center">Unidade</th>
+                  <th class="text-center">Tag</th>
+                  <th class="text-center">Tipo de Análise</th>
+                  <th class="text-center">Faltam Dia(s)</th>
+                  <th class="text-center">Ações</th>
+                </tr>
+              </thead>
+              <tbody>
+                <tr
+                  v-for="row in (coletasActiveTab === 'proximas' ? coletasRows.proximas : coletasRows.realizadas)"
+                  :key="row.id"
+                >
+                  <td class="text-center">{{ row.transformador }}</td>
+                  <td class="text-center">
+                    <span class="pill" :class="statusClass(row.status)">{{ row.status }}</span>
+                  </td>
+                  <td class="text-center">{{ row.statusUltimaColeta }}</td>
+                  <td class="text-center">{{ row.dataColeta }}</td>
+                  <td class="text-center">{{ row.subestacao }}</td>
+                  <td class="text-center">{{ row.unidade }}</td>
+                  <td class="text-center">{{ row.tag }}</td>
+                  <td class="text-center">{{ row.tipoAnalise }}</td>
+                  <td class="text-center">{{ row.status === 'Coletado' ? '-' : row.faltamDias }}</td>
+                  <td class="text-center">-</td>
+                </tr>
+                <tr v-if="!(coletasActiveTab === 'proximas' ? coletasRows.proximas.length : coletasRows.realizadas.length)">
+                  <td class="text-center" colspan="10">Sem coletas cadastradas.</td>
+                </tr>
+              </tbody>
+            </table>
+          </div>
         </article>
       </section>
 
@@ -1513,6 +2538,221 @@ watch([activeTab, selectedId], async () => {
           <div class="modal-actions">
             <button type="button" class="secondary-btn" @click="closeSpecialistModal">Cancelar</button>
             <button type="button" class="primary-btn" @click="saveSpecialistModal">Salvar</button>
+          </div>
+        </div>
+      </div>
+
+      <div v-if="analysisModalOpen" class="modal-overlay" @click="closeAnalysisModal">
+        <div class="modal-card analysis-modal-card" @click.stop>
+          <h4>Nova Análise</h4>
+          <div class="analysis-modal-tabs">
+            <button
+              type="button"
+              class="analysis-modal-tab-btn"
+              :class="{ active: analysisModalTab === 'cromatografia' }"
+              @click="analysisModalTab = 'cromatografia'"
+            >
+              Cromatografia
+            </button>
+            <button
+              type="button"
+              class="analysis-modal-tab-btn"
+              :class="{ active: analysisModalTab === 'fisicoquimico' }"
+              @click="analysisModalTab = 'fisicoquimico'"
+            >
+              Fisio Quimico
+            </button>
+            <button
+              type="button"
+              class="analysis-modal-tab-btn"
+              :class="{ active: analysisModalTab === 'ensaiosespeciais' }"
+              @click="analysisModalTab = 'ensaiosespeciais'"
+            >
+              Ensaios Especiais
+            </button>
+          </div>
+
+          <div v-if="analysisModalTab === 'cromatografia'">
+            <p class="analysis-form-title">ENTRADA DE CROMATOGRAFIA -TR-OLEO</p>
+            <div class="history-switch-wrap history-switch-wrap-top">
+              <label class="history-switch">
+                <input v-model="analysisSendReport.cromatografia" type="checkbox" />
+                <span class="history-switch-track">
+                  <i class="history-switch-thumb"></i>
+                </span>
+                <b>Enviar Relatorio</b>
+              </label>
+            </div>
+            <div class="analysis-form-grid">
+              <label v-for="field in analysisCromFields" :key="`crom-${field.key}`">
+                <span>{{ field.label }}</span>
+                <input
+                  v-if="field.key === 'transformador'"
+                  v-model="analysisCromForm[field.key]"
+                  type="text"
+                  list="analysis-transformers-list"
+                />
+                <template v-if="field.type === 'select'">
+                  <select v-model="analysisCromForm[field.key]">
+                    <option value="">Selecione</option>
+                    <option v-for="option in field.options || []" :key="option" :value="option">{{ option }}</option>
+                  </select>
+                </template>
+                <input
+                  v-else-if="field.key !== 'transformador'"
+                  v-model="analysisCromForm[field.key]"
+                  :type="field.type || 'text'"
+                />
+                <small v-if="field.hint">{{ field.hint }}</small>
+              </label>
+            </div>
+          </div>
+
+          <div v-else-if="analysisModalTab === 'fisicoquimico'">
+            <p class="analysis-form-title">ENTRADA DE FÍSICO QUÍMICO -TR-OLEO</p>
+            <div class="history-switch-wrap history-switch-wrap-top">
+              <label class="history-switch">
+                <input v-model="analysisSendReport.fisicoquimico" type="checkbox" />
+                <span class="history-switch-track">
+                  <i class="history-switch-thumb"></i>
+                </span>
+                <b>Enviar Relatorio</b>
+              </label>
+            </div>
+            <div class="analysis-form-grid">
+              <label v-for="field in analysisFisicoFields" :key="`fis-${field.key}`">
+                <span>{{ field.label }}</span>
+                <input
+                  v-if="field.key === 'transformador'"
+                  v-model="analysisFisicoForm[field.key]"
+                  type="text"
+                  list="analysis-transformers-list"
+                />
+                <template v-if="field.type === 'select'">
+                  <select v-model="analysisFisicoForm[field.key]">
+                    <option value="">Selecione</option>
+                    <option v-for="option in field.options || []" :key="option" :value="option">{{ option }}</option>
+                  </select>
+                </template>
+                <input
+                  v-else-if="field.key !== 'transformador'"
+                  v-model="analysisFisicoForm[field.key]"
+                  :type="field.type || 'text'"
+                />
+                <small v-if="field.hint">{{ field.hint }}</small>
+              </label>
+            </div>
+          </div>
+
+          <div v-else>
+            <p class="analysis-form-title">ENTRADA DE ENSAIO ESPECIAL -TR-OLEO</p>
+            <div class="history-switch-wrap history-switch-wrap-top">
+              <label class="history-switch">
+                <input v-model="analysisSendReport.ensaiosespeciais" type="checkbox" />
+                <span class="history-switch-track">
+                  <i class="history-switch-thumb"></i>
+                </span>
+                <b>Enviar Relatorio</b>
+              </label>
+            </div>
+            <div class="analysis-form-grid">
+              <label v-for="field in analysisEnsaiosFields" :key="`ens-${field.key}`">
+                <span>{{ field.label }}</span>
+                <input
+                  v-if="field.key === 'transformador'"
+                  v-model="analysisEnsaiosForm[field.key]"
+                  type="text"
+                  list="analysis-transformers-list"
+                />
+                <template v-if="field.type === 'select'">
+                  <select v-model="analysisEnsaiosForm[field.key]">
+                    <option value="">Selecione</option>
+                    <option v-for="option in field.options || []" :key="option" :value="option">{{ option }}</option>
+                  </select>
+                </template>
+                <input
+                  v-else-if="field.key !== 'transformador'"
+                  v-model="analysisEnsaiosForm[field.key]"
+                  :type="field.type || 'text'"
+                />
+                <small v-if="field.hint">{{ field.hint }}</small>
+              </label>
+            </div>
+          </div>
+
+          <datalist id="analysis-transformers-list">
+            <option
+              v-for="option in analysisTransformerOptions"
+              :key="`analysis-transformer-${option.value}`"
+              :value="option.value"
+            >
+              {{ option.label }}
+            </option>
+          </datalist>
+
+          <div class="modal-actions">
+            <button type="button" class="secondary-btn" @click="closeAnalysisModal">Cancelar</button>
+            <button type="button" class="primary-btn" @click="saveAnalysisModal">Salvar</button>
+          </div>
+        </div>
+      </div>
+
+      <div v-if="coletasModalOpen" class="modal-overlay" @click="closeColetasModal">
+        <div class="modal-card" @click.stop>
+          <h4>Nova Coleta</h4>
+          <div class="modal-grid">
+            <label>
+              <span>Tipo</span>
+              <select v-model="coletasModalForm.categoria">
+                <option value="proximas">Próximas</option>
+                <option value="realizadas">Realizadas</option>
+              </select>
+            </label>
+            <label>
+              <span>Transformador</span>
+              <input v-model="coletasModalForm.transformador" type="text" list="coletas-transformers-list" />
+            </label>
+            <label>
+              <span>Status Última Coleta</span>
+              <input v-model="coletasModalForm.statusUltimaColeta" type="text" />
+            </label>
+            <label>
+              <span>Data Coleta</span>
+              <input v-model="coletasModalForm.dataColeta" type="date" />
+            </label>
+            <label>
+              <span>Subestação</span>
+              <input v-model="coletasModalForm.subestacao" type="text" />
+            </label>
+            <label>
+              <span>Unidade</span>
+              <input v-model="coletasModalForm.unidade" type="text" />
+            </label>
+            <label>
+              <span>Tag</span>
+              <input v-model="coletasModalForm.tag" type="text" />
+            </label>
+            <label>
+              <span>Tipo de Análise</span>
+              <select v-model="coletasModalForm.tipoAnalise">
+                <option value="Cromatografia">Cromatografia</option>
+                <option value="Físico Químico">Físico Químico</option>
+                <option value="Ensaios Especiais">Ensaios Especiais</option>
+              </select>
+            </label>
+          </div>
+          <datalist id="coletas-transformers-list">
+            <option
+              v-for="option in analysisTransformerOptions"
+              :key="`coletas-transformer-${option.value}`"
+              :value="option.value"
+            >
+              {{ option.label }}
+            </option>
+          </datalist>
+          <div class="modal-actions">
+            <button type="button" class="secondary-btn" @click="closeColetasModal">Cancelar</button>
+            <button type="button" class="primary-btn" @click="saveColetasModal">Salvar</button>
           </div>
         </div>
       </div>
@@ -2114,9 +3354,84 @@ watch([activeTab, selectedId], async () => {
   padding: 14px;
 }
 
+.analysis-modal-card{
+  width: min(980px, 100%);
+  max-height: min(90vh, 920px);
+  overflow: auto;
+}
+
 .modal-card h4{
   margin: 0 0 12px;
   color: #123a6d;
+}
+
+.analysis-modal-tabs{
+  display: inline-flex;
+  flex-wrap: wrap;
+  gap: 4px;
+  padding: 2px;
+  border-radius: 10px;
+  border: 1px solid rgba(15, 23, 42, 0.12);
+  background: rgba(248, 250, 252, 0.9);
+  margin-bottom: 10px;
+}
+
+.analysis-modal-tab-btn{
+  border: 0;
+  min-height: 28px;
+  padding: 0 12px;
+  border-radius: 8px;
+  background: transparent;
+  color: rgba(15, 23, 42, 0.72);
+  font-size: 12px;
+  font-weight: 600;
+  cursor: pointer;
+}
+
+.analysis-modal-tab-btn.active{
+  background: #1e4e8b;
+  color: #fff;
+}
+
+.analysis-form-title{
+  margin: 4px 0 8px;
+  color: #123a6d;
+  font-size: 12px;
+  font-weight: 700;
+}
+
+.analysis-form-grid{
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 10px;
+}
+
+.analysis-form-grid label{
+  display: grid;
+  gap: 6px;
+}
+
+.analysis-form-grid label span{
+  font-size: 11px;
+  color: rgba(15, 23, 42, 0.7);
+  font-weight: 600;
+}
+
+.analysis-form-grid input,
+.analysis-form-grid select{
+  width: 100%;
+  border: 1px solid rgba(15, 23, 42, 0.18);
+  border-radius: 10px;
+  background: #fff;
+  padding: 8px 10px;
+  font-size: 13px;
+  color: #0f172a;
+}
+
+.analysis-form-grid label small{
+  margin-top: -2px;
+  font-size: 10px;
+  color: rgba(15, 23, 42, 0.58);
 }
 
 .modal-grid{
@@ -2136,6 +3451,7 @@ watch([activeTab, selectedId], async () => {
   font-weight: 600;
 }
 
+.modal-grid input,
 .modal-grid select,
 .modal-grid textarea{
   width: 100%;
@@ -2430,6 +3746,275 @@ watch([activeTab, selectedId], async () => {
   color: rgba(15, 23, 42, 0.72);
 }
 
+.history-analyses-card{
+  overflow: visible;
+}
+
+.history-analyses-title{
+  margin: 0 0 10px;
+  padding: 6px 10px;
+  border-radius: 8px;
+  background: #1e4e8b;
+  color: #fff;
+  font-size: 13px;
+  font-weight: 700;
+  text-align: center;
+}
+
+.history-analyses-head{
+  display: flex;
+  align-items: flex-end;
+  justify-content: space-between;
+  gap: 10px;
+  flex-wrap: wrap;
+}
+
+.history-analyses-controls{
+  display: flex;
+  align-items: flex-end;
+  justify-content: flex-start;
+  gap: 6px;
+  flex-wrap: wrap;
+}
+
+.history-analyses-actions{
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.history-actions-wrap{
+  position: relative;
+}
+
+.history-action-btn{
+  padding: 8px 16px;
+  font-size: 13px;
+  box-shadow: 0 6px 14px rgba(15, 23, 42, 0.08);
+  border: 1px solid rgba(15, 23, 42, 0.12);
+  border-radius: 999px;
+  color: rgba(15, 23, 42, 0.8);
+  cursor: pointer;
+  background: rgba(255,255,255,0.7);
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.history-action-icon{
+  font-size: 12px;
+}
+
+.history-actions-menu{
+  position: absolute;
+  right: 0;
+  top: 36px;
+  background: #fff;
+  border: 1px solid rgba(15, 23, 42, 0.12);
+  border-radius: 12px;
+  box-shadow: 0 16px 32px rgba(15, 23, 42, 0.12);
+  display: grid;
+  gap: 6px;
+  padding: 8px;
+  z-index: 31;
+  min-width: 180px;
+}
+
+.history-actions-menu button{
+  border: none;
+  background: rgba(15, 23, 42, 0.04);
+  padding: 8px 10px;
+  border-radius: 10px;
+  font-size: 12px;
+  cursor: pointer;
+  text-align: left;
+}
+
+.history-export-option{
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  padding: 6px 4px;
+  font-size: 12px;
+  color: rgba(15, 23, 42, 0.82);
+  cursor: pointer;
+}
+
+.history-export-option input{
+  width: 14px;
+  height: 14px;
+  accent-color: #1e4e8b;
+  cursor: pointer;
+}
+
+.history-export-download-btn{
+  margin-top: 2px;
+  border: 1px solid #1e4e8b !important;
+  background: #1e4e8b !important;
+  color: #fff;
+  text-align: center !important;
+  font-weight: 600;
+}
+
+.history-export-download-btn:disabled{
+  opacity: 0.55;
+  cursor: not-allowed;
+}
+
+.history-analysis-search{
+  display: block;
+  width: auto;
+  min-width: 0;
+  flex: 0 0 auto;
+}
+
+.history-analysis-search input{
+  width: auto;
+  height: 34px;
+  border-radius: 10px;
+  border: 1px solid rgba(15, 23, 42, 0.14);
+  padding: 0 10px;
+  font-size: 12px;
+  background: #fff;
+  color: #0f172a;
+}
+
+.history-analysis-search input:focus{
+  outline: none;
+  border-color: #1e4e8b;
+  box-shadow: 0 0 0 3px rgba(30, 78, 139, 0.14);
+}
+
+.history-columns-picker{
+  position: relative;
+}
+
+.history-columns-trigger{
+  height: 34px;
+  border-radius: 10px;
+  border: 1px solid rgba(15, 23, 42, 0.14);
+  background: #fff;
+  color: rgba(15, 23, 42, 0.8);
+  padding: 0 10px;
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 12px;
+  font-weight: 600;
+  cursor: pointer;
+}
+
+.history-columns-trigger i{
+  font-style: normal;
+  font-size: 12px;
+  color: rgba(15, 23, 42, 0.65);
+}
+
+.history-columns-menu{
+  position: absolute;
+  right: 0;
+  top: calc(100% + 6px);
+  z-index: 30;
+  width: min(340px, 90vw);
+  max-height: 360px;
+  overflow: auto;
+  border-radius: 12px;
+  border: 1px solid rgba(15, 23, 42, 0.12);
+  background: #fff;
+  box-shadow: 0 10px 24px rgba(15, 23, 42, 0.14);
+  padding: 8px;
+}
+
+.history-columns-group + .history-columns-group{
+  margin-top: 8px;
+}
+
+.history-columns-group p{
+  margin: 0 0 6px;
+  font-size: 11px;
+  font-weight: 700;
+  color: #1e4e8b;
+}
+
+.history-columns-option{
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 12px;
+  color: rgba(15, 23, 42, 0.82);
+  padding: 4px 2px;
+  cursor: pointer;
+}
+
+.history-columns-option input{
+  width: 14px;
+  height: 14px;
+  accent-color: #1e4e8b;
+  cursor: pointer;
+}
+
+.history-columns-option input:disabled{
+  cursor: not-allowed;
+}
+
+.history-analyses-table-wrap{
+  margin-top: 4px;
+}
+
+.history-analyses-pagination{
+  margin-top: 8px;
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+
+.history-rows-per-page{
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.history-rows-per-page span{
+  font-size: 11px;
+  font-weight: 600;
+  color: rgba(15, 23, 42, 0.72);
+}
+
+.history-rows-per-page select{
+  height: 30px;
+  border-radius: 8px;
+  border: 1px solid rgba(15, 23, 42, 0.14);
+  background: #fff;
+  color: rgba(15, 23, 42, 0.8);
+  font-size: 12px;
+  padding: 0 8px;
+}
+
+.history-page-range,
+.history-page-current{
+  font-size: 12px;
+  color: rgba(15, 23, 42, 0.75);
+}
+
+.history-page-btn{
+  height: 30px;
+  border-radius: 8px;
+  border: 1px solid rgba(15, 23, 42, 0.12);
+  background: rgba(255, 255, 255, 0.9);
+  color: rgba(15, 23, 42, 0.82);
+  font-size: 12px;
+  font-weight: 600;
+  padding: 0 10px;
+  cursor: pointer;
+}
+
+.history-page-btn:disabled{
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
 @media (max-width: 900px) {
   .report-view{
     padding: 90px 16px 40px;
@@ -2541,6 +4126,36 @@ watch([activeTab, selectedId], async () => {
   }
   .history-mobile-range{
     display: block;
+  }
+  .history-analyses-controls{
+    width: 100%;
+    justify-content: stretch;
+    align-items: stretch;
+  }
+  .history-analyses-actions{
+    width: 100%;
+    justify-content: flex-end;
+  }
+  .history-analysis-search{
+    width: 100%;
+    min-width: 0;
+  }
+  .history-columns-picker{
+    width: 100%;
+  }
+  .history-columns-trigger{
+    width: 100%;
+    justify-content: space-between;
+  }
+  .history-columns-menu{
+    width: 100%;
+    max-height: 300px;
+  }
+  .history-analyses-pagination{
+    justify-content: flex-start;
+  }
+  .analysis-form-grid{
+    grid-template-columns: 1fr;
   }
   .modal-grid{
     grid-template-columns: 1fr;
