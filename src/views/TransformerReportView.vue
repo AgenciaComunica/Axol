@@ -70,6 +70,12 @@ type ColetaRow = {
   status: 'Pendente' | 'Atrasada' | 'Coletado'
   categoria: ColetasSubTab
 }
+type TreatmentColumn = {
+  id: string
+  label: string
+  defaultVisible: boolean
+}
+type TreatmentRow = Record<string, string | number> & { id: string }
 
 const route = useRoute()
 const router = useRouter()
@@ -831,6 +837,28 @@ const coletasModalForm = ref({
   tipoAnalise: 'Cromatografia',
 })
 const manualColetas = ref<ColetaRow[]>([])
+const treatmentSearch = ref('')
+const treatmentColumnsMenuOpen = ref(false)
+const treatmentNewMenuOpen = ref(false)
+const treatmentColumnsWrapRef = ref<HTMLElement | null>(null)
+const treatmentNewWrapRef = ref<HTMLElement | null>(null)
+const treatmentDetailsModalOpen = ref(false)
+const treatmentCreateModalOpen = ref(false)
+const manualTreatmentRows = ref<TreatmentRow[]>([])
+const treatmentLimitsOpen = ref(false)
+const treatmentForm = ref({
+  statusTratamento: 'Concluído',
+  dataColeta: '',
+  tipoAnalise: 'Físico Químico',
+  rd: '',
+  teorAgua: '',
+  tensaoInterfacial: '',
+  indNeutralizacao: '',
+  fator25: '',
+  fator90: '',
+  fator100: '',
+  dbpc: '',
+})
 
 const analysisColumns: AnalysisColumn[] = [
   { id: 'tipo', label: 'Tipo', group: 'Geral', defaultVisible: true },
@@ -906,7 +934,9 @@ function closeAnalysisColumnsOnOutsideClick(event: MouseEvent) {
     analysisNewWrapRef.value?.contains(target) ||
     analysisExportWrapRef.value?.contains(target) ||
     coletasNewWrapRef.value?.contains(target) ||
-    coletasExportWrapRef.value?.contains(target)
+    coletasExportWrapRef.value?.contains(target) ||
+    treatmentColumnsWrapRef.value?.contains(target) ||
+    treatmentNewWrapRef.value?.contains(target)
   ) {
     return
   }
@@ -915,6 +945,8 @@ function closeAnalysisColumnsOnOutsideClick(event: MouseEvent) {
   analysisExportMenuOpen.value = false
   coletasNewMenuOpen.value = false
   coletasExportMenuOpen.value = false
+  treatmentColumnsMenuOpen.value = false
+  treatmentNewMenuOpen.value = false
 }
 
 function toggleAnalysisNewMenu() {
@@ -950,6 +982,105 @@ function toggleColetasExportOption(option: string) {
 function downloadColetasExports() {
   if (!coletasExportSelected.value.length) return
   coletasExportMenuOpen.value = false
+}
+
+function toggleTreatmentColumnsMenu() {
+  treatmentNewMenuOpen.value = false
+  treatmentColumnsMenuOpen.value = !treatmentColumnsMenuOpen.value
+}
+
+function toggleTreatmentColumn(columnId: string) {
+  if (treatmentVisibleColumnIds.value.includes(columnId)) {
+    if (treatmentVisibleColumnIds.value.length === 1) return
+    treatmentVisibleColumnIds.value = treatmentVisibleColumnIds.value.filter((id) => id !== columnId)
+    return
+  }
+  treatmentVisibleColumnIds.value = [...treatmentVisibleColumnIds.value, columnId]
+}
+
+function downloadTreatmentExports() {
+  // Placeholder while backend export is not integrated.
+}
+
+function toggleTreatmentNewMenu() {
+  treatmentColumnsMenuOpen.value = false
+  treatmentNewMenuOpen.value = !treatmentNewMenuOpen.value
+}
+
+function openTreatmentCreateModal() {
+  const latestFisico = fisicoRows.value[0] || {}
+  treatmentNewMenuOpen.value = false
+  treatmentForm.value = {
+    statusTratamento: 'Concluído',
+    dataColeta: '',
+    tipoAnalise: 'Físico Químico',
+    rd: normalizeCell((latestFisico as BaseRow).RD) === '-' ? '' : String((latestFisico as BaseRow).RD),
+    teorAgua: normalizeCell((latestFisico as BaseRow).TEOR_AGUA) === '-' ? '' : String((latestFisico as BaseRow).TEOR_AGUA),
+    tensaoInterfacial: normalizeCell((latestFisico as BaseRow).TENSAO_INTERFACIAL) === '-' ? '' : String((latestFisico as BaseRow).TENSAO_INTERFACIAL),
+    indNeutralizacao: normalizeCell((latestFisico as BaseRow)['IND_NEUTRALIZACAO ']) === '-' ? '' : String((latestFisico as BaseRow)['IND_NEUTRALIZACAO ']),
+    fator25: normalizeCell((latestFisico as BaseRow).FATOR_POT_25) === '-' ? '' : String((latestFisico as BaseRow).FATOR_POT_25),
+    fator90: normalizeCell((latestFisico as BaseRow).FATOR_POT_90) === '-' ? '' : String((latestFisico as BaseRow).FATOR_POT_90),
+    fator100: normalizeCell((latestFisico as BaseRow).FATOR_POT_100) === '-' ? '' : String((latestFisico as BaseRow).FATOR_POT_100),
+    dbpc: normalizeCell((latestFisico as BaseRow).DBPC) === '-' ? '' : String((latestFisico as BaseRow).DBPC),
+  }
+  treatmentCreateModalOpen.value = true
+}
+
+function closeTreatmentCreateModal() {
+  treatmentCreateModalOpen.value = false
+}
+
+function saveTreatmentCreateModal() {
+  const selected = selectedTransformer.value
+  if (!selected) return
+  const dateText = treatmentForm.value.dataColeta
+  const brDate = dateText ? dateText.split('-').reverse().join('/') : '-'
+  const nextId = Date.now()
+  manualTreatmentRows.value = [
+    {
+      id: `manual-treatment-${nextId}`,
+      serial: selected.serial,
+      statusTratamento: treatmentForm.value.statusTratamento || 'Concluído',
+      equipamento: selected.equipment || '-',
+      comutador: selected.commutator || '-',
+      oleoFluido: selected.oilFluid || '-',
+      tensaoPrimaria: selected.voltage || '-',
+      tensaoSecundaria: '-',
+      anoFabricacao: selected.year || '-',
+      potencia: selected.power || '-',
+      fabricante: selected.manufacturer || '-',
+      volumeLitros: selected.volume || '-',
+      refrigeracao: selected.refrigeration || '-',
+      subestacao: selected.substation || '-',
+      tag: selected.tag || '-',
+      identificacao: selected.id || '-',
+      carregamento: selected.load || '-',
+      operando: selected.operating || '-',
+      unidade: selected.unit || '-',
+      selado: selected.sealed || '-',
+      rd: treatmentForm.value.rd || '-',
+      teorAgua: treatmentForm.value.teorAgua || '-',
+      tensaoInterfacial: treatmentForm.value.tensaoInterfacial || '-',
+      indNeutralizacao: treatmentForm.value.indNeutralizacao || '-',
+      fator25: treatmentForm.value.fator25 || '-',
+      fator90: treatmentForm.value.fator90 || '-',
+      fator100: treatmentForm.value.fator100 || '-',
+      dbpc: treatmentForm.value.dbpc || '-',
+      tratamentoNome: `Tratamento a Óleo ${treatmentForm.value.tensaoInterfacial || '26.600'}`,
+      dataColeta: brDate,
+      tipoAnalise: treatmentForm.value.tipoAnalise || 'Físico Químico',
+    },
+    ...manualTreatmentRows.value,
+  ]
+  treatmentCreateModalOpen.value = false
+}
+
+function openTreatmentDetailsModal() {
+  treatmentDetailsModalOpen.value = true
+}
+
+function closeTreatmentDetailsModal() {
+  treatmentDetailsModalOpen.value = false
 }
 
 function openColetasModal() {
@@ -1389,26 +1520,98 @@ const coletasFilteredRows = computed(() => {
   return rows.filter((row) => row.dataColeta === formattedQuery)
 })
 
-const oilTreatments = computed(() => {
-  if (!selectedTransformer.value) return []
-  const now = new Date()
-  return [
-    {
-      title: selectedTransformer.value.treatment || 'Sem tratamento informado',
-      at: new Date(now.getFullYear(), now.getMonth() - 2, 10).toISOString(),
-      status: selectedTransformer.value.status,
-      notes:
-        selectedTransformer.value.status === 'Crítico'
-          ? 'Acompanhamento intensivo recomendado.'
-          : 'Monitoramento de rotina com validação do analista.',
-    },
-    {
-      title: 'Revisão de parâmetros de óleo',
-      at: new Date(now.getFullYear(), now.getMonth() - 6, 21).toISOString(),
-      status: 'Concluído',
-      notes: 'Parâmetros dentro do intervalo de referência da equipe técnica.',
-    },
-  ]
+const treatmentColumns: TreatmentColumn[] = [
+  { id: 'serial', label: 'No. Série', defaultVisible: true },
+  { id: 'statusTratamento', label: 'Status Tratamento', defaultVisible: true },
+  { id: 'equipamento', label: 'Equipamento', defaultVisible: false },
+  { id: 'comutador', label: 'Comutador', defaultVisible: false },
+  { id: 'oleoFluido', label: 'Oleo fluido', defaultVisible: false },
+  { id: 'tensaoPrimaria', label: 'T. Primária (kV)', defaultVisible: true },
+  { id: 'tensaoSecundaria', label: 'T. Secundária (kV)', defaultVisible: false },
+  { id: 'anoFabricacao', label: 'Ano de fabricação', defaultVisible: false },
+  { id: 'potencia', label: 'Potencia (kVA)', defaultVisible: true },
+  { id: 'fabricante', label: 'Fabricante', defaultVisible: false },
+  { id: 'volumeLitros', label: 'Volume em litros', defaultVisible: false },
+  { id: 'refrigeracao', label: 'Refrigeração', defaultVisible: false },
+  { id: 'subestacao', label: 'Subestação', defaultVisible: true },
+  { id: 'tag', label: 'TAG', defaultVisible: true },
+  { id: 'identificacao', label: 'Identificação', defaultVisible: false },
+  { id: 'carregamento', label: 'Carregamento (%)', defaultVisible: false },
+  { id: 'operando', label: 'Operando', defaultVisible: false },
+  { id: 'unidade', label: 'Unidade', defaultVisible: true },
+  { id: 'selado', label: 'Selado', defaultVisible: false },
+  { id: 'rd', label: 'RD', defaultVisible: false },
+  { id: 'teorAgua', label: 'Teor de Água', defaultVisible: false },
+  { id: 'tensaoInterfacial', label: 'Tensão Interfacial', defaultVisible: false },
+  { id: 'indNeutralizacao', label: 'Ind. Neutralização', defaultVisible: false },
+  { id: 'fator25', label: 'Fator 25', defaultVisible: false },
+  { id: 'fator90', label: 'Fator 90', defaultVisible: false },
+  { id: 'fator100', label: 'Fator 100', defaultVisible: false },
+  { id: 'dbpc', label: 'DBPC', defaultVisible: false },
+]
+
+const treatmentVisibleColumnIds = ref<string[]>(
+  treatmentColumns.filter((column) => column.defaultVisible).map((column) => column.id)
+)
+
+const treatmentVisibleColumns = computed(() =>
+  treatmentColumns.filter((column) => treatmentVisibleColumnIds.value.includes(column.id))
+)
+
+const treatmentRows = computed<TreatmentRow[]>(() => {
+  const selected = selectedTransformer.value
+  if (!selected) return []
+  const latestFisico = fisicoRows.value[0] || {}
+  const treatmentName = `Tratamento a Óleo ${normalizeCell((latestFisico as BaseRow).TENSAO_INTERFACIAL)}`
+  const baseRow: TreatmentRow = {
+    id: `treatment-${selected.id}`,
+    serial: selected.serial,
+    statusTratamento: 'Concluído',
+    equipamento: selected.equipment || '-',
+    comutador: selected.commutator || '-',
+    oleoFluido: selected.oilFluid || '-',
+    tensaoPrimaria: selected.voltage || '-',
+    tensaoSecundaria: '-',
+    anoFabricacao: selected.year || '-',
+    potencia: selected.power || '-',
+    fabricante: selected.manufacturer || '-',
+    volumeLitros: selected.volume || '-',
+    refrigeracao: selected.refrigeration || '-',
+    subestacao: selected.substation || '-',
+    tag: selected.tag || '-',
+    identificacao: selected.id || '-',
+    carregamento: selected.load || '-',
+    operando: selected.operating || '-',
+    unidade: selected.unit || '-',
+    selado: selected.sealed || '-',
+    rd: normalizeCell((latestFisico as BaseRow).RD),
+    teorAgua: normalizeCell((latestFisico as BaseRow).TEOR_AGUA),
+    tensaoInterfacial: normalizeCell((latestFisico as BaseRow).TENSAO_INTERFACIAL),
+    indNeutralizacao: normalizeCell((latestFisico as BaseRow)['IND_NEUTRALIZACAO ']),
+    fator25: normalizeCell((latestFisico as BaseRow).FATOR_POT_25),
+    fator90: normalizeCell((latestFisico as BaseRow).FATOR_POT_90),
+    fator100: normalizeCell((latestFisico as BaseRow).FATOR_POT_100),
+    dbpc: normalizeCell((latestFisico as BaseRow).DBPC),
+    tratamentoNome: treatmentName,
+    dataColeta: normalizeCell((latestFisico as BaseRow).DATA_COLETA),
+    tipoAnalise: 'Físico Químico',
+  }
+  const previews: TreatmentRow[] = [1, 2].map((idx) => ({
+    ...baseRow,
+    id: `treatment-${selected.id}-preview-${idx}`,
+    tratamentoNome: `Tratamento a Óleo ${idx === 1 ? '26.600' : '34.400'}`,
+    statusTratamento: 'Concluído',
+  }))
+  const manualForSelected = manualTreatmentRows.value.filter((row) => String(row.serial) === selected.serial)
+  return [baseRow, ...previews, ...manualForSelected]
+})
+
+const treatmentFilteredRows = computed(() => {
+  const query = treatmentSearch.value.trim().toLowerCase()
+  if (!query) return treatmentRows.value
+  return treatmentRows.value.filter((row) =>
+    Object.values(row).some((value) => String(value).toLowerCase().includes(query))
+  )
 })
 
 const specialTests = computed(() => {
@@ -1540,6 +1743,12 @@ watch([activeTab, selectedId], async () => {
     coletasNewMenuOpen.value = false
     coletasExportMenuOpen.value = false
     coletasModalOpen.value = false
+  }
+  if (activeTab.value !== 'Tratamento de Óleo') {
+    treatmentColumnsMenuOpen.value = false
+    treatmentNewMenuOpen.value = false
+    treatmentDetailsModalOpen.value = false
+    treatmentCreateModalOpen.value = false
   }
   if (activeTab.value === 'Histórico de Análises' && typeof window !== 'undefined') {
     window.dispatchEvent(new Event('resize'))
@@ -1911,7 +2120,7 @@ watch([activeTab, selectedId], async () => {
             ambos, concentrações para gases separados e a concentração total de todos os gases combustíveis (TGC).
           </p>
           <div class="mini-table-wrap">
-            <table class="table compact mini-table">
+            <table class="table compact mini-table limit-reference-table">
               <thead>
                 <tr>
                   <th class="text-center">Status</th>
@@ -2300,33 +2509,35 @@ watch([activeTab, selectedId], async () => {
 
       <section v-else-if="activeTab === 'Coletas'" class="panel table-panel history-panel">
         <article class="history-block-card">
-          <div class="history-line-head coletas-line-head">
-            <div class="history-analyses-controls history-analyses-controls-left">
-              <label class="history-analysis-search">
-                <input
-                  v-model="coletasSearchDate"
-                  type="date"
-                  aria-label="Filtrar coletas por data"
-                />
-              </label>
-            </div>
-            <div class="history-tabs-inline history-tabs-main coletas-tabs-center">
-              <button
-                type="button"
-                class="history-tab-btn"
-                :class="{ active: coletasActiveTab === 'proximas' }"
-                @click="coletasActiveTab = 'proximas'"
-              >
-                Próximas
-              </button>
-              <button
-                type="button"
-                class="history-tab-btn"
-                :class="{ active: coletasActiveTab === 'realizadas' }"
-                @click="coletasActiveTab = 'realizadas'"
-              >
-                Realizadas
-              </button>
+          <div class="history-line-head coletas-line-head-two">
+            <div class="coletas-head-left">
+              <div class="history-analyses-controls history-analyses-controls-left">
+                <label class="history-analysis-search">
+                  <input
+                    v-model="coletasSearchDate"
+                    type="date"
+                    aria-label="Filtrar coletas por data"
+                  />
+                </label>
+              </div>
+              <div class="history-tabs-inline history-tabs-main">
+                <button
+                  type="button"
+                  class="history-tab-btn"
+                  :class="{ active: coletasActiveTab === 'proximas' }"
+                  @click="coletasActiveTab = 'proximas'"
+                >
+                  Próximas
+                </button>
+                <button
+                  type="button"
+                  class="history-tab-btn"
+                  :class="{ active: coletasActiveTab === 'realizadas' }"
+                  @click="coletasActiveTab = 'realizadas'"
+                >
+                  Realizadas
+                </button>
+              </div>
             </div>
             <div class="history-analyses-actions">
               <div ref="coletasNewWrapRef" class="history-actions-wrap">
@@ -2411,12 +2622,196 @@ watch([activeTab, selectedId], async () => {
         </article>
       </section>
 
-      <section v-else-if="activeTab === 'Tratamento de Óleo'" class="panel">
-        <article v-for="item in oilTreatments" :key="item.title + item.at" class="tile">
-          <h4>{{ item.title }}</h4>
-          <p><b>Data:</b> {{ toUiDate(item.at) }}</p>
-          <p><b>Status:</b> {{ item.status }}</p>
-          <p><b>Observação:</b> {{ item.notes }}</p>
+      <section v-else-if="activeTab === 'Tratamento de Óleo'" class="panel table-panel history-panel">
+        <article class="history-block-card">
+          <button
+            type="button"
+            class="expandable-head-btn"
+            :class="{ open: treatmentLimitsOpen }"
+            @click="treatmentLimitsOpen = !treatmentLimitsOpen"
+          >
+            <span>Tabela Limite Para Ação Corretiva (Referência: NBR 10576/2017)</span>
+            <i aria-hidden="true">{{ treatmentLimitsOpen ? '▴' : '▾' }}</i>
+          </button>
+          <div v-if="treatmentLimitsOpen" class="mini-table-wrap history-analyses-table-wrap">
+            <table class="table compact mini-table">
+              <tbody>
+                <tr>
+                  <th class="text-center" colspan="5">
+                    Transformadores E Reatores Em Uso - Tabela Limite Para Ação Corretiva (Referência: NBR 10576/2017)
+                  </th>
+                </tr>
+                <tr class="limit-reference-head-row">
+                  <td>Ensaio</td>
+                  <td>Método</td>
+                  <td>Valor</td>
+                  <td>
+                    <div class="limit-table-class-head">Classe de tensão (kV)</div>
+                    <div class="limit-table-class-grid">
+                      <span>&lt; 36.2</span>
+                      <span>36.2 - 72.5</span>
+                      <span>72.5 - 145</span>
+                      <span>145 &gt;</span>
+                    </div>
+                  </td>
+                  <td>Recomendação, caso fora de especificação</td>
+                </tr>
+                <tr>
+                  <td>RD (rigidez dielétrica)</td>
+                  <td>ABNT NBR IEC 60156</td>
+                  <td>mínimo</td>
+                  <td>
+                    <div class="limit-table-class-grid"><span>40</span><span>40</span><span>50</span><span>60</span></div>
+                  </td>
+                  <td>Recondicionamento</td>
+                </tr>
+                <tr>
+                  <td>Teor de água</td>
+                  <td>ABNT NBR 10710</td>
+                  <td>máximo</td>
+                  <td>
+                    <div class="limit-table-class-grid"><span>40</span><span>40</span><span>30</span><span>20</span></div>
+                  </td>
+                  <td>Recondicionamento</td>
+                </tr>
+                <tr>
+                  <td>FP 25°C</td>
+                  <td>ABNT NBR 12133</td>
+                  <td>máximo</td>
+                  <td>
+                    <div class="limit-table-class-grid"><span>0.5</span><span>0.5</span><span>0.5</span><span>-</span></div>
+                  </td>
+                  <td>Regeneração ou troca de óleo</td>
+                </tr>
+                <tr>
+                  <td>FP 90°C</td>
+                  <td>ABNT NBR 12133</td>
+                  <td>máximo</td>
+                  <td>
+                    <div class="limit-table-class-grid"><span>15</span><span>15</span><span>15</span><span>12</span></div>
+                  </td>
+                  <td>Regeneração ou troca de óleo</td>
+                </tr>
+                <tr>
+                  <td>FP 100°C</td>
+                  <td>ABNT NBR 12133</td>
+                  <td>máximo</td>
+                  <td>
+                    <div class="limit-table-class-grid"><span>20</span><span>20</span><span>20</span><span>15</span></div>
+                  </td>
+                  <td>Regeneração ou troca de óleo</td>
+                </tr>
+                <tr>
+                  <td>Acidez (IN)</td>
+                  <td>ABNT NBR 14248</td>
+                  <td>máximo</td>
+                  <td>
+                    <div class="limit-table-class-grid"><span>0.2</span><span>0.2</span><span>0.15</span><span>0.15</span></div>
+                  </td>
+                  <td>Regeneração ou troca de óleo</td>
+                </tr>
+                <tr>
+                  <td>TIF (tensão interfacial)</td>
+                  <td>ABNT NBR 6234</td>
+                  <td>mínimo</td>
+                  <td>
+                    <div class="limit-table-class-grid"><span>20</span><span>20</span><span>22</span><span>25</span></div>
+                  </td>
+                  <td>Regeneração ou troca de óleo</td>
+                </tr>
+                <tr>
+                  <td>DBPC (%)</td>
+                  <td>ABNT NBR 12134</td>
+                  <td>mínimo</td>
+                  <td>
+                    <div class="limit-table-class-grid"><span>0.1</span><span>0.1</span><span>0.1</span><span>0.1</span></div>
+                  </td>
+                  <td>Readição de antioxidante</td>
+                </tr>
+              </tbody>
+            </table>
+          </div>
+        </article>
+
+        <article class="history-block-card">
+          <div class="history-line-head coletas-line-head-two">
+            <div class="history-analyses-controls history-analyses-controls-left">
+              <label class="history-analysis-search">
+                <input
+                  v-model="treatmentSearch"
+                  type="search"
+                  placeholder="Pesquisar..."
+                  aria-label="Filtrar tratamento de óleo"
+                />
+              </label>
+              <div ref="treatmentColumnsWrapRef" class="history-columns-picker">
+                <button type="button" class="history-columns-trigger" @click="toggleTreatmentColumnsMenu">
+                  <span>Colunas</span>
+                  <i aria-hidden="true">▾</i>
+                </button>
+                <div v-if="treatmentColumnsMenuOpen" class="history-columns-menu">
+                  <label v-for="column in treatmentColumns" :key="column.id" class="history-columns-option">
+                    <input
+                      type="checkbox"
+                      :checked="treatmentVisibleColumnIds.includes(column.id)"
+                      :disabled="treatmentVisibleColumnIds.length === 1 && treatmentVisibleColumnIds.includes(column.id)"
+                      @change="toggleTreatmentColumn(column.id)"
+                    />
+                    <span>{{ column.label }}</span>
+                  </label>
+                </div>
+              </div>
+            </div>
+            <div class="history-analyses-actions">
+              <div ref="treatmentNewWrapRef" class="history-actions-wrap">
+                <button type="button" class="history-action-btn" @click="toggleTreatmentNewMenu">
+                  <span class="history-action-icon" aria-hidden="true">＋</span>
+                  Novo
+                </button>
+                <div v-if="treatmentNewMenuOpen" class="history-actions-menu">
+                  <button type="button" @click="openTreatmentCreateModal">Novo Tratamento</button>
+                  <button type="button">Importar Tratamentos</button>
+                </div>
+              </div>
+              <button type="button" class="history-action-btn" @click="downloadTreatmentExports">
+                <span class="history-action-icon" aria-hidden="true">⭳</span>
+                Exportar
+              </button>
+            </div>
+          </div>
+
+          <div class="mini-table-wrap history-analyses-table-wrap">
+            <table class="table compact analysis-table">
+              <thead>
+                <tr>
+                  <th v-for="column in treatmentVisibleColumns" :key="column.id" class="text-center">
+                    {{ column.label }}
+                  </th>
+                  <th class="text-center">Tratamento</th>
+                </tr>
+              </thead>
+              <tbody>
+                <tr v-for="row in treatmentFilteredRows" :key="row.id">
+                  <td v-for="column in treatmentVisibleColumns" :key="`${row.id}-${column.id}`" class="text-center">
+                    {{ row[column.id] }}
+                  </td>
+                  <td class="text-center">
+                    <div class="treatment-action-cell">
+                      <span>{{ row.tratamentoNome }}</span>
+                      <button type="button" class="history-action-btn small" @click="openTreatmentDetailsModal">
+                        Detalhes
+                      </button>
+                    </div>
+                  </td>
+                </tr>
+                <tr v-if="!treatmentFilteredRows.length">
+                  <td class="text-center" :colspan="treatmentVisibleColumns.length + 1">
+                    Sem dados de tratamento para o filtro informado.
+                  </td>
+                </tr>
+              </tbody>
+            </table>
+          </div>
         </article>
       </section>
 
@@ -2777,6 +3172,113 @@ watch([activeTab, selectedId], async () => {
           <div class="modal-actions">
             <button type="button" class="secondary-btn" @click="closeColetasModal">Cancelar</button>
             <button type="button" class="primary-btn" @click="saveColetasModal">Salvar</button>
+          </div>
+        </div>
+      </div>
+
+      <div v-if="treatmentDetailsModalOpen" class="modal-overlay" @click="closeTreatmentDetailsModal">
+        <div class="modal-card analysis-modal-card" @click.stop>
+          <h4>Detalhes do Tratamento</h4>
+          <p>
+            <b>1 - Tratamentos no óleo isolante:</b>
+          </p>
+          <p>
+            Devem ser realizados de acordo com os resultados dos ensaios físico-químicos do óleo isolante, observando os limites mínimos e máximos estabelecidos para cada variável de interesse, conforme orientações da norma NBR 10576/2017.
+          </p>
+          <p><b>1.1 - Principais variáveis para o monitoramento de ensaios físico-químicos</b></p>
+          <div class="mini-table-wrap">
+            <table class="table compact mini-table">
+              <thead>
+                <tr>
+                  <th class="text-center">Data Coleta</th>
+                  <th class="text-center">Teor de Água (ppm)</th>
+                  <th class="text-center">RD (kV)</th>
+                  <th class="text-center">TIF (Dyan/cm)</th>
+                  <th class="text-center">Índ. Neutr. (mgKH0/g)</th>
+                  <th class="text-center">F. Pot. 25ºC</th>
+                  <th class="text-center">F. Pot. 90ºC</th>
+                  <th class="text-center">F. Pot. 100ºC</th>
+                </tr>
+              </thead>
+              <tbody>
+                <tr>
+                  <td class="text-center">{{ fisicoRows[0]?.DATA_COLETA || '-' }}</td>
+                  <td class="text-center">{{ fisicoRows[0]?.TEOR_AGUA ?? '-' }}</td>
+                  <td class="text-center">{{ fisicoRows[0]?.RD ?? '-' }}</td>
+                  <td class="text-center">{{ fisicoRows[0]?.TENSAO_INTERFACIAL ?? '-' }}</td>
+                  <td class="text-center">{{ fisicoRows[0]?.['IND_NEUTRALIZACAO '] ?? '-' }}</td>
+                  <td class="text-center">{{ fisicoRows[0]?.FATOR_POT_25 ?? '-' }}</td>
+                  <td class="text-center">{{ fisicoRows[0]?.FATOR_POT_90 ?? '-' }}</td>
+                  <td class="text-center">{{ fisicoRows[0]?.FATOR_POT_100 ?? '-' }}</td>
+                </tr>
+              </tbody>
+            </table>
+          </div>
+          <div class="modal-actions">
+            <button type="button" class="primary-btn" @click="closeTreatmentDetailsModal">Fechar</button>
+          </div>
+        </div>
+      </div>
+
+      <div v-if="treatmentCreateModalOpen" class="modal-overlay" @click="closeTreatmentCreateModal">
+        <div class="modal-card" @click.stop>
+          <h4>Novo Tratamento</h4>
+          <div class="modal-grid">
+            <label>
+              <span>Status Tratamento</span>
+              <select v-model="treatmentForm.statusTratamento">
+                <option value="Concluído">Concluído</option>
+                <option value="Pendente">Pendente</option>
+              </select>
+            </label>
+            <label>
+              <span>Data Coleta</span>
+              <input v-model="treatmentForm.dataColeta" type="date" />
+            </label>
+            <label>
+              <span>Tipo de Análise</span>
+              <select v-model="treatmentForm.tipoAnalise">
+                <option value="Físico Químico">Físico Químico</option>
+                <option value="Cromatografia">Cromatografia</option>
+                <option value="Ensaios Especiais">Ensaios Especiais</option>
+              </select>
+            </label>
+            <label>
+              <span>RD</span>
+              <input v-model="treatmentForm.rd" type="text" />
+            </label>
+            <label>
+              <span>Teor de Água</span>
+              <input v-model="treatmentForm.teorAgua" type="text" />
+            </label>
+            <label>
+              <span>Tensão Interfacial</span>
+              <input v-model="treatmentForm.tensaoInterfacial" type="text" />
+            </label>
+            <label>
+              <span>Ind. Neutralização</span>
+              <input v-model="treatmentForm.indNeutralizacao" type="text" />
+            </label>
+            <label>
+              <span>Fator 25</span>
+              <input v-model="treatmentForm.fator25" type="text" />
+            </label>
+            <label>
+              <span>Fator 90</span>
+              <input v-model="treatmentForm.fator90" type="text" />
+            </label>
+            <label>
+              <span>Fator 100</span>
+              <input v-model="treatmentForm.fator100" type="text" />
+            </label>
+            <label>
+              <span>DBPC</span>
+              <input v-model="treatmentForm.dbpc" type="text" />
+            </label>
+          </div>
+          <div class="modal-actions">
+            <button type="button" class="secondary-btn" @click="closeTreatmentCreateModal">Cancelar</button>
+            <button type="button" class="primary-btn" @click="saveTreatmentCreateModal">Salvar</button>
           </div>
         </div>
       </div>
@@ -3543,6 +4045,46 @@ watch([activeTab, selectedId], async () => {
   padding: 12px;
 }
 
+.expandable-head-btn{
+  width: 100%;
+  border: 1px solid rgba(15, 23, 42, 0.12);
+  border-radius: 10px;
+  background: rgba(248, 250, 252, 0.9);
+  color: rgba(15, 23, 42, 0.88);
+  padding: 10px 12px;
+  font-size: 13px;
+  font-weight: 700;
+  display: inline-flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  cursor: pointer;
+}
+
+.expandable-head-btn.open{
+  border-color: rgba(30, 78, 139, 0.28);
+}
+
+.limit-table-class-head{
+  border-bottom: 1px solid rgba(15, 23, 42, 0.35);
+  padding-bottom: 4px;
+  margin-bottom: 4px;
+  text-align: center;
+  font-weight: 600;
+}
+
+.limit-table-class-grid{
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 2px;
+  text-align: center;
+}
+
+.limit-reference-table .limit-reference-head-row td{
+  background: #e5e7eb !important;
+  font-weight: 600;
+}
+
 .history-panel{
   display: block !important;
 }
@@ -3614,6 +4156,20 @@ watch([activeTab, selectedId], async () => {
 
 .coletas-line-head .history-analyses-actions{
   justify-self: end;
+}
+
+.coletas-line-head-two{
+  display: grid;
+  grid-template-columns: 1fr max-content;
+  align-items: center;
+  column-gap: 10px;
+}
+
+.coletas-head-left{
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  min-width: 0;
 }
 
 .history-line-head h4{
@@ -3851,6 +4407,12 @@ watch([activeTab, selectedId], async () => {
   gap: 6px;
 }
 
+.history-action-btn.small{
+  height: 28px;
+  padding: 0 10px;
+  font-size: 12px;
+}
+
 .history-action-icon{
   font-size: 12px;
 }
@@ -4065,6 +4627,12 @@ watch([activeTab, selectedId], async () => {
   cursor: not-allowed;
 }
 
+.treatment-action-cell{
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+}
+
 @media (max-width: 900px) {
   .report-view{
     padding: 90px 16px 40px;
@@ -4186,11 +4754,23 @@ watch([activeTab, selectedId], async () => {
     grid-template-columns: 1fr;
     row-gap: 8px;
   }
+  .coletas-line-head-two{
+    grid-template-columns: 1fr;
+    row-gap: 8px;
+  }
+  .coletas-head-left{
+    width: 100%;
+    flex-wrap: wrap;
+  }
   .coletas-tabs-center{
     justify-self: center;
   }
   .coletas-line-head .history-analyses-controls-left,
   .coletas-line-head .history-analyses-actions{
+    justify-self: stretch;
+  }
+  .coletas-line-head-two .history-analyses-controls-left,
+  .coletas-line-head-two .history-analyses-actions{
     justify-self: stretch;
   }
   .history-analyses-actions{
@@ -4200,6 +4780,10 @@ watch([activeTab, selectedId], async () => {
   .history-analysis-search{
     width: 100%;
     min-width: 0;
+  }
+  .treatment-action-cell{
+    justify-content: flex-end;
+    width: 100%;
   }
   .history-columns-picker{
     width: 100%;
