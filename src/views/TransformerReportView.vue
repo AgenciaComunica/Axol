@@ -2510,16 +2510,14 @@ watch([activeTab, selectedId], async () => {
       <section v-else-if="activeTab === 'Coletas'" class="panel table-panel history-panel">
         <article class="history-block-card">
           <div class="history-line-head coletas-line-head-two">
-            <div class="coletas-head-left">
-              <div class="history-analyses-controls history-analyses-controls-left">
-                <label class="history-analysis-search">
-                  <input
-                    v-model="coletasSearchDate"
-                    type="date"
-                    aria-label="Filtrar coletas por data"
-                  />
-                </label>
-              </div>
+            <div class="history-analyses-controls history-analyses-controls-left coletas-controls-left">
+              <label class="history-analysis-search">
+                <input
+                  v-model="coletasSearchDate"
+                  type="date"
+                  aria-label="Filtrar coletas por data"
+                />
+              </label>
               <div class="history-tabs-inline history-tabs-main">
                 <button
                   type="button"
@@ -2631,10 +2629,10 @@ watch([activeTab, selectedId], async () => {
             @click="treatmentLimitsOpen = !treatmentLimitsOpen"
           >
             <span>Tabela Limite Para Ação Corretiva (Referência: NBR 10576/2017)</span>
-            <i aria-hidden="true">{{ treatmentLimitsOpen ? '▴' : '▾' }}</i>
+            <i class="expandable-toggle-icon" aria-hidden="true">{{ treatmentLimitsOpen ? '−' : '+' }}</i>
           </button>
           <div v-if="treatmentLimitsOpen" class="mini-table-wrap history-analyses-table-wrap">
-            <table class="table compact mini-table">
+            <table class="table compact mini-table limit-reference-table">
               <tbody>
                 <tr>
                   <th class="text-center" colspan="5">
@@ -4061,6 +4059,22 @@ watch([activeTab, selectedId], async () => {
   cursor: pointer;
 }
 
+.expandable-toggle-icon{
+  margin-left: auto;
+  width: 24px;
+  height: 24px;
+  border-radius: 999px;
+  border: 1px solid rgba(15, 23, 42, 0.22);
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 18px;
+  line-height: 1;
+  font-weight: 700;
+  color: rgba(15, 23, 42, 0.85);
+  background: rgba(255, 255, 255, 0.82);
+}
+
 .expandable-head-btn.open{
   border-color: rgba(30, 78, 139, 0.28);
 }
@@ -4081,8 +4095,12 @@ watch([activeTab, selectedId], async () => {
 }
 
 .limit-reference-table .limit-reference-head-row td{
-  background: #e5e7eb !important;
-  font-weight: 600;
+  background: #64748b !important;
+  color: #ffffff !important;
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+  font-size: 11px;
+  font-weight: 700;
 }
 
 .history-panel{
@@ -4165,11 +4183,12 @@ watch([activeTab, selectedId], async () => {
   column-gap: 10px;
 }
 
-.coletas-head-left{
+.coletas-controls-left{
   display: inline-flex;
   align-items: center;
   gap: 8px;
   min-width: 0;
+  flex-wrap: wrap;
 }
 
 .history-line-head h4{
@@ -4758,16 +4777,15 @@ watch([activeTab, selectedId], async () => {
     grid-template-columns: 1fr;
     row-gap: 8px;
   }
-  .coletas-head-left{
-    width: 100%;
-    flex-wrap: wrap;
-  }
   .coletas-tabs-center{
     justify-self: center;
   }
   .coletas-line-head .history-analyses-controls-left,
   .coletas-line-head .history-analyses-actions{
     justify-self: stretch;
+  }
+  .coletas-controls-left{
+    width: 100%;
   }
   .coletas-line-head-two .history-analyses-controls-left,
   .coletas-line-head-two .history-analyses-actions{
