@@ -134,6 +134,16 @@ function toValidTab(value: unknown): ReportTab {
 }
 
 const activeTab = ref<ReportTab>(toValidTab(route.query.section))
+const generateReportMenuOpen = ref(false)
+const generateReportWrapRef = ref<HTMLElement | null>(null)
+const generateReportItems = [
+  'Avaliação Completa',
+  'Histórico de Análises',
+  'Avaliação IEEE',
+  'Coletas',
+  'Tratamento de Óleo',
+]
+const generateReportSelected = ref<string[]>([...generateReportItems])
 
 const transformerOptions = computed<Transformer[]>(() => {
   return rawSubstations.flatMap((substation: any) => {
@@ -923,6 +933,7 @@ const analysisColumnsByGroup = computed(() => {
 function toggleAnalysisColumnsMenu() {
   analysisNewMenuOpen.value = false
   analysisExportMenuOpen.value = false
+  generateReportMenuOpen.value = false
   analysisColumnsMenuOpen.value = !analysisColumnsMenuOpen.value
 }
 
@@ -930,6 +941,7 @@ function closeAnalysisColumnsOnOutsideClick(event: MouseEvent) {
   const target = event.target as Node | null
   if (!target) return
   if (
+    generateReportWrapRef.value?.contains(target) ||
     analysisColumnsWrapRef.value?.contains(target) ||
     analysisNewWrapRef.value?.contains(target) ||
     analysisExportWrapRef.value?.contains(target) ||
@@ -941,12 +953,34 @@ function closeAnalysisColumnsOnOutsideClick(event: MouseEvent) {
     return
   }
   analysisColumnsMenuOpen.value = false
+  generateReportMenuOpen.value = false
   analysisNewMenuOpen.value = false
   analysisExportMenuOpen.value = false
   coletasNewMenuOpen.value = false
   coletasExportMenuOpen.value = false
   treatmentColumnsMenuOpen.value = false
   treatmentNewMenuOpen.value = false
+}
+
+function toggleGenerateReportMenu() {
+  analysisColumnsMenuOpen.value = false
+  analysisNewMenuOpen.value = false
+  analysisExportMenuOpen.value = false
+  generateReportMenuOpen.value = !generateReportMenuOpen.value
+}
+
+function toggleGenerateReportItem(item: string) {
+  if (generateReportSelected.value.includes(item)) {
+    if (generateReportSelected.value.length === 1) return
+    generateReportSelected.value = generateReportSelected.value.filter((value) => value !== item)
+    return
+  }
+  generateReportSelected.value = [...generateReportSelected.value, item]
+}
+
+function downloadGeneratedReport() {
+  if (!generateReportSelected.value.length) return
+  generateReportMenuOpen.value = false
 }
 
 function toggleAnalysisNewMenu() {
@@ -1734,6 +1768,7 @@ onUnmounted(() => {
 watch([activeTab, selectedId], async () => {
   await nextTick()
   enhanceMobileTables()
+  generateReportMenuOpen.value = false
   if (activeTab.value !== 'Histórico de Análises') {
     analysisColumnsMenuOpen.value = false
     analysisNewMenuOpen.value = false
@@ -1777,17 +1812,44 @@ watch([activeTab, selectedId], async () => {
             </option>
           </select>
         </div>
-        <button
-          type="button"
-          class="locate-btn"
-          :disabled="!selectedTransformer"
-          @click="selectedTransformer && router.push({ name: 'dashboard', query: { transformer: selectedTransformer.id } })"
-        >
-          <svg class="pin-icon" viewBox="0 0 24 24" aria-hidden="true">
-            <path d="M12 2c-3.31 0-6 2.69-6 6 0 4.5 6 12 6 12s6-7.5 6-12c0-3.31-2.69-6-6-6zm0 8.5c-1.38 0-2.5-1.12-2.5-2.5S10.62 5.5 12 5.5s2.5 1.12 2.5 2.5S13.38 10.5 12 10.5z"></path>
-          </svg>
-          Localizar
-        </button>
+        <div class="report-toolbar-actions">
+          <button
+            type="button"
+            class="locate-btn"
+            :disabled="!selectedTransformer"
+            @click="selectedTransformer && router.push({ name: 'dashboard', query: { transformer: selectedTransformer.id } })"
+          >
+            <svg class="pin-icon" viewBox="0 0 24 24" aria-hidden="true">
+              <path d="M12 2c-3.31 0-6 2.69-6 6 0 4.5 6 12 6 12s6-7.5 6-12c0-3.31-2.69-6-6-6zm0 8.5c-1.38 0-2.5-1.12-2.5-2.5S10.62 5.5 12 5.5s2.5 1.12 2.5 2.5S13.38 10.5 12 10.5z"></path>
+            </svg>
+            Localizar
+          </button>
+          <div ref="generateReportWrapRef" class="report-generate-wrap">
+            <button type="button" class="locate-btn" @click="toggleGenerateReportMenu">
+              <span class="history-action-icon" aria-hidden="true">⭳</span>
+              Gerar Relatório
+            </button>
+            <div v-if="generateReportMenuOpen" class="report-generate-menu">
+              <label v-for="item in generateReportItems" :key="`report-item-${item}`" class="history-export-option">
+                <input
+                  type="checkbox"
+                  :checked="generateReportSelected.includes(item)"
+                  :disabled="generateReportSelected.length === 1 && generateReportSelected.includes(item)"
+                  @change="toggleGenerateReportItem(item)"
+                />
+                <span>{{ item }}</span>
+              </label>
+              <button
+                type="button"
+                class="history-export-download-btn"
+                :disabled="!generateReportSelected.length"
+                @click="downloadGeneratedReport"
+              >
+                Baixar
+              </button>
+            </div>
+          </div>
+        </div>
       </div>
 
       <div v-if="selectedTransformer" class="summary-grid">
@@ -3310,6 +3372,31 @@ watch([activeTab, selectedId], async () => {
   margin-bottom: 14px;
 }
 
+.report-toolbar-actions{
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.report-generate-wrap{
+  position: relative;
+}
+
+.report-generate-menu{
+  position: absolute;
+  right: 0;
+  top: calc(100% + 6px);
+  z-index: 40;
+  width: min(320px, 88vw);
+  border-radius: 12px;
+  border: 1px solid rgba(15, 23, 42, 0.12);
+  background: #fff;
+  box-shadow: 0 10px 24px rgba(15, 23, 42, 0.14);
+  padding: 8px;
+  display: grid;
+  gap: 2px;
+}
+
 .selector{
   display: grid;
   gap: 6px;
@@ -4479,12 +4566,15 @@ watch([activeTab, selectedId], async () => {
 }
 
 .history-export-download-btn{
-  margin-top: 2px;
+  margin-top: 4px;
+  height: 34px;
   border: 1px solid #1e4e8b !important;
+  border-radius: 999px !important;
   background: #1e4e8b !important;
-  color: #fff;
+  color: #fff !important;
   text-align: center !important;
-  font-weight: 600;
+  font-weight: 700;
+  box-shadow: 0 8px 18px rgba(30, 78, 139, 0.22);
 }
 
 .history-export-download-btn:disabled{
@@ -4664,6 +4754,14 @@ watch([activeTab, selectedId], async () => {
     align-items: stretch;
   }
   .locate-btn{
+    width: 100%;
+  }
+  .report-toolbar-actions{
+    width: 100%;
+    display: grid;
+    gap: 8px;
+  }
+  .report-generate-menu{
     width: 100%;
   }
   .summary-grid{
