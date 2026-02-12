@@ -819,9 +819,9 @@ const coletasNewWrapRef = ref<HTMLElement | null>(null)
 const coletasExportWrapRef = ref<HTMLElement | null>(null)
 const coletasExportOptions = ['Próximas', 'Realizadas']
 const coletasExportSelected = ref<string[]>([])
+const coletasSearchDate = ref('')
 const coletasModalOpen = ref(false)
 const coletasModalForm = ref({
-  categoria: 'proximas' as ColetasSubTab,
   transformador: '',
   statusUltimaColeta: '',
   dataColeta: '',
@@ -956,7 +956,6 @@ function openColetasModal() {
   const selected = selectedTransformer.value
   coletasNewMenuOpen.value = false
   coletasModalForm.value = {
-    categoria: coletasActiveTab.value,
     transformador: selected?.serial || '',
     statusUltimaColeta: selected?.status || 'Pendente',
     dataColeta: '',
@@ -978,6 +977,7 @@ function saveColetasModal() {
   const parsed = parseIsoDate(form.dataColeta)
   const dateBr = parsed ? formatDateToBr(parsed) : form.dataColeta
   const faltamDias = parsed ? daysDiffFromToday(parsed) : 0
+  const categoria: ColetasSubTab = 'proximas'
   manualColetas.value = [
     {
       id: `manual-coleta-${Date.now()}`,
@@ -988,9 +988,9 @@ function saveColetasModal() {
       unidade: form.unidade || '-',
       tag: form.tag || '-',
       tipoAnalise: form.tipoAnalise || 'Cromatografia',
-      faltamDias: form.categoria === 'proximas' ? faltamDias : 0,
-      status: form.categoria === 'realizadas' ? 'Coletado' : faltamDias < 0 ? 'Atrasada' : 'Pendente',
-      categoria: form.categoria,
+      faltamDias,
+      status: faltamDias < 0 ? 'Atrasada' : 'Pendente',
+      categoria,
     },
     ...manualColetas.value,
   ]
@@ -1320,6 +1320,22 @@ const coletasRows = computed(() => {
     }
   })
 
+  const previewOverdueDate = new Date(now)
+  previewOverdueDate.setDate(now.getDate() - 2)
+  const previewOverdue: ColetaRow = {
+    id: `${selected.id}-coleta-preview-atrasada`,
+    transformador: selected.serial,
+    statusUltimaColeta: selected.status,
+    dataColeta: formatDateToBr(previewOverdueDate),
+    subestacao: selected.substation,
+    unidade: selected.unit,
+    tag: selected.tag,
+    tipoAnalise: 'Cromatografia',
+    faltamDias: daysDiffFromToday(previewOverdueDate),
+    status: 'Atrasada',
+    categoria: 'proximas',
+  }
+
   const realizadasBase: ColetaRow[] = unifiedAnalysisRows.value
     .slice(0, 8)
     .map((row, index) => ({
@@ -1360,9 +1376,17 @@ const coletasRows = computed(() => {
     }))
 
   return {
-    proximas: [...proximasManual, ...proximasBase],
+    proximas: [previewOverdue, ...proximasManual, ...proximasBase],
     realizadas: [...realizadasManual, ...realizadasBase],
   }
+})
+
+const coletasFilteredRows = computed(() => {
+  const rows = coletasActiveTab.value === 'proximas' ? coletasRows.value.proximas : coletasRows.value.realizadas
+  const query = coletasSearchDate.value.trim()
+  if (!query) return rows
+  const formattedQuery = query.includes('-') ? query.split('-').reverse().join('/') : query
+  return rows.filter((row) => row.dataColeta === formattedQuery)
 })
 
 const oilTreatments = computed(() => {
@@ -1635,7 +1659,7 @@ watch([activeTab, selectedId], async () => {
         </article>
         <article v-if="activeHistoryModel.categories.length" class="history-block-card">
           <div class="history-single">
-          <div class="history-line-head">
+          <div class="history-line-head coletas-line-head">
             <div class="history-tab-select-wrap">
               <select v-model="historyActiveTab" class="history-tab-select" aria-label="Selecionar tipo de gráfico">
                 <option value="cromatografia">Cromotografia</option>
@@ -1643,7 +1667,7 @@ watch([activeTab, selectedId], async () => {
                 <option value="ensaiosespeciais">Ensaios Especiais</option>
               </select>
             </div>
-            <div class="history-tabs-inline history-tabs-main">
+            <div class="history-tabs-inline history-tabs-main coletas-tabs-center">
               <button
                 type="button"
                 class="history-tab-btn"
@@ -2276,8 +2300,17 @@ watch([activeTab, selectedId], async () => {
 
       <section v-else-if="activeTab === 'Coletas'" class="panel table-panel history-panel">
         <article class="history-block-card">
-          <div class="history-line-head">
-            <div class="history-tabs-inline history-tabs-main">
+          <div class="history-line-head coletas-line-head">
+            <div class="history-analyses-controls history-analyses-controls-left">
+              <label class="history-analysis-search">
+                <input
+                  v-model="coletasSearchDate"
+                  type="date"
+                  aria-label="Filtrar coletas por data"
+                />
+              </label>
+            </div>
+            <div class="history-tabs-inline history-tabs-main coletas-tabs-center">
               <button
                 type="button"
                 class="history-tab-btn"
@@ -2350,12 +2383,11 @@ watch([activeTab, selectedId], async () => {
                   <th class="text-center">Tag</th>
                   <th class="text-center">Tipo de Análise</th>
                   <th class="text-center">Faltam Dia(s)</th>
-                  <th class="text-center">Ações</th>
                 </tr>
               </thead>
               <tbody>
                 <tr
-                  v-for="row in (coletasActiveTab === 'proximas' ? coletasRows.proximas : coletasRows.realizadas)"
+                  v-for="row in coletasFilteredRows"
                   :key="row.id"
                 >
                   <td class="text-center">{{ row.transformador }}</td>
@@ -2369,10 +2401,9 @@ watch([activeTab, selectedId], async () => {
                   <td class="text-center">{{ row.tag }}</td>
                   <td class="text-center">{{ row.tipoAnalise }}</td>
                   <td class="text-center">{{ row.status === 'Coletado' ? '-' : row.faltamDias }}</td>
-                  <td class="text-center">-</td>
                 </tr>
-                <tr v-if="!(coletasActiveTab === 'proximas' ? coletasRows.proximas.length : coletasRows.realizadas.length)">
-                  <td class="text-center" colspan="10">Sem coletas cadastradas.</td>
+                <tr v-if="!coletasFilteredRows.length">
+                  <td class="text-center" colspan="9">Sem coletas cadastradas.</td>
                 </tr>
               </tbody>
             </table>
@@ -2701,13 +2732,6 @@ watch([activeTab, selectedId], async () => {
         <div class="modal-card" @click.stop>
           <h4>Nova Coleta</h4>
           <div class="modal-grid">
-            <label>
-              <span>Tipo</span>
-              <select v-model="coletasModalForm.categoria">
-                <option value="proximas">Próximas</option>
-                <option value="realizadas">Realizadas</option>
-              </select>
-            </label>
             <label>
               <span>Transformador</span>
               <input v-model="coletasModalForm.transformador" type="text" list="coletas-transformers-list" />
@@ -3570,6 +3594,28 @@ watch([activeTab, selectedId], async () => {
   flex-wrap: wrap;
 }
 
+.coletas-line-head{
+  display: grid;
+  grid-template-columns: max-content 1fr max-content;
+  align-items: center;
+  column-gap: 10px;
+}
+
+.coletas-tabs-center{
+  justify-self: center;
+}
+
+.coletas-line-head .history-analyses-controls-left{
+  width: max-content;
+  display: inline-flex;
+  justify-self: start;
+  margin-right: 0;
+}
+
+.coletas-line-head .history-analyses-actions{
+  justify-self: end;
+}
+
 .history-line-head h4{
   margin: 0;
   font-size: 13px;
@@ -3775,6 +3821,10 @@ watch([activeTab, selectedId], async () => {
   justify-content: flex-start;
   gap: 6px;
   flex-wrap: wrap;
+}
+
+.history-analyses-controls-left{
+  margin-right: auto;
 }
 
 .history-analyses-actions{
@@ -4131,6 +4181,17 @@ watch([activeTab, selectedId], async () => {
     width: 100%;
     justify-content: stretch;
     align-items: stretch;
+  }
+  .coletas-line-head{
+    grid-template-columns: 1fr;
+    row-gap: 8px;
+  }
+  .coletas-tabs-center{
+    justify-self: center;
+  }
+  .coletas-line-head .history-analyses-controls-left,
+  .coletas-line-head .history-analyses-actions{
+    justify-self: stretch;
   }
   .history-analyses-actions{
     width: 100%;
