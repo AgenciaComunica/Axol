@@ -135,25 +135,32 @@ function toValidTab(value: unknown): ReportTab {
 const activeTab = ref<ReportTab>(toValidTab(route.query.section))
 const isGlobalAnalisesView = computed(() => route.name === 'analises-view')
 const isGlobalTreatmentView = computed(() => route.name === 'tratamento-oleo-view')
-const isGlobalScopeView = computed(() => isGlobalAnalisesView.value || isGlobalTreatmentView.value)
+const isGlobalColetasView = computed(() => route.name === 'coletas-view')
+const isGlobalScopeView = computed(() =>
+  isGlobalAnalisesView.value || isGlobalTreatmentView.value || isGlobalColetasView.value
+)
 const pageEyebrow = computed(() => {
   if (isGlobalAnalisesView.value) return 'Análises dos Transformadores'
   if (isGlobalTreatmentView.value) return 'Tratamento de Óleo dos Transformadores'
+  if (isGlobalColetasView.value) return 'Coletas dos Transformadores'
   return 'Relatórios de Transformadores'
 })
 const pageTitle = computed(() => {
   if (isGlobalAnalisesView.value) return 'Análise Geral'
   if (isGlobalTreatmentView.value) return 'Tratamento Geral'
+  if (isGlobalColetasView.value) return 'Coletas Gerais'
   return 'Relatório Consolidado'
 })
 const pageSubtitle = computed(() => {
   if (isGlobalAnalisesView.value) return 'Visualização consolidada de análises para todos os transformadores.'
   if (isGlobalTreatmentView.value) return 'Visualização consolidada de tratamento de óleo para todos os transformadores.'
+  if (isGlobalColetasView.value) return 'Visualização consolidada de coletas para todos os transformadores.'
   return 'Visualização única com dados do transformador e módulos técnicos.'
 })
 const forcedGlobalTab = computed<ReportTab | null>(() => {
   if (isGlobalAnalisesView.value) return 'Histórico de Análises'
   if (isGlobalTreatmentView.value) return 'Tratamento de Óleo'
+  if (isGlobalColetasView.value) return 'Coletas'
   return null
 })
 const generateReportMenuOpen = ref(false)
@@ -1069,7 +1076,8 @@ const coletasNewWrapRef = ref<HTMLElement | null>(null)
 const coletasExportWrapRef = ref<HTMLElement | null>(null)
 const coletasExportOptions = ['Próximas', 'Realizadas']
 const coletasExportSelected = ref<string[]>([])
-const coletasSearchDate = ref('')
+const coletasFilterMonth = ref('')
+const coletasFilterYear = ref('')
 const coletasModalOpen = ref(false)
 const coletasModalForm = ref({
   transformador: '',
@@ -1113,6 +1121,21 @@ const treatmentForm = ref({
   fator100: '',
   dbpc: '',
 })
+
+const coletasMonthOptions = [
+  { value: '01', label: 'Janeiro' },
+  { value: '02', label: 'Fevereiro' },
+  { value: '03', label: 'Março' },
+  { value: '04', label: 'Abril' },
+  { value: '05', label: 'Maio' },
+  { value: '06', label: 'Junho' },
+  { value: '07', label: 'Julho' },
+  { value: '08', label: 'Agosto' },
+  { value: '09', label: 'Setembro' },
+  { value: '10', label: 'Outubro' },
+  { value: '11', label: 'Novembro' },
+  { value: '12', label: 'Dezembro' },
+]
 
 function toggleEvalCard(card: '1' | '2' | '3' | '4' | '5' | '6') {
   evalCardOpen.value[card] = !evalCardOpen.value[card]
@@ -1986,12 +2009,37 @@ const coletasRows = computed(() => {
   }
 })
 
+function getBrDateMonthYear(value: string) {
+  const parts = String(value || '').split('/')
+  if (parts.length !== 3) return { month: '', year: '' }
+  const month = parts[1]?.padStart(2, '0') || ''
+  const year = parts[2] || ''
+  return { month, year }
+}
+
+const coletasYearOptions = computed(() => {
+  const allRows = [...coletasRows.value.proximas, ...coletasRows.value.realizadas]
+  const years = Array.from(
+    new Set(
+      allRows
+        .map((row) => getBrDateMonthYear(row.dataColeta).year)
+        .filter((year) => /^\d{4}$/.test(year))
+    )
+  )
+  return years.sort((a, b) => Number(b) - Number(a))
+})
+
 const coletasFilteredRows = computed(() => {
   const rows = coletasActiveTab.value === 'proximas' ? coletasRows.value.proximas : coletasRows.value.realizadas
-  const query = coletasSearchDate.value.trim()
-  if (!query) return rows
-  const formattedQuery = query.includes('-') ? query.split('-').reverse().join('/') : query
-  return rows.filter((row) => row.dataColeta === formattedQuery)
+  const selectedMonth = coletasFilterMonth.value
+  const selectedYear = coletasFilterYear.value
+  if (!selectedMonth && !selectedYear) return rows
+  return rows.filter((row) => {
+    const { month, year } = getBrDateMonthYear(row.dataColeta)
+    if (selectedMonth && month !== selectedMonth) return false
+    if (selectedYear && year !== selectedYear) return false
+    return true
+  })
 })
 
 const treatmentColumns: TreatmentColumn[] = [
@@ -3178,13 +3226,20 @@ watch([activeTab, selectedId], async () => {
         <article class="history-block-card">
           <div class="history-line-head coletas-line-head-two">
             <div class="history-analyses-controls history-analyses-controls-left coletas-controls-left">
-              <label class="history-analysis-search">
-                <input
-                  v-model="coletasSearchDate"
-                  type="date"
-                  aria-label="Filtrar coletas por data"
-                />
-              </label>
+              <div class="coletas-period-filter" role="group" aria-label="Filtrar coletas por mês e ano">
+                <select v-model="coletasFilterMonth" aria-label="Filtrar coletas por mês">
+                  <option value="">Mês</option>
+                  <option v-for="month in coletasMonthOptions" :key="`coletas-month-${month.value}`" :value="month.value">
+                    {{ month.label }}
+                  </option>
+                </select>
+                <select v-model="coletasFilterYear" aria-label="Filtrar coletas por ano">
+                  <option value="">Ano</option>
+                  <option v-for="year in coletasYearOptions" :key="`coletas-year-${year}`" :value="year">
+                    {{ year }}
+                  </option>
+                </select>
+              </div>
               <div class="history-tabs-inline history-tabs-main">
                 <button
                   type="button"
@@ -5402,6 +5457,29 @@ watch([activeTab, selectedId], async () => {
 }
 
 .history-analysis-search input:focus{
+  outline: none;
+  border-color: #1e4e8b;
+  box-shadow: 0 0 0 3px rgba(30, 78, 139, 0.14);
+}
+
+.coletas-period-filter{
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  flex-wrap: wrap;
+}
+
+.coletas-period-filter select{
+  height: 34px;
+  border-radius: 10px;
+  border: 1px solid rgba(15, 23, 42, 0.14);
+  padding: 0 10px;
+  font-size: 12px;
+  background: #fff;
+  color: #0f172a;
+}
+
+.coletas-period-filter select:focus{
   outline: none;
   border-color: #1e4e8b;
   box-shadow: 0 0 0 3px rgba(30, 78, 139, 0.14);
