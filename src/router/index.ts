@@ -32,6 +32,11 @@ const router = createRouter({
       name: 'tratamento-oleo-view',
       component: () => import('../views/TransformerReportView.vue'),
     },
+    {
+      path: '/coletas',
+      name: 'coletas-view',
+      component: () => import('../views/TransformerReportView.vue'),
+    },
   ],
 })
 
