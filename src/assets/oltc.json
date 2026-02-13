@@ -1,0 +1,125 @@
+{
+  "oltc": [
+    {
+      "ID": 1,
+      "SUBESTACAO": "Subestacao 1",
+      "SERIAL_TRANSFORMADOR": "A01",
+      "TAG": "OLTC-MOR-01",
+      "SERIAL_OLTC": "OLTC-0001",
+      "MODELO": "UZZ-III",
+      "FABRICANTE": "MR",
+      "ANO_FABRICACAO": "1994",
+      "FILTRO": "SIM",
+      "ESTADO": "Normal"
+    },
+    {
+      "ID": 2,
+      "SUBESTACAO": "Subestacao 1",
+      "SERIAL_TRANSFORMADOR": "A02",
+      "TAG": "OLTC-MOR-02",
+      "SERIAL_OLTC": "OLTC-0002",
+      "MODELO": "VACUTAP RMV",
+      "FABRICANTE": "MR",
+      "ANO_FABRICACAO": "2014",
+      "FILTRO": "SIM",
+      "ESTADO": "Alerta"
+    },
+    {
+      "ID": 3,
+      "SUBESTACAO": "Subestacao 1",
+      "SERIAL_TRANSFORMADOR": "A03",
+      "TAG": "OLTC-MOR-03",
+      "SERIAL_OLTC": "OLTC-0003",
+      "MODELO": "UZZ-IV",
+      "FABRICANTE": "ABB",
+      "ANO_FABRICACAO": "2016",
+      "FILTRO": "NAO",
+      "ESTADO": "Normal"
+    },
+    {
+      "ID": 4,
+      "SUBESTACAO": "Subestacao 1",
+      "SERIAL_TRANSFORMADOR": "A04",
+      "TAG": "OLTC-MOR-04",
+      "SERIAL_OLTC": "OLTC-0004",
+      "MODELO": "VACUTAP VV",
+      "FABRICANTE": "MR",
+      "ANO_FABRICACAO": "1998",
+      "FILTRO": "SIM",
+      "ESTADO": "Crítico"
+    },
+    {
+      "ID": 5,
+      "SUBESTACAO": "Subestacao 2",
+      "SERIAL_TRANSFORMADOR": "A05",
+      "TAG": "OLTC-COR-01",
+      "SERIAL_OLTC": "OLTC-0005",
+      "MODELO": "UZZ-II",
+      "FABRICANTE": "ABB",
+      "ANO_FABRICACAO": "1995",
+      "FILTRO": "NAO",
+      "ESTADO": "Alerta"
+    },
+    {
+      "ID": 6,
+      "SUBESTACAO": "Subestacao 3",
+      "SERIAL_TRANSFORMADOR": "A11",
+      "TAG": "OLTC-PAC-01",
+      "SERIAL_OLTC": "OLTC-0006",
+      "MODELO": "VACUTAP RMV",
+      "FABRICANTE": "MR",
+      "ANO_FABRICACAO": "2017",
+      "FILTRO": "SIM",
+      "ESTADO": "Normal"
+    },
+    {
+      "ID": 7,
+      "SUBESTACAO": "Subestacao 4",
+      "SERIAL_TRANSFORMADOR": "A13",
+      "TAG": "OLTC-VIL-01",
+      "SERIAL_OLTC": "OLTC-0007",
+      "MODELO": "UZZ-III",
+      "FABRICANTE": "ABB",
+      "ANO_FABRICACAO": "2013",
+      "FILTRO": "SIM",
+      "ESTADO": "Normal"
+    },
+    {
+      "ID": 8,
+      "SUBESTACAO": "Subestacao 5",
+      "SERIAL_TRANSFORMADOR": "A12",
+      "TAG": "OLTC-ALL-01",
+      "SERIAL_OLTC": "OLTC-0008",
+      "MODELO": "VACUTAP VV",
+      "FABRICANTE": "MR",
+      "ANO_FABRICACAO": "1999",
+      "FILTRO": "NAO",
+      "ESTADO": "Alerta"
+    },
+    {
+      "ID": 9,
+      "SUBESTACAO": "Subestacao 1",
+      "SERIAL_TRANSFORMADOR": "A01",
+      "TAG": "OLTC-MOR-05",
+      "SERIAL_OLTC": "OLTC-0009",
+      "MODELO": "UZZ-IV",
+      "FABRICANTE": "ABB",
+      "ANO_FABRICACAO": "2000",
+      "FILTRO": "SIM",
+      "ESTADO": "Crítico"
+    },
+    {
+      "ID": 10,
+      "SUBESTACAO": "Subestacao 3",
+      "SERIAL_TRANSFORMADOR": "A11",
+      "TAG": "OLTC-PAC-02",
+      "SERIAL_OLTC": "OLTC-0010",
+      "MODELO": "VACUTAP RMV",
+      "FABRICANTE": "MR",
+      "ANO_FABRICACAO": "2018",
+      "FILTRO": "SIM",
+      "ESTADO": "Normal"
+    }
+  ]
+}
+
