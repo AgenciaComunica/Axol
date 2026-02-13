@@ -133,6 +133,14 @@ function toValidTab(value: unknown): ReportTab {
 }
 
 const activeTab = ref<ReportTab>(toValidTab(route.query.section))
+const isGlobalAnalisesView = computed(() => route.name === 'analises-view')
+const isGlobalTreatmentView = computed(() => route.name === 'tratamento-oleo-view')
+const isGlobalScopeView = computed(() => isGlobalAnalisesView.value || isGlobalTreatmentView.value)
+const forcedGlobalTab = computed<ReportTab | null>(() => {
+  if (isGlobalAnalisesView.value) return 'Histórico de Análises'
+  if (isGlobalTreatmentView.value) return 'Tratamento de Óleo'
+  return null
+})
 const generateReportMenuOpen = ref(false)
 const generateReportWrapRef = ref<HTMLElement | null>(null)
 const generateReportItems = [
@@ -204,23 +212,39 @@ watch(
 watch(
   () => route.query.section,
   (value) => {
+    if (isGlobalScopeView.value) return
     activeTab.value = toValidTab(value)
   }
 )
 
 watch(selectedId, (value) => {
+  if (route.name !== 'transformer-report') return
   if (!value || String(route.params.id || '') === value) return
-  router.replace({ name: 'transformer-report', params: { id: value }, query: { section: activeTab.value } })
+  router.replace({
+    name: 'transformer-report',
+    params: { id: value },
+    query: { ...route.query, section: activeTab.value },
+  })
 })
 
 watch(activeTab, (value) => {
+  if (route.name !== 'transformer-report') return
   if (String(route.query.section || '') === value) return
   router.replace({
     name: 'transformer-report',
     params: { id: selectedId.value || String(route.params.id || '') },
-    query: { section: value },
+    query: { ...route.query, section: value },
   })
 })
+
+watch(
+  forcedGlobalTab,
+  (value) => {
+    if (!value) return
+    if (activeTab.value !== value) activeTab.value = value
+  },
+  { immediate: true }
+)
 
 const selectedTransformer = computed(
   () => transformerOptions.value.find((item) => item.id === selectedId.value) || null
@@ -832,7 +856,7 @@ const analysisNewWrapRef = ref<HTMLElement | null>(null)
 const analysisExportWrapRef = ref<HTMLElement | null>(null)
 const analysisExportSelected = ref<string[]>([])
 const analysisPage = ref(1)
-const analysisRowsPerPage = ref(10)
+const analysisRowsPerPage = ref(route.name === 'analises-view' ? 20 : 10)
 const analysisRowsPerPageOptions = [10, 20, 30, 50]
 const coletasActiveTab = ref<ColetasSubTab>('proximas')
 const coletasNewMenuOpen = ref(false)
@@ -1325,6 +1349,7 @@ const selectedOltcMeta = computed<BaseRow | null>(() => {
 })
 
 function rowMatchesSelectedTransformer(row: BaseRow) {
+  if (isGlobalScopeView.value) return true
   const selected = selectedTransformer.value
   if (!selected) return true
 
@@ -1351,10 +1376,10 @@ function rowMatchesSelectedTransformer(row: BaseRow) {
 
 const unifiedAnalysisRows = computed<UnifiedAnalysisRow[]>(() => {
   const selected = selectedTransformer.value
-  const fallbackSubstation = selected?.substation || '-'
-  const fallbackUnit = selected?.unit || '-'
-  const fallbackTag = selected?.tag || '-'
-  const fallbackTransformer = selected?.serial || selected?.id || '-'
+  const fallbackSubstation = isGlobalScopeView.value ? '-' : selected?.substation || '-'
+  const fallbackUnit = isGlobalScopeView.value ? '-' : selected?.unit || '-'
+  const fallbackTag = isGlobalScopeView.value ? '-' : selected?.tag || '-'
+  const fallbackTransformer = isGlobalScopeView.value ? '-' : selected?.serial || selected?.id || '-'
 
   const asCommon = (row: BaseRow, tipo: string, index: number): UnifiedAnalysisRow => {
     const dataColeta = normalizeCell(row.DATA_COLETA)
@@ -1573,6 +1598,13 @@ watch(analysisRecentTab, () => {
 })
 
 watch(
+  () => route.name,
+  (name) => {
+    analysisRowsPerPage.value = name === 'analises-view' ? 20 : 10
+  }
+)
+
+watch(
   analysisExportOptions,
   (options) => {
     if (!analysisExportSelected.value.length) {
@@ -1785,6 +1817,61 @@ const treatmentVisibleColumns = computed(() =>
 )
 
 const treatmentRows = computed<TreatmentRow[]>(() => {
+  if (isGlobalScopeView.value) {
+    const latestBySerial = new Map<string, BaseRow>()
+    parseLooseJson<BaseRow[]>(fisicoQuimicosRaw)
+      .filter(rowMatchesSelectedTransformer)
+      .forEach((row) => {
+        const serial = String(row.NUM_SERIE || row.SERIAL_TRANSFORMADOR || '').trim()
+        if (!serial) return
+        const current = latestBySerial.get(serial)
+        const rowTime = parseBrDate(row.DATA_COLETA)
+        const currentTime = current ? parseBrDate(current.DATA_COLETA) : 0
+        if (!current || rowTime >= currentTime) {
+          latestBySerial.set(serial, row)
+        }
+      })
+
+    const rows = Array.from(latestBySerial.entries()).map(([serial, latestFisico], index) => {
+      const transformerMeta = transformerOptions.value.find((item) => item.serial === serial)
+      const tratamentoNome = `Tratamento a Óleo ${normalizeCell((latestFisico as BaseRow).TENSAO_INTERFACIAL)}`
+      return {
+        id: `treatment-global-${serial}-${index}`,
+        serial,
+        statusTratamento: 'Concluído',
+        equipamento: transformerMeta?.equipment || '-',
+        comutador: transformerMeta?.commutator || '-',
+        oleoFluido: transformerMeta?.oilFluid || '-',
+        tensaoPrimaria: transformerMeta?.voltage || '-',
+        tensaoSecundaria: '-',
+        anoFabricacao: transformerMeta?.year || '-',
+        potencia: transformerMeta?.power || '-',
+        fabricante: transformerMeta?.manufacturer || '-',
+        volumeLitros: transformerMeta?.volume || '-',
+        refrigeracao: transformerMeta?.refrigeration || '-',
+        subestacao: normalizeCell((latestFisico as BaseRow).SUBESTACAO) || transformerMeta?.substation || '-',
+        tag: normalizeCell((latestFisico as BaseRow).TAG) || transformerMeta?.tag || '-',
+        identificacao: transformerMeta?.id || serial,
+        carregamento: transformerMeta?.load || '-',
+        operando: transformerMeta?.operating || '-',
+        unidade: normalizeCell((latestFisico as BaseRow).UNIDADE) || transformerMeta?.unit || '-',
+        selado: transformerMeta?.sealed || '-',
+        rd: normalizeCell((latestFisico as BaseRow).RD),
+        teorAgua: normalizeCell((latestFisico as BaseRow).TEOR_AGUA),
+        tensaoInterfacial: normalizeCell((latestFisico as BaseRow).TENSAO_INTERFACIAL),
+        indNeutralizacao: normalizeCell((latestFisico as BaseRow)['IND_NEUTRALIZACAO ']),
+        fator25: normalizeCell((latestFisico as BaseRow).FATOR_POT_25),
+        fator90: normalizeCell((latestFisico as BaseRow).FATOR_POT_90),
+        fator100: normalizeCell((latestFisico as BaseRow).FATOR_POT_100),
+        dbpc: normalizeCell((latestFisico as BaseRow).DBPC),
+        tratamentoNome,
+        dataColeta: normalizeCell((latestFisico as BaseRow).DATA_COLETA),
+        tipoAnalise: 'Físico Químico',
+      }
+    })
+    return [...rows, ...manualTreatmentRows.value]
+  }
+
   const selected = selectedTransformer.value
   if (!selected) return []
   const latestFisico = fisicoRows.value[0] || {}
@@ -1995,8 +2082,8 @@ watch([activeTab, selectedId], async () => {
     />
 
     <section class="report-shell">
-      <div class="report-toolbar">
-        <div class="selector">
+      <div v-if="!isGlobalScopeView" class="report-toolbar">
+        <div v-if="!isGlobalScopeView" class="selector">
           <label for="trafo-select">Selecionar transformador</label>
           <select id="trafo-select" v-model="selectedId">
             <option v-for="item in transformerOptions" :key="item.id" :value="item.id">
@@ -2008,7 +2095,7 @@ watch([activeTab, selectedId], async () => {
           <button
             type="button"
             class="locate-btn"
-            :disabled="!selectedTransformer"
+            :disabled="!selectedTransformer || isGlobalScopeView"
             @click="selectedTransformer && router.push({ name: 'dashboard', query: { transformer: selectedTransformer.id } })"
           >
             <svg class="pin-icon" viewBox="0 0 24 24" aria-hidden="true">
@@ -2044,7 +2131,7 @@ watch([activeTab, selectedId], async () => {
         </div>
       </div>
 
-      <div v-if="selectedTransformer" class="summary-grid">
+      <div v-if="selectedTransformer && !isGlobalScopeView" class="summary-grid">
         <article class="summary-card">
           <h3>{{ selectedTransformer.id }}</h3>
           <p>{{ selectedTransformer.substation }} • {{ selectedTransformer.reference }}</p>
@@ -2077,7 +2164,7 @@ watch([activeTab, selectedId], async () => {
         </article>
       </div>
 
-      <nav class="tabs">
+      <nav v-if="!isGlobalScopeView" class="tabs">
         <button
           v-for="tab in tabs"
           :key="tab"
@@ -2091,7 +2178,7 @@ watch([activeTab, selectedId], async () => {
       </nav>
 
       <section v-if="activeTab === 'Histórico de Análises'" class="panel table-panel history-panel">
-        <article class="history-block-card">
+        <article v-if="!isGlobalAnalisesView" class="history-block-card">
           <button
             type="button"
             class="expandable-head-btn"
@@ -2201,6 +2288,7 @@ watch([activeTab, selectedId], async () => {
         </article>
         <article class="history-block-card history-analyses-card">
           <button
+            v-if="!isGlobalAnalisesView"
             type="button"
             class="expandable-head-btn"
             :class="{ open: historyAnalysesOpen }"
@@ -2209,7 +2297,7 @@ watch([activeTab, selectedId], async () => {
             <span>Análises Recentes</span>
             <i class="expandable-toggle-icon" aria-hidden="true">{{ historyAnalysesOpen ? '−' : '+' }}</i>
           </button>
-          <div v-if="historyAnalysesOpen" class="history-analyses-head">
+          <div v-if="isGlobalAnalisesView || historyAnalysesOpen" class="history-analyses-head">
             <div class="history-analyses-controls">
               <label class="history-analysis-search">
                 <input
@@ -2303,7 +2391,7 @@ watch([activeTab, selectedId], async () => {
               </div>
             </div>
           </div>
-          <div v-if="historyAnalysesOpen" class="mini-table-wrap history-analyses-table-wrap">
+          <div v-if="isGlobalAnalisesView || historyAnalysesOpen" class="mini-table-wrap history-analyses-table-wrap">
             <table class="table compact analysis-table">
               <thead>
                 <tr>
@@ -2326,7 +2414,7 @@ watch([activeTab, selectedId], async () => {
               </tbody>
             </table>
           </div>
-          <div v-if="historyAnalysesOpen" class="history-analyses-pagination">
+          <div v-if="isGlobalAnalisesView || historyAnalysesOpen" class="history-analyses-pagination">
             <label class="history-rows-per-page">
               <span>Itens por página</span>
               <select v-model.number="analysisRowsPerPage">

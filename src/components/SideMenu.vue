@@ -47,6 +47,16 @@ function goToReport(section: string) {
   open.value = false
 }
 
+function goToAnalisesView() {
+  router.push({ name: 'analises-view' })
+  open.value = false
+}
+
+function goToTratamentoOleoView() {
+  router.push({ name: 'tratamento-oleo-view' })
+  open.value = false
+}
+
 function updateBodyLock(isOpen: boolean) {
   if (typeof window === 'undefined') return
   if (window.innerWidth > 900) return
@@ -91,34 +101,50 @@ onBeforeUnmount(() => {
         </svg>
         Start Oleo
       </div>
-      <div class="item item-with-submenu" :class="{ open: transformerOpen }">
+      <button class="item item-with-submenu" :class="{ open: transformerOpen }" type="button" @click="toggleTransformers">
         <div class="item-label">
-          <button class="item-link" type="button" @click="goToTransformers">
+          <span class="item-link">
             <svg class="item-icon" viewBox="0 0 24 24" aria-hidden="true">
+              <path d="M4 7h16v2H4V7zm2 4h12v2H6v-2zm-2 4h16v2H4v-2z"></path>
+            </svg>
+            Operações
+          </span>
+          <span class="submenu-chevron" :class="{ open: transformerOpen }">{{ transformerOpen ? '−' : '+' }}</span>
+        </div>
+        <div v-if="transformerOpen" class="submenu">
+          <button class="submenu-item" type="button" @click.stop="goToTransformers">
+            <svg class="submenu-icon" viewBox="0 0 24 24" aria-hidden="true">
               <path d="M3 10h18v8a1 1 0 0 1-1 1H4a1 1 0 0 1-1-1v-8zm2-5h14l2 3H3l2-3zm2 13h3v2H7v-2zm7 0h3v2h-3v-2z"></path>
             </svg>
             Transformadores
           </button>
-          <button class="submenu-toggle" type="button" @click="toggleTransformers">
-            <span class="submenu-chevron" :class="{ open: transformerOpen }">⌄</span>
-          </button>
-        </div>
-        <div v-if="transformerOpen" class="submenu">
           <button class="submenu-item" type="button" @click.stop="goToReport('Avaliação Completa')">
             <svg class="submenu-icon" viewBox="0 0 24 24" aria-hidden="true">
               <path d="M5 3h10l4 4v14H5V3zm9 1.5V8h3.5L14 4.5zM8 11h8v2H8v-2zm0 4h8v2H8v-2z"></path>
             </svg>
             Relatórios
           </button>
+          <button class="submenu-item" type="button" @click.stop="goToAnalisesView">
+            <svg class="submenu-icon" viewBox="0 0 24 24" aria-hidden="true">
+              <path d="M3 5h18v2H3V5zm0 6h12v2H3v-2zm0 6h18v2H3v-2zm14-6h4v8h-4v-8z"></path>
+            </svg>
+            Análises
+          </button>
+          <button class="submenu-item" type="button" @click.stop="goToTratamentoOleoView">
+            <svg class="submenu-icon" viewBox="0 0 24 24" aria-hidden="true">
+              <path d="M12 2.5c2.7 3.1 6.5 7.8 6.5 11.1a6.5 6.5 0 1 1-13 0C5.5 10.3 9.3 5.6 12 2.5zm0 4.7c-1.8 2.3-4 5.4-4 6.9a4 4 0 0 0 8 0c0-1.5-2.2-4.6-4-6.9z"></path>
+            </svg>
+            Tratamento Óleo
+          </button>
         </div>
-      </div>
+      </button>
       <button class="item item-with-submenu" :class="{ open: configOpen }" type="button" @click="toggleConfig">
         <div class="item-label">
           <svg class="item-icon" viewBox="0 0 24 24" aria-hidden="true">
             <path d="M19.4 13a7.8 7.8 0 0 0 .1-2l2-1.5-2-3.4-2.3.8a7.6 7.6 0 0 0-1.7-1L15 2h-4l-.5 3a7.6 7.6 0 0 0-1.7 1l-2.3-.8-2 3.4L6.6 11a7.8 7.8 0 0 0 .1 2l-2 1.5 2 3.4 2.3-.8a7.6 7.6 0 0 0 1.7 1l.5 3h4l.5-3a7.6 7.6 0 0 0 1.7-1l2.3.8 2-3.4-2-1.5zM12 15a3 3 0 1 1 0-6 3 3 0 0 1 0 6z"></path>
           </svg>
           Configurações
-          <span class="submenu-chevron" :class="{ open: configOpen }">⌄</span>
+          <span class="submenu-chevron" :class="{ open: configOpen }">{{ configOpen ? '−' : '+' }}</span>
         </div>
         <div v-if="configOpen" class="submenu">
           <div class="submenu-item">
@@ -327,12 +353,12 @@ onBeforeUnmount(() => {
   font-size: 16px;
   font-weight: 700;
   color: rgba(15, 23, 42, 0.65);
-  transition: transform 0.15s ease;
+  transition: color 0.15s ease;
   line-height: 1;
 }
 
 .submenu-chevron.open{
-  transform: rotate(180deg);
+  color: rgba(15, 23, 42, 0.85);
 }
 
 .submenu{
