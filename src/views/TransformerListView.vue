@@ -312,7 +312,7 @@ const transformers = computed<TableTransformer[]>(() => {
     if (!item.id) return
     if (!byId.has(item.id)) byId.set(item.id, item)
   })
-  return Array.from(byId.values())
+  return Array.from(byId.values()).map((item) => ({ ...item, ...(transformerEdits.value[item.id] || {}) }))
 })
 
 const searchQuery = ref('')
@@ -361,6 +361,21 @@ const columnsMenuOpen = ref(false)
 const columnsWrapRef = ref<HTMLElement | null>(null)
 const newMenuOpen = ref(false)
 const newWrapRef = ref<HTMLElement | null>(null)
+const transformerEdits = ref<Record<string, Partial<TableTransformer>>>({})
+const editModalOpen = ref(false)
+const editForm = ref({
+  id: '',
+  serial: '',
+  tag: '',
+  substation: '',
+  unit: '',
+  power: '',
+  voltage: '',
+  manufacturer: '',
+  year: '',
+  latitude: '',
+  longitude: '',
+})
 
 type ColumnConfig = {
   id: string
@@ -415,9 +430,9 @@ function locateOnMap(transformer: TableTransformer) {
   router.push({ name: 'dashboard', query: { transformer: transformer.id } })
 }
 
-function openReport(transformer: TableTransformer) {
+function openReportSection(transformer: TableTransformer, section: string) {
   openActionId.value = null
-  router.push({ name: 'transformer-report', params: { id: transformer.id } })
+  router.push({ name: 'transformer-report', params: { id: transformer.id }, query: { section } })
 }
 
 function closeActions() {
@@ -457,6 +472,48 @@ function toggleColumn(id: string) {
 
 function openLocation(transformer: TableTransformer) {
   router.push({ name: 'dashboard', query: { transformer: transformer.id } })
+}
+
+function openEditModal(transformer: TableTransformer) {
+  openActionId.value = null
+  editForm.value = {
+    id: transformer.id,
+    serial: transformer.serial || '',
+    tag: transformer.tag || '',
+    substation: transformer.substation || '',
+    unit: transformer.unit || '',
+    power: transformer.power || '',
+    voltage: transformer.voltage || '',
+    manufacturer: transformer.manufacturer || '',
+    year: transformer.year || '',
+    latitude: transformer.latitude || '',
+    longitude: transformer.longitude || '',
+  }
+  editModalOpen.value = true
+}
+
+function closeEditModal() {
+  editModalOpen.value = false
+}
+
+function saveEditModal() {
+  if (!editForm.value.id) return
+  transformerEdits.value = {
+    ...transformerEdits.value,
+    [editForm.value.id]: {
+      serial: editForm.value.serial || '-',
+      tag: editForm.value.tag || '-',
+      substation: editForm.value.substation || '-',
+      unit: editForm.value.unit || '-',
+      power: editForm.value.power || '-',
+      voltage: editForm.value.voltage || '-',
+      manufacturer: editForm.value.manufacturer || '-',
+      year: editForm.value.year || '-',
+      latitude: editForm.value.latitude || '-',
+      longitude: editForm.value.longitude || '-',
+    },
+  }
+  editModalOpen.value = false
 }
 
 function handleDocumentClick(event: MouseEvent) {
@@ -661,19 +718,23 @@ watch(rowsPerPage, () => {
                   <div class="actions-cell text-center">
                     <button class="action-trigger" type="button" @click.stop="toggleActions(item.id)">⋯</button>
                     <div v-if="openActionId === item.id" class="action-menu">
-                      <button type="button" class="action-item action-report" @click="openReport(item)">
+                      <button type="button" class="action-item action-report" @click="openReportSection(item, 'Avaliação Completa')">
                         <span class="action-icon" aria-hidden="true">📄</span>
-                        Relatórios
+                        Avaliação Completa
                       </button>
-                      <button type="button" class="action-item action-analyze">
+                      <button type="button" class="action-item action-analyze" @click="openReportSection(item, 'Histórico de Análises')">
                         <span class="action-icon" aria-hidden="true">🔍</span>
-                        Analisar
+                        Análises
                       </button>
-                      <button type="button" class="action-item action-collect">
+                      <button type="button" class="action-item action-collect" @click="openReportSection(item, 'Coletas')">
                         <span class="action-icon" aria-hidden="true">📅</span>
-                        Próximas Coletas
+                        Coletas
                       </button>
-                      <button type="button" class="action-item action-edit">
+                      <button type="button" class="action-item action-treatment" @click="openReportSection(item, 'Tratamento de Óleo')">
+                        <span class="action-icon" aria-hidden="true">🛢</span>
+                        Tratamento
+                      </button>
+                      <button type="button" class="action-item action-edit" @click="openEditModal(item)">
                         <span class="action-icon" aria-hidden="true">✎</span>
                         Editar
                       </button>
@@ -735,10 +796,62 @@ watch(rowsPerPage, () => {
         </div>
         <div class="card-actions">
           <button type="button" @click="locateOnMap(item)">Localizar no mapa</button>
-          <button type="button" class="ghost" @click="openReport(item)">Abrir relatório</button>
+          <button type="button" class="ghost" @click="openReportSection(item, 'Avaliação Completa')">Abrir relatório</button>
         </div>
       </article>
     </section>
+
+    <div v-if="editModalOpen" class="modal-overlay" @click="closeEditModal">
+      <div class="modal-card" @click.stop>
+        <h4>Editar Transformador</h4>
+        <div class="modal-grid">
+          <label>
+            <span>Serial</span>
+            <input v-model="editForm.serial" type="text" />
+          </label>
+          <label>
+            <span>TAG</span>
+            <input v-model="editForm.tag" type="text" />
+          </label>
+          <label class="full">
+            <span>Subestação</span>
+            <input v-model="editForm.substation" type="text" />
+          </label>
+          <label>
+            <span>Unidade</span>
+            <input v-model="editForm.unit" type="text" />
+          </label>
+          <label>
+            <span>Potência</span>
+            <input v-model="editForm.power" type="text" />
+          </label>
+          <label>
+            <span>Tensão</span>
+            <input v-model="editForm.voltage" type="text" />
+          </label>
+          <label>
+            <span>Fabricante</span>
+            <input v-model="editForm.manufacturer" type="text" />
+          </label>
+          <label>
+            <span>Ano</span>
+            <input v-model="editForm.year" type="text" />
+          </label>
+          <label>
+            <span>Latitude</span>
+            <input v-model="editForm.latitude" type="text" />
+          </label>
+          <label>
+            <span>Longitude</span>
+            <input v-model="editForm.longitude" type="text" />
+          </label>
+        </div>
+        <div class="modal-actions">
+          <button type="button" class="modal-btn secondary" @click="closeEditModal">Cancelar</button>
+          <button type="button" class="modal-btn primary" @click="saveEditModal">Salvar</button>
+        </div>
+      </div>
+    </div>
   </div>
 </template>
 
@@ -1139,6 +1252,18 @@ watch(rowsPerPage, () => {
   color: rgba(15, 23, 42, 0.8);
 }
 
+.action-analyze{
+  color: #1d4ed8;
+}
+
+.action-collect{
+  color: #0f766e;
+}
+
+.action-treatment{
+  color: #b45309;
+}
+
 .table-pagination{
   margin-top: 12px;
   padding: 8px 6px 6px;
@@ -1198,6 +1323,85 @@ watch(rowsPerPage, () => {
   display: none;
 }
 
+.modal-overlay{
+  position: fixed;
+  inset: 0;
+  background: rgba(15, 23, 42, 0.52);
+  z-index: 80;
+  display: grid;
+  place-items: center;
+  padding: 20px;
+}
+
+.modal-card{
+  width: min(760px, 100%);
+  border-radius: 16px;
+  border: 1px solid rgba(15, 23, 42, 0.12);
+  background: #fff;
+  box-shadow: 0 24px 50px rgba(15, 23, 42, 0.2);
+  padding: 16px;
+}
+
+.modal-card h4{
+  margin: 0 0 12px;
+}
+
+.modal-grid{
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 10px;
+}
+
+.modal-grid label{
+  display: grid;
+  gap: 6px;
+}
+
+.modal-grid label span{
+  font-size: 12px;
+  color: rgba(15, 23, 42, 0.72);
+  font-weight: 600;
+}
+
+.modal-grid input{
+  height: 36px;
+  border-radius: 10px;
+  border: 1px solid rgba(15, 23, 42, 0.14);
+  padding: 0 10px;
+  font-size: 13px;
+}
+
+.modal-grid .full{
+  grid-column: 1 / -1;
+}
+
+.modal-actions{
+  margin-top: 14px;
+  display: inline-flex;
+  gap: 8px;
+}
+
+.modal-btn{
+  height: 34px;
+  border-radius: 999px;
+  border: 1px solid transparent;
+  padding: 0 14px;
+  font-size: 12px;
+  font-weight: 700;
+  cursor: pointer;
+}
+
+.modal-btn.secondary{
+  background: rgba(15, 23, 42, 0.06);
+  color: rgba(15, 23, 42, 0.8);
+  border-color: rgba(15, 23, 42, 0.12);
+}
+
+.modal-btn.primary{
+  background: #1e4e8b;
+  color: #fff;
+}
+
 @media (max-width: 900px){
   .transformer-list{
     padding: 90px 16px 40px;
@@ -1208,6 +1412,12 @@ watch(rowsPerPage, () => {
   .mobile-cards{
     display: grid;
     gap: 14px;
+  }
+  .modal-grid{
+    grid-template-columns: 1fr;
+  }
+  .modal-grid .full{
+    grid-column: auto;
   }
   .card{
     border-radius: 16px;
