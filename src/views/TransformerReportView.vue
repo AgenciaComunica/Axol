@@ -122,6 +122,8 @@ const tabs = [
   'Avaliação IEEE',
   'Coletas',
   'Tratamento de Óleo',
+  'Duval',
+  'TR Óleo',
 ] as const
 
 type ReportTab = (typeof tabs)[number]
@@ -171,6 +173,8 @@ const generateReportItems = [
   'Avaliação IEEE',
   'Coletas',
   'Tratamento de Óleo',
+  'Duval',
+  'TR Óleo',
 ]
 const generateReportSelected = ref<string[]>([...generateReportItems])
 
@@ -3079,7 +3083,6 @@ watch([activeTab, selectedId], async () => {
               <div class="risk-pie" :style="{ '--pct': `${probability}%` }">
                 <span class="risk-pie-center">{{ probability.toFixed(2) }}%</span>
               </div>
-              <b>{{ probability.toFixed(2) }} %</b>
             </article>
           </div>
 
@@ -3658,6 +3661,20 @@ watch([activeTab, selectedId], async () => {
               </tbody>
             </table>
           </div>
+        </article>
+      </section>
+
+      <section v-else-if="activeTab === 'Duval'" class="panel table-panel">
+        <article class="tile tile-wide">
+          <h4>Duval</h4>
+          <p>Módulo em preparação para próxima entrega.</p>
+        </article>
+      </section>
+
+      <section v-else-if="activeTab === 'TR Óleo'" class="panel table-panel">
+        <article class="tile tile-wide">
+          <h4>TR Óleo</h4>
+          <p>Módulo em preparação para próxima entrega.</p>
         </article>
       </section>
 
@@ -4871,8 +4888,8 @@ watch([activeTab, selectedId], async () => {
 
 .risk-pie{
   --pct: 0%;
-  width: 72px;
-  height: 72px;
+  width: 88px;
+  height: 88px;
   margin: 6px auto 8px;
   border-radius: 999px;
   background: conic-gradient(#1e4e8b var(--pct), rgba(148, 163, 184, 0.25) 0);
@@ -4882,7 +4899,7 @@ watch([activeTab, selectedId], async () => {
 .risk-pie::after{
   content: '';
   position: absolute;
-  inset: 12px;
+  inset: 14px;
   border-radius: 999px;
   background: #fff;
   z-index: 1;
@@ -4894,7 +4911,7 @@ watch([activeTab, selectedId], async () => {
   display: grid;
   place-items: center;
   z-index: 2;
-  font-size: 11px;
+  font-size: 12px;
   font-weight: 700;
   color: #123a6d;
 }
