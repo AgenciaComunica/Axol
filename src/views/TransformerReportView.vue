@@ -47,7 +47,7 @@ type SpecialistOverride = {
   analystNote: string
   failureMode: string
 }
-type AnalysisModalTab = 'cromatografia' | 'fisicoquimico' | 'ensaiosespeciais'
+type AnalysisModalTab = 'cromatografia' | 'fisicoquimico' | 'ensaiosespeciais' | 'oltc' | 'fisicoquimicooltc'
 type AnalysisFieldType = 'text' | 'number' | 'date' | 'select'
 type AnalysisFieldDef = {
   key: string
@@ -122,6 +122,8 @@ const tabs = [
   'Avaliação IEEE',
   'Coletas',
   'Tratamento de Óleo',
+  'Duval',
+  'TR Óleo',
 ] as const
 
 type ReportTab = (typeof tabs)[number]
@@ -135,25 +137,32 @@ function toValidTab(value: unknown): ReportTab {
 const activeTab = ref<ReportTab>(toValidTab(route.query.section))
 const isGlobalAnalisesView = computed(() => route.name === 'analises-view')
 const isGlobalTreatmentView = computed(() => route.name === 'tratamento-oleo-view')
-const isGlobalScopeView = computed(() => isGlobalAnalisesView.value || isGlobalTreatmentView.value)
+const isGlobalColetasView = computed(() => route.name === 'coletas-view')
+const isGlobalScopeView = computed(() =>
+  isGlobalAnalisesView.value || isGlobalTreatmentView.value || isGlobalColetasView.value
+)
 const pageEyebrow = computed(() => {
   if (isGlobalAnalisesView.value) return 'Análises dos Transformadores'
   if (isGlobalTreatmentView.value) return 'Tratamento de Óleo dos Transformadores'
+  if (isGlobalColetasView.value) return 'Coletas dos Transformadores'
   return 'Relatórios de Transformadores'
 })
 const pageTitle = computed(() => {
   if (isGlobalAnalisesView.value) return 'Análise Geral'
   if (isGlobalTreatmentView.value) return 'Tratamento Geral'
+  if (isGlobalColetasView.value) return 'Coletas Gerais'
   return 'Relatório Consolidado'
 })
 const pageSubtitle = computed(() => {
   if (isGlobalAnalisesView.value) return 'Visualização consolidada de análises para todos os transformadores.'
   if (isGlobalTreatmentView.value) return 'Visualização consolidada de tratamento de óleo para todos os transformadores.'
+  if (isGlobalColetasView.value) return 'Visualização consolidada de coletas para todos os transformadores.'
   return 'Visualização única com dados do transformador e módulos técnicos.'
 })
 const forcedGlobalTab = computed<ReportTab | null>(() => {
   if (isGlobalAnalisesView.value) return 'Histórico de Análises'
   if (isGlobalTreatmentView.value) return 'Tratamento de Óleo'
+  if (isGlobalColetasView.value) return 'Coletas'
   return null
 })
 const generateReportMenuOpen = ref(false)
@@ -164,6 +173,8 @@ const generateReportItems = [
   'Avaliação IEEE',
   'Coletas',
   'Tratamento de Óleo',
+  'Duval',
+  'TR Óleo',
 ]
 const generateReportSelected = ref<string[]>([...generateReportItems])
 
@@ -475,6 +486,8 @@ const analysisSendReport = ref<Record<AnalysisModalTab, boolean>>({
   cromatografia: false,
   fisicoquimico: false,
   ensaiosespeciais: false,
+  oltc: false,
+  fisicoquimicooltc: false,
 })
 const analysisCromForm = ref<Record<string, string>>({
   transformador: '',
@@ -530,6 +543,37 @@ const analysisEnsaiosForm = ref<Record<string, string>>({
   furanos: '',
   laboratorio: '',
 })
+const analysisOltcForm = ref<Record<string, string>>({
+  transformador: '',
+  dataColeta: '',
+  noSerieComutador: '',
+  statusOltc: '',
+  modelo: '',
+  fabricante: '',
+  filtro: '',
+  anoFabricacao: '',
+  rdLimite: '',
+  teorAguaLimite: '',
+  laboratorio: '',
+})
+const analysisFisicoOltcForm = ref<Record<string, string>>({
+  transformador: '',
+  dataColeta: '',
+  noSerieComutador: '',
+  tempAmostra: '',
+  tempOleo: '',
+  teorAgua: '',
+  rd: '',
+  tif: '',
+  indNeutr: '',
+  cor: '',
+  densRel: '',
+  fPot25: '',
+  fPot90: '',
+  fPot100: '',
+  ensaioDbpc: '',
+  laboratorio: '',
+})
 const analysisCromFields: AnalysisFieldDef[] = [
   { key: 'transformador', label: 'Transformador', hint: '* Digite o serial do Transformador' },
   { key: 'dataColeta', label: 'Data Coleta', hint: '* Selecione a data da Coleta', type: 'date' },
@@ -582,6 +626,37 @@ const analysisEnsaiosFields: AnalysisFieldDef[] = [
   { key: 'gpFabrica', label: 'GP de Fábrica', hint: 'Máximo de 11 dígitos numéricos inteiros', type: 'number' },
   { key: 'gp', label: 'GP', hint: 'Máximo de 11 dígitos numéricos inteiros', type: 'number' },
   { key: 'furanos', label: 'Furanos', hint: 'Máximo de 11 dígitos numéricos inteiros. Ref. Equação de Chendong', type: 'number' },
+  { key: 'laboratorio', label: 'Laboratório', hint: 'Máximo de 45 dígitos' },
+]
+const analysisOltcFields: AnalysisFieldDef[] = [
+  { key: 'transformador', label: 'Transformador', hint: '* Digite o serial do Transformador' },
+  { key: 'dataColeta', label: 'Data Coleta', hint: '* Selecione a data da Coleta', type: 'date' },
+  { key: 'noSerieComutador', label: 'No. Série Comutador', hint: 'Máximo de 45 dígitos' },
+  { key: 'statusOltc', label: 'Status OLTC', hint: 'Máximo de 45 dígitos' },
+  { key: 'modelo', label: 'Modelo', hint: 'Máximo de 45 dígitos' },
+  { key: 'fabricante', label: 'Fabricante', hint: 'Máximo de 45 dígitos' },
+  { key: 'filtro', label: 'Filtro', hint: 'Máximo de 45 dígitos' },
+  { key: 'anoFabricacao', label: 'Ano de Fabricação', hint: 'Máximo de 4 dígitos', type: 'number' },
+  { key: 'rdLimite', label: 'RD (Mín. 40 kV)', hint: 'Mínimo de 1 e máximo de 11 dígitos', type: 'number' },
+  { key: 'teorAguaLimite', label: 'Teor de Água (Máx. 30 ppm)', hint: 'Mínimo de 1 e máximo de 11 dígitos', type: 'number' },
+  { key: 'laboratorio', label: 'Laboratório', hint: 'Máximo de 45 dígitos' },
+]
+const analysisFisicoOltcFields: AnalysisFieldDef[] = [
+  { key: 'transformador', label: 'Transformador', hint: '* Digite o serial do Transformador' },
+  { key: 'dataColeta', label: 'Data Coleta', hint: '* Selecione a data da Coleta', type: 'date' },
+  { key: 'noSerieComutador', label: 'No. Série Comutador', hint: 'Máximo de 45 dígitos' },
+  { key: 'tempAmostra', label: 'Temp. Amostra (°C)', hint: 'Máximo de 11 dígitos', type: 'number' },
+  { key: 'tempOleo', label: 'Temp. Óleo (°C)', hint: 'Máximo de 11 dígitos', type: 'number' },
+  { key: 'teorAgua', label: 'Teor de Água (ppm)', hint: '* Mínimo de 1 e máximo de 11 dígitos', type: 'number' },
+  { key: 'rd', label: 'RD (kV)', hint: '* Mínimo de 1 e máximo de 11 dígitos', type: 'number' },
+  { key: 'tif', label: 'TIF. (Dyn/cm)', hint: 'Mínimo de 1 e máximo de 11 dígitos', type: 'number' },
+  { key: 'indNeutr', label: 'Índ. Neutr. (mgKHO/g)', hint: '* Mínimo de 1 e máximo de 12 dígitos', type: 'number' },
+  { key: 'cor', label: 'COR', hint: 'Máximo de 11 dígitos', type: 'number' },
+  { key: 'densRel', label: 'Dens. Rel. 20/4 °C (g/mL)', hint: 'Máximo de 12 dígitos', type: 'number' },
+  { key: 'fPot25', label: 'F. Pot. 25ºC', hint: 'Máximo de 12 dígitos', type: 'number' },
+  { key: 'fPot90', label: 'F. Pot. 90ºC', hint: 'Máximo de 12 dígitos', type: 'number' },
+  { key: 'fPot100', label: 'F. Pot. 100ºC', hint: 'Máximo de 12 dígitos', type: 'number' },
+  { key: 'ensaioDbpc', label: 'Ensaio de DBPC', hint: 'Máximo de 11 dígitos', type: 'number' },
   { key: 'laboratorio', label: 'Laboratório', hint: 'Máximo de 45 dígitos' },
 ]
 const analysisTransformerOptions = computed(() => {
@@ -647,6 +722,8 @@ function openAnalysisModal() {
     cromatografia: false,
     fisicoquimico: false,
     ensaiosespeciais: false,
+    oltc: false,
+    fisicoquimicooltc: false,
   }
   analysisCromForm.value = {
     transformador: serial,
@@ -702,7 +779,38 @@ function openAnalysisModal() {
     furanos: '',
     laboratorio: '',
   }
-  analysisModalTab.value = 'cromatografia'
+  analysisOltcForm.value = {
+    transformador: serial,
+    dataColeta: '',
+    noSerieComutador: '',
+    statusOltc: '',
+    modelo: '',
+    fabricante: '',
+    filtro: '',
+    anoFabricacao: '',
+    rdLimite: '',
+    teorAguaLimite: '',
+    laboratorio: '',
+  }
+  analysisFisicoOltcForm.value = {
+    transformador: serial,
+    dataColeta: '',
+    noSerieComutador: '',
+    tempAmostra: '',
+    tempOleo: '',
+    teorAgua: '',
+    rd: '',
+    tif: '',
+    indNeutr: '',
+    cor: '',
+    densRel: '',
+    fPot25: '',
+    fPot90: '',
+    fPot100: '',
+    ensaioDbpc: '',
+    laboratorio: '',
+  }
+  analysisModalTab.value = analysisRecentTab.value === 'oltc' ? 'oltc' : 'cromatografia'
   analysisModalOpen.value = true
 }
 
@@ -746,6 +854,22 @@ watch(
   analysisEnsaiosForm,
   (form) => {
     if (hasAnalysisData(form)) analysisSendReport.value.ensaiosespeciais = true
+  },
+  { deep: true }
+)
+
+watch(
+  analysisOltcForm,
+  (form) => {
+    if (hasAnalysisData(form)) analysisSendReport.value.oltc = true
+  },
+  { deep: true }
+)
+
+watch(
+  analysisFisicoOltcForm,
+  (form) => {
+    if (hasAnalysisData(form)) analysisSendReport.value.fisicoquimicooltc = true
   },
   { deep: true }
 )
@@ -1069,7 +1193,9 @@ const coletasNewWrapRef = ref<HTMLElement | null>(null)
 const coletasExportWrapRef = ref<HTMLElement | null>(null)
 const coletasExportOptions = ['Próximas', 'Realizadas']
 const coletasExportSelected = ref<string[]>([])
-const coletasSearchDate = ref('')
+const coletasFilterQuarter = ref('')
+const coletasFilterMonth = ref('')
+const coletasFilterYear = ref('')
 const coletasModalOpen = ref(false)
 const coletasModalForm = ref({
   transformador: '',
@@ -1113,6 +1239,28 @@ const treatmentForm = ref({
   fator100: '',
   dbpc: '',
 })
+
+const coletasMonthOptions = [
+  { value: '01', label: 'Janeiro' },
+  { value: '02', label: 'Fevereiro' },
+  { value: '03', label: 'Março' },
+  { value: '04', label: 'Abril' },
+  { value: '05', label: 'Maio' },
+  { value: '06', label: 'Junho' },
+  { value: '07', label: 'Julho' },
+  { value: '08', label: 'Agosto' },
+  { value: '09', label: 'Setembro' },
+  { value: '10', label: 'Outubro' },
+  { value: '11', label: 'Novembro' },
+  { value: '12', label: 'Dezembro' },
+]
+
+const coletasQuarterOptions = [
+  { value: 'Q1', label: 'Q1 (Jan-Mar)' },
+  { value: 'Q2', label: 'Q2 (Abr-Jun)' },
+  { value: 'Q3', label: 'Q3 (Jul-Set)' },
+  { value: 'Q4', label: 'Q4 (Out-Dez)' },
+]
 
 function toggleEvalCard(card: '1' | '2' | '3' | '4' | '5' | '6') {
   evalCardOpen.value[card] = !evalCardOpen.value[card]
@@ -1986,12 +2134,50 @@ const coletasRows = computed(() => {
   }
 })
 
+function getBrDateMonthYear(value: string) {
+  const parts = String(value || '').split('/')
+  if (parts.length !== 3) return { month: '', year: '' }
+  const month = parts[1]?.padStart(2, '0') || ''
+  const year = parts[2] || ''
+  const monthNumber = Number(month)
+  const quarter =
+    monthNumber >= 1 && monthNumber <= 3
+      ? 'Q1'
+      : monthNumber >= 4 && monthNumber <= 6
+        ? 'Q2'
+        : monthNumber >= 7 && monthNumber <= 9
+          ? 'Q3'
+          : monthNumber >= 10 && monthNumber <= 12
+            ? 'Q4'
+            : ''
+  return { month, year, quarter }
+}
+
+const coletasYearOptions = computed(() => {
+  const allRows = [...coletasRows.value.proximas, ...coletasRows.value.realizadas]
+  const years = Array.from(
+    new Set(
+      allRows
+        .map((row) => getBrDateMonthYear(row.dataColeta).year)
+        .filter((year) => /^\d{4}$/.test(year))
+    )
+  )
+  return years.sort((a, b) => Number(b) - Number(a))
+})
+
 const coletasFilteredRows = computed(() => {
   const rows = coletasActiveTab.value === 'proximas' ? coletasRows.value.proximas : coletasRows.value.realizadas
-  const query = coletasSearchDate.value.trim()
-  if (!query) return rows
-  const formattedQuery = query.includes('-') ? query.split('-').reverse().join('/') : query
-  return rows.filter((row) => row.dataColeta === formattedQuery)
+  const selectedQuarter = coletasFilterQuarter.value
+  const selectedMonth = coletasFilterMonth.value
+  const selectedYear = coletasFilterYear.value
+  if (!selectedQuarter && !selectedMonth && !selectedYear) return rows
+  return rows.filter((row) => {
+    const { month, year, quarter } = getBrDateMonthYear(row.dataColeta)
+    if (selectedQuarter && quarter !== selectedQuarter) return false
+    if (selectedMonth && month !== selectedMonth) return false
+    if (selectedYear && year !== selectedYear) return false
+    return true
+  })
 })
 
 const treatmentColumns: TreatmentColumn[] = [
@@ -2894,8 +3080,9 @@ watch([activeTab, selectedId], async () => {
           <div class="risk-pies">
             <article v-for="(probability, index) in riskProbabilities" :key="`risk-${index}`" class="risk-pie-card">
               <h5>Nível-{{ index + 1 }}</h5>
-              <div class="risk-pie" :style="{ '--pct': `${probability}%` }"></div>
-              <b>{{ probability.toFixed(2) }} %</b>
+              <div class="risk-pie" :style="{ '--pct': `${probability}%` }">
+                <span class="risk-pie-center">{{ probability.toFixed(2) }}%</span>
+              </div>
             </article>
           </div>
 
@@ -3178,13 +3365,26 @@ watch([activeTab, selectedId], async () => {
         <article class="history-block-card">
           <div class="history-line-head coletas-line-head-two">
             <div class="history-analyses-controls history-analyses-controls-left coletas-controls-left">
-              <label class="history-analysis-search">
-                <input
-                  v-model="coletasSearchDate"
-                  type="date"
-                  aria-label="Filtrar coletas por data"
-                />
-              </label>
+              <div class="coletas-period-filter" role="group" aria-label="Filtrar coletas por mês e ano">
+                <select v-model="coletasFilterQuarter" aria-label="Filtrar coletas por quarter">
+                  <option value="">Quarter</option>
+                  <option v-for="quarter in coletasQuarterOptions" :key="`coletas-quarter-${quarter.value}`" :value="quarter.value">
+                    {{ quarter.label }}
+                  </option>
+                </select>
+                <select v-model="coletasFilterMonth" aria-label="Filtrar coletas por mês">
+                  <option value="">Mês</option>
+                  <option v-for="month in coletasMonthOptions" :key="`coletas-month-${month.value}`" :value="month.value">
+                    {{ month.label }}
+                  </option>
+                </select>
+                <select v-model="coletasFilterYear" aria-label="Filtrar coletas por ano">
+                  <option value="">Ano</option>
+                  <option v-for="year in coletasYearOptions" :key="`coletas-year-${year}`" :value="year">
+                    {{ year }}
+                  </option>
+                </select>
+              </div>
               <div class="history-tabs-inline history-tabs-main">
                 <button
                   type="button"
@@ -3427,22 +3627,6 @@ watch([activeTab, selectedId], async () => {
                 </div>
               </div>
             </div>
-            <div class="history-analyses-actions">
-              <div ref="treatmentNewWrapRef" class="history-actions-wrap">
-                <button type="button" class="history-action-btn" @click="toggleTreatmentNewMenu">
-                  <span class="history-action-icon" aria-hidden="true">＋</span>
-                  Novo
-                </button>
-                <div v-if="treatmentNewMenuOpen" class="history-actions-menu">
-                  <button type="button" @click="openTreatmentCreateModal">Novo Tratamento</button>
-                  <button type="button">Importar Tratamentos</button>
-                </div>
-              </div>
-              <button type="button" class="history-action-btn" @click="downloadTreatmentExports">
-                <span class="history-action-icon" aria-hidden="true">⭳</span>
-                Exportar
-              </button>
-            </div>
           </div>
 
           <div class="mini-table-wrap history-analyses-table-wrap">
@@ -3477,6 +3661,20 @@ watch([activeTab, selectedId], async () => {
               </tbody>
             </table>
           </div>
+        </article>
+      </section>
+
+      <section v-else-if="activeTab === 'Duval'" class="panel table-panel">
+        <article class="tile tile-wide">
+          <h4>Duval</h4>
+          <p>Módulo em preparação para próxima entrega.</p>
+        </article>
+      </section>
+
+      <section v-else-if="activeTab === 'TR Óleo'" class="panel table-panel">
+        <article class="tile tile-wide">
+          <h4>TR Óleo</h4>
+          <p>Módulo em preparação para próxima entrega.</p>
         </article>
       </section>
 
@@ -3609,30 +3807,50 @@ watch([activeTab, selectedId], async () => {
         <div class="modal-card analysis-modal-card" @click.stop>
           <h4>Nova Análise</h4>
           <div class="analysis-modal-tabs">
-            <button
-              type="button"
-              class="analysis-modal-tab-btn"
-              :class="{ active: analysisModalTab === 'cromatografia' }"
-              @click="analysisModalTab = 'cromatografia'"
-            >
-              Cromatografia
-            </button>
-            <button
-              type="button"
-              class="analysis-modal-tab-btn"
-              :class="{ active: analysisModalTab === 'fisicoquimico' }"
-              @click="analysisModalTab = 'fisicoquimico'"
-            >
-              Fisio Quimico
-            </button>
-            <button
-              type="button"
-              class="analysis-modal-tab-btn"
-              :class="{ active: analysisModalTab === 'ensaiosespeciais' }"
-              @click="analysisModalTab = 'ensaiosespeciais'"
-            >
-              Ensaios Especiais
-            </button>
+            <template v-if="analysisRecentTab === 'oltc'">
+              <button
+                type="button"
+                class="analysis-modal-tab-btn"
+                :class="{ active: analysisModalTab === 'oltc' }"
+                @click="analysisModalTab = 'oltc'"
+              >
+                OLTC
+              </button>
+              <button
+                type="button"
+                class="analysis-modal-tab-btn"
+                :class="{ active: analysisModalTab === 'fisicoquimicooltc' }"
+                @click="analysisModalTab = 'fisicoquimicooltc'"
+              >
+                Físico Químico OLTC
+              </button>
+            </template>
+            <template v-else>
+              <button
+                type="button"
+                class="analysis-modal-tab-btn"
+                :class="{ active: analysisModalTab === 'cromatografia' }"
+                @click="analysisModalTab = 'cromatografia'"
+              >
+                Cromatografia
+              </button>
+              <button
+                type="button"
+                class="analysis-modal-tab-btn"
+                :class="{ active: analysisModalTab === 'fisicoquimico' }"
+                @click="analysisModalTab = 'fisicoquimico'"
+              >
+                Fisio Quimico
+              </button>
+              <button
+                type="button"
+                class="analysis-modal-tab-btn"
+                :class="{ active: analysisModalTab === 'ensaiosespeciais' }"
+                @click="analysisModalTab = 'ensaiosespeciais'"
+              >
+                Ensaios Especiais
+              </button>
+            </template>
           </div>
 
           <div v-if="analysisModalTab === 'cromatografia'">
@@ -3707,7 +3925,7 @@ watch([activeTab, selectedId], async () => {
             </div>
           </div>
 
-          <div v-else>
+          <div v-else-if="analysisModalTab === 'ensaiosespeciais'">
             <p class="analysis-form-title">ENTRADA DE ENSAIO ESPECIAL -TR-OLEO</p>
             <div class="history-switch-wrap history-switch-wrap-top">
               <label class="history-switch">
@@ -3736,6 +3954,78 @@ watch([activeTab, selectedId], async () => {
                 <input
                   v-else-if="field.key !== 'transformador'"
                   v-model="analysisEnsaiosForm[field.key]"
+                  :type="field.type || 'text'"
+                />
+                <small v-if="field.hint">{{ field.hint }}</small>
+              </label>
+            </div>
+          </div>
+
+          <div v-else-if="analysisModalTab === 'oltc'">
+            <p class="analysis-form-title">ENTRADA DE OLTC -TR-OLEO</p>
+            <div class="history-switch-wrap history-switch-wrap-top">
+              <label class="history-switch">
+                <input v-model="analysisSendReport.oltc" type="checkbox" />
+                <span class="history-switch-track">
+                  <i class="history-switch-thumb"></i>
+                </span>
+                <b>Enviar Relatorio</b>
+              </label>
+            </div>
+            <div class="analysis-form-grid">
+              <label v-for="field in analysisOltcFields" :key="`oltc-${field.key}`">
+                <span>{{ field.label }}</span>
+                <input
+                  v-if="field.key === 'transformador'"
+                  v-model="analysisOltcForm[field.key]"
+                  type="text"
+                  list="analysis-transformers-list"
+                />
+                <template v-if="field.type === 'select'">
+                  <select v-model="analysisOltcForm[field.key]">
+                    <option value="">Selecione</option>
+                    <option v-for="option in field.options || []" :key="option" :value="option">{{ option }}</option>
+                  </select>
+                </template>
+                <input
+                  v-else-if="field.key !== 'transformador'"
+                  v-model="analysisOltcForm[field.key]"
+                  :type="field.type || 'text'"
+                />
+                <small v-if="field.hint">{{ field.hint }}</small>
+              </label>
+            </div>
+          </div>
+
+          <div v-else>
+            <p class="analysis-form-title">ENTRADA DE FÍSICO QUÍMICO OLTC -TR-OLEO</p>
+            <div class="history-switch-wrap history-switch-wrap-top">
+              <label class="history-switch">
+                <input v-model="analysisSendReport.fisicoquimicooltc" type="checkbox" />
+                <span class="history-switch-track">
+                  <i class="history-switch-thumb"></i>
+                </span>
+                <b>Enviar Relatorio</b>
+              </label>
+            </div>
+            <div class="analysis-form-grid">
+              <label v-for="field in analysisFisicoOltcFields" :key="`fis-oltc-${field.key}`">
+                <span>{{ field.label }}</span>
+                <input
+                  v-if="field.key === 'transformador'"
+                  v-model="analysisFisicoOltcForm[field.key]"
+                  type="text"
+                  list="analysis-transformers-list"
+                />
+                <template v-if="field.type === 'select'">
+                  <select v-model="analysisFisicoOltcForm[field.key]">
+                    <option value="">Selecione</option>
+                    <option v-for="option in field.options || []" :key="option" :value="option">{{ option }}</option>
+                  </select>
+                </template>
+                <input
+                  v-else-if="field.key !== 'transformador'"
+                  v-model="analysisFisicoOltcForm[field.key]"
                   :type="field.type || 'text'"
                 />
                 <small v-if="field.hint">{{ field.hint }}</small>
@@ -4598,8 +4888,8 @@ watch([activeTab, selectedId], async () => {
 
 .risk-pie{
   --pct: 0%;
-  width: 72px;
-  height: 72px;
+  width: 88px;
+  height: 88px;
   margin: 6px auto 8px;
   border-radius: 999px;
   background: conic-gradient(#1e4e8b var(--pct), rgba(148, 163, 184, 0.25) 0);
@@ -4609,9 +4899,21 @@ watch([activeTab, selectedId], async () => {
 .risk-pie::after{
   content: '';
   position: absolute;
-  inset: 12px;
+  inset: 14px;
   border-radius: 999px;
   background: #fff;
+  z-index: 1;
+}
+
+.risk-pie-center{
+  position: absolute;
+  inset: 0;
+  display: grid;
+  place-items: center;
+  z-index: 2;
+  font-size: 12px;
+  font-weight: 700;
+  color: #123a6d;
 }
 
 .risk-bars-grid{
@@ -5402,6 +5704,29 @@ watch([activeTab, selectedId], async () => {
 }
 
 .history-analysis-search input:focus{
+  outline: none;
+  border-color: #1e4e8b;
+  box-shadow: 0 0 0 3px rgba(30, 78, 139, 0.14);
+}
+
+.coletas-period-filter{
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  flex-wrap: wrap;
+}
+
+.coletas-period-filter select{
+  height: 34px;
+  border-radius: 10px;
+  border: 1px solid rgba(15, 23, 42, 0.14);
+  padding: 0 10px;
+  font-size: 12px;
+  background: #fff;
+  color: #0f172a;
+}
+
+.coletas-period-filter select:focus{
   outline: none;
   border-color: #1e4e8b;
   box-shadow: 0 0 0 3px rgba(30, 78, 139, 0.14);

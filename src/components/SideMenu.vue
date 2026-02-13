@@ -57,6 +57,11 @@ function goToTratamentoOleoView() {
   open.value = false
 }
 
+function goToColetasView() {
+  router.push({ name: 'coletas-view' })
+  open.value = false
+}
+
 function updateBodyLock(isOpen: boolean) {
   if (typeof window === 'undefined') return
   if (window.innerWidth > 900) return
@@ -135,6 +140,12 @@ onBeforeUnmount(() => {
               <path d="M12 2.5c2.7 3.1 6.5 7.8 6.5 11.1a6.5 6.5 0 1 1-13 0C5.5 10.3 9.3 5.6 12 2.5zm0 4.7c-1.8 2.3-4 5.4-4 6.9a4 4 0 0 0 8 0c0-1.5-2.2-4.6-4-6.9z"></path>
             </svg>
             Tratamento Óleo
+          </button>
+          <button class="submenu-item" type="button" @click.stop="goToColetasView">
+            <svg class="submenu-icon" viewBox="0 0 24 24" aria-hidden="true">
+              <path d="M7 2v2H5a2 2 0 0 0-2 2v2h18V6a2 2 0 0 0-2-2h-2V2h-2v2H9V2H7zm14 8H3v10a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2V10zm-9 3h5v2h-5v-2zm-6 0h4v2H6v-2z"></path>
+            </svg>
+            Coletas
           </button>
         </div>
       </button>

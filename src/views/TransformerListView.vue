@@ -312,7 +312,7 @@ const transformers = computed<TableTransformer[]>(() => {
     if (!item.id) return
     if (!byId.has(item.id)) byId.set(item.id, item)
   })
-  return Array.from(byId.values())
+  return Array.from(byId.values()).map((item) => ({ ...item, ...(transformerEdits.value[item.id] || {}) }))
 })
 
 const searchQuery = ref('')
@@ -338,8 +338,21 @@ const orderedTransformers = computed(() => {
 })
 
 const page = ref(1)
-const pageSize = 20
-const visibleTransformers = computed(() => orderedTransformers.value.slice(0, page.value * pageSize))
+const rowsPerPage = ref(10)
+const rowsPerPageOptions = [10, 20, 30, 50]
+const totalPages = computed(() => Math.max(1, Math.ceil(orderedTransformers.value.length / rowsPerPage.value)))
+const visibleTransformers = computed(() => {
+  const start = (page.value - 1) * rowsPerPage.value
+  const end = start + rowsPerPage.value
+  return orderedTransformers.value.slice(start, end)
+})
+const pageRangeLabel = computed(() => {
+  const total = orderedTransformers.value.length
+  if (!total) return '0 de 0'
+  const start = (page.value - 1) * rowsPerPage.value + 1
+  const end = Math.min(page.value * rowsPerPage.value, total)
+  return `${start}-${end} de ${total}`
+})
 
 const openActionId = ref<string | null>(null)
 const exportMenuOpen = ref(false)
@@ -348,6 +361,21 @@ const columnsMenuOpen = ref(false)
 const columnsWrapRef = ref<HTMLElement | null>(null)
 const newMenuOpen = ref(false)
 const newWrapRef = ref<HTMLElement | null>(null)
+const transformerEdits = ref<Record<string, Partial<TableTransformer>>>({})
+const editModalOpen = ref(false)
+const editForm = ref({
+  id: '',
+  serial: '',
+  tag: '',
+  substation: '',
+  unit: '',
+  power: '',
+  voltage: '',
+  manufacturer: '',
+  year: '',
+  latitude: '',
+  longitude: '',
+})
 
 type ColumnConfig = {
   id: string
@@ -402,9 +430,9 @@ function locateOnMap(transformer: TableTransformer) {
   router.push({ name: 'dashboard', query: { transformer: transformer.id } })
 }
 
-function openReport(transformer: TableTransformer) {
+function openReportSection(transformer: TableTransformer, section: string) {
   openActionId.value = null
-  router.push({ name: 'transformer-report', params: { id: transformer.id } })
+  router.push({ name: 'transformer-report', params: { id: transformer.id }, query: { section } })
 }
 
 function closeActions() {
@@ -414,8 +442,12 @@ function closeActions() {
   newMenuOpen.value = false
 }
 
-function loadMore() {
-  page.value += 1
+function goToPreviousPage() {
+  page.value = Math.max(1, page.value - 1)
+}
+
+function goToNextPage() {
+  page.value = Math.min(totalPages.value, page.value + 1)
 }
 
 function toggleExportMenu() {
@@ -440,6 +472,48 @@ function toggleColumn(id: string) {
 
 function openLocation(transformer: TableTransformer) {
   router.push({ name: 'dashboard', query: { transformer: transformer.id } })
+}
+
+function openEditModal(transformer: TableTransformer) {
+  openActionId.value = null
+  editForm.value = {
+    id: transformer.id,
+    serial: transformer.serial || '',
+    tag: transformer.tag || '',
+    substation: transformer.substation || '',
+    unit: transformer.unit || '',
+    power: transformer.power || '',
+    voltage: transformer.voltage || '',
+    manufacturer: transformer.manufacturer || '',
+    year: transformer.year || '',
+    latitude: transformer.latitude || '',
+    longitude: transformer.longitude || '',
+  }
+  editModalOpen.value = true
+}
+
+function closeEditModal() {
+  editModalOpen.value = false
+}
+
+function saveEditModal() {
+  if (!editForm.value.id) return
+  transformerEdits.value = {
+    ...transformerEdits.value,
+    [editForm.value.id]: {
+      serial: editForm.value.serial || '-',
+      tag: editForm.value.tag || '-',
+      substation: editForm.value.substation || '-',
+      unit: editForm.value.unit || '-',
+      power: editForm.value.power || '-',
+      voltage: editForm.value.voltage || '-',
+      manufacturer: editForm.value.manufacturer || '-',
+      year: editForm.value.year || '-',
+      latitude: editForm.value.latitude || '-',
+      longitude: editForm.value.longitude || '-',
+    },
+  }
+  editModalOpen.value = false
 }
 
 function handleDocumentClick(event: MouseEvent) {
@@ -473,6 +547,10 @@ onBeforeUnmount(() => {
 })
 
 watch(searchQuery, () => {
+  page.value = 1
+})
+
+watch(rowsPerPage, () => {
   page.value = 1
 })
 </script>
@@ -640,19 +718,23 @@ watch(searchQuery, () => {
                   <div class="actions-cell text-center">
                     <button class="action-trigger" type="button" @click.stop="toggleActions(item.id)">⋯</button>
                     <div v-if="openActionId === item.id" class="action-menu">
-                      <button type="button" class="action-item action-report" @click="openReport(item)">
+                      <button type="button" class="action-item action-report" @click="openReportSection(item, 'Avaliação Completa')">
                         <span class="action-icon" aria-hidden="true">📄</span>
-                        Relatórios
+                        Avaliação Completa
                       </button>
-                      <button type="button" class="action-item action-analyze">
+                      <button type="button" class="action-item action-analyze" @click="openReportSection(item, 'Histórico de Análises')">
                         <span class="action-icon" aria-hidden="true">🔍</span>
-                        Analisar
+                        Análises
                       </button>
-                      <button type="button" class="action-item action-collect">
+                      <button type="button" class="action-item action-collect" @click="openReportSection(item, 'Coletas')">
                         <span class="action-icon" aria-hidden="true">📅</span>
-                        Próximas Coletas
+                        Coletas
                       </button>
-                      <button type="button" class="action-item action-edit">
+                      <button type="button" class="action-item action-treatment" @click="openReportSection(item, 'Tratamento de Óleo')">
+                        <span class="action-icon" aria-hidden="true">🛢</span>
+                        Tratamento
+                      </button>
+                      <button type="button" class="action-item action-edit" @click="openEditModal(item)">
                         <span class="action-icon" aria-hidden="true">✎</span>
                         Editar
                       </button>
@@ -669,8 +751,23 @@ watch(searchQuery, () => {
         </table>
       </div>
 
-      <div v-if="visibleTransformers.length < orderedTransformers.length" class="load-more">
-        <button type="button" class="ghost-btn" @click="loadMore">Carregar mais</button>
+      <div class="table-pagination">
+        <label class="rows-per-page">
+          <span>Itens por página</span>
+          <select v-model.number="rowsPerPage">
+            <option v-for="size in rowsPerPageOptions" :key="`rows-${size}`" :value="size">
+              {{ size }}
+            </option>
+          </select>
+        </label>
+        <span class="page-range">{{ pageRangeLabel }}</span>
+        <button type="button" class="page-btn" :disabled="page <= 1" @click="goToPreviousPage">
+          Anterior
+        </button>
+        <span class="page-current">Página {{ page }} de {{ totalPages }}</span>
+        <button type="button" class="page-btn" :disabled="page >= totalPages" @click="goToNextPage">
+          Próxima
+        </button>
       </div>
     </section>
 
@@ -699,10 +796,62 @@ watch(searchQuery, () => {
         </div>
         <div class="card-actions">
           <button type="button" @click="locateOnMap(item)">Localizar no mapa</button>
-          <button type="button" class="ghost" @click="openReport(item)">Abrir relatório</button>
+          <button type="button" class="ghost" @click="openReportSection(item, 'Avaliação Completa')">Abrir relatório</button>
         </div>
       </article>
     </section>
+
+    <div v-if="editModalOpen" class="modal-overlay" @click="closeEditModal">
+      <div class="modal-card" @click.stop>
+        <h4>Editar Transformador</h4>
+        <div class="modal-grid">
+          <label>
+            <span>Serial</span>
+            <input v-model="editForm.serial" type="text" />
+          </label>
+          <label>
+            <span>TAG</span>
+            <input v-model="editForm.tag" type="text" />
+          </label>
+          <label class="full">
+            <span>Subestação</span>
+            <input v-model="editForm.substation" type="text" />
+          </label>
+          <label>
+            <span>Unidade</span>
+            <input v-model="editForm.unit" type="text" />
+          </label>
+          <label>
+            <span>Potência</span>
+            <input v-model="editForm.power" type="text" />
+          </label>
+          <label>
+            <span>Tensão</span>
+            <input v-model="editForm.voltage" type="text" />
+          </label>
+          <label>
+            <span>Fabricante</span>
+            <input v-model="editForm.manufacturer" type="text" />
+          </label>
+          <label>
+            <span>Ano</span>
+            <input v-model="editForm.year" type="text" />
+          </label>
+          <label>
+            <span>Latitude</span>
+            <input v-model="editForm.latitude" type="text" />
+          </label>
+          <label>
+            <span>Longitude</span>
+            <input v-model="editForm.longitude" type="text" />
+          </label>
+        </div>
+        <div class="modal-actions">
+          <button type="button" class="modal-btn secondary" @click="closeEditModal">Cancelar</button>
+          <button type="button" class="modal-btn primary" @click="saveEditModal">Salvar</button>
+        </div>
+      </div>
+    </div>
   </div>
 </template>
 
@@ -876,8 +1025,8 @@ watch(searchQuery, () => {
 }
 
 .table-scroll{
-  overflow: auto;
-  max-height: 70vh;
+  overflow-x: auto;
+  overflow-y: visible;
 }
 
 .transformer-table{
@@ -954,77 +1103,81 @@ watch(searchQuery, () => {
 }
 
 .level-very-low{
-  background: rgba(16, 185, 129, 0.18);
-  color: #047857;
+  background: #22c55e;
+  color: #ffffff;
 }
 
 .level-low{
-  background: rgba(132, 204, 22, 0.2);
-  color: #3f6212;
+  background: #84cc16;
+  color: #365314;
 }
 
 .level-medium{
-  background: rgba(250, 204, 21, 0.24);
-  color: #92400e;
+  background: #eab308;
+  color: #78350f;
 }
 
 .level-high{
-  background: rgba(251, 146, 60, 0.25);
-  color: #9a3412;
+  background: #f97316;
+  color: #ffffff;
 }
 
 .level-critical{
-  background: rgba(239, 68, 68, 0.25);
-  color: #991b1b;
+  background: #ef4444;
+  color: #ffffff;
 }
 
 .tone-normal{
-  background: rgba(30, 78, 139, 0.06);
-  color: #1e4e8b;
+  background: rgba(34, 197, 94, 0.12);
+  color: #166534;
 }
 
 .status-pill.tone-normal{
-  background: rgba(22, 163, 74, 0.2);
-  color: #16a34a;
+  background: #22c55e;
+  color: #ffffff;
 }
 
 .tone-warning{
-  background: rgba(245, 159, 0, 0.08);
-  color: #b45309;
+  background: rgba(234, 179, 8, 0.16);
+  color: #854d0e;
 }
 
 .tone-danger{
-  background: rgba(220, 38, 38, 0.08);
-  color: #b91c1c;
+  background: rgba(239, 68, 68, 0.12);
+  color: #991b1b;
 }
 
 .tone-neutral{
   background: rgba(148, 163, 184, 0.18);
-  color: rgba(15, 23, 42, 0.55);
+  color: #475569;
 }
 
 .status-pill.tone-warning{
-  background: rgba(245, 159, 0, 0.2);
-  color: #b45309;
+  background: #eab308;
+  color: #422006;
 }
 
 .status-pill.tone-danger{
-  background: rgba(220, 38, 38, 0.2);
-  color: #b91c1c;
+  background: #ef4444;
+  color: #ffffff;
 }
 
 .status-pill.tone-neutral{
-  background: rgba(148, 163, 184, 0.24);
-  color: rgba(15, 23, 42, 0.55);
+  background: #94a3b8;
+  color: #0f172a;
 }
 
+.transformer-table tr.tone-normal td:first-child,
 .transformer-table tr.tone-warning td:first-child,
-.transformer-table tr.tone-danger td:first-child{
+.transformer-table tr.tone-danger td:first-child,
+.transformer-table tr.tone-neutral td:first-child{
   position: relative;
 }
 
+.transformer-table tr.tone-normal td:first-child::before,
 .transformer-table tr.tone-warning td:first-child::before,
-.transformer-table tr.tone-danger td:first-child::before{
+.transformer-table tr.tone-danger td:first-child::before,
+.transformer-table tr.tone-neutral td:first-child::before{
   content: '';
   position: absolute;
   left: 0;
@@ -1034,8 +1187,10 @@ watch(searchQuery, () => {
   border-radius: 999px;
 }
 
+.transformer-table tr.tone-normal td:first-child::before{ background: #22c55e; }
 .transformer-table tr.tone-warning td:first-child::before{ background: #f59f00; }
 .transformer-table tr.tone-danger td:first-child::before{ background: #dc2626; }
+.transformer-table tr.tone-neutral td:first-child::before{ background: #94a3b8; }
 
 .actions-cell{
   position: relative;
@@ -1097,12 +1252,154 @@ watch(searchQuery, () => {
   color: rgba(15, 23, 42, 0.8);
 }
 
-.load-more{
-  padding: 12px 6px 6px;
+.action-analyze{
+  color: #1d4ed8;
+}
+
+.action-collect{
+  color: #0f766e;
+}
+
+.action-treatment{
+  color: #b45309;
+}
+
+.table-pagination{
+  margin-top: 12px;
+  padding: 8px 6px 6px;
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 10px;
+  flex-wrap: wrap;
+}
+
+.rows-per-page{
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.rows-per-page span{
+  font-size: 11px;
+  font-weight: 600;
+  color: rgba(15, 23, 42, 0.72);
+}
+
+.rows-per-page select{
+  height: 30px;
+  border-radius: 8px;
+  border: 1px solid rgba(15, 23, 42, 0.14);
+  background: #fff;
+  color: rgba(15, 23, 42, 0.8);
+  font-size: 12px;
+  padding: 0 8px;
+}
+
+.page-range,
+.page-current{
+  font-size: 12px;
+  color: rgba(15, 23, 42, 0.75);
+}
+
+.page-btn{
+  height: 30px;
+  border-radius: 8px;
+  border: 1px solid rgba(15, 23, 42, 0.12);
+  background: rgba(255, 255, 255, 0.9);
+  color: rgba(15, 23, 42, 0.82);
+  font-size: 12px;
+  font-weight: 600;
+  padding: 0 10px;
+  cursor: pointer;
+}
+
+.page-btn:disabled{
+  opacity: 0.5;
+  cursor: not-allowed;
 }
 
 .mobile-cards{
   display: none;
+}
+
+.modal-overlay{
+  position: fixed;
+  inset: 0;
+  background: rgba(15, 23, 42, 0.52);
+  z-index: 80;
+  display: grid;
+  place-items: center;
+  padding: 20px;
+}
+
+.modal-card{
+  width: min(760px, 100%);
+  border-radius: 16px;
+  border: 1px solid rgba(15, 23, 42, 0.12);
+  background: #fff;
+  box-shadow: 0 24px 50px rgba(15, 23, 42, 0.2);
+  padding: 16px;
+}
+
+.modal-card h4{
+  margin: 0 0 12px;
+}
+
+.modal-grid{
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 10px;
+}
+
+.modal-grid label{
+  display: grid;
+  gap: 6px;
+}
+
+.modal-grid label span{
+  font-size: 12px;
+  color: rgba(15, 23, 42, 0.72);
+  font-weight: 600;
+}
+
+.modal-grid input{
+  height: 36px;
+  border-radius: 10px;
+  border: 1px solid rgba(15, 23, 42, 0.14);
+  padding: 0 10px;
+  font-size: 13px;
+}
+
+.modal-grid .full{
+  grid-column: 1 / -1;
+}
+
+.modal-actions{
+  margin-top: 14px;
+  display: inline-flex;
+  gap: 8px;
+}
+
+.modal-btn{
+  height: 34px;
+  border-radius: 999px;
+  border: 1px solid transparent;
+  padding: 0 14px;
+  font-size: 12px;
+  font-weight: 700;
+  cursor: pointer;
+}
+
+.modal-btn.secondary{
+  background: rgba(15, 23, 42, 0.06);
+  color: rgba(15, 23, 42, 0.8);
+  border-color: rgba(15, 23, 42, 0.12);
+}
+
+.modal-btn.primary{
+  background: #1e4e8b;
+  color: #fff;
 }
 
 @media (max-width: 900px){
@@ -1115,6 +1412,12 @@ watch(searchQuery, () => {
   .mobile-cards{
     display: grid;
     gap: 14px;
+  }
+  .modal-grid{
+    grid-template-columns: 1fr;
+  }
+  .modal-grid .full{
+    grid-column: auto;
   }
   .card{
     border-radius: 16px;
