@@ -486,5 +486,16 @@ onBeforeUnmount(() => {
     padding: 8px 12px;
     height: 38px;
   }
+  .item-with-submenu{
+    height: auto;
+    min-height: 38px;
+    overflow: visible;
+    text-align: left;
+    align-items: stretch;
+  }
+  .item-with-submenu.open{
+    position: relative;
+    z-index: 1;
+  }
 }
 </style>
