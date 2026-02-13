@@ -420,6 +420,39 @@ watch(
 const selectedTransformer = computed(
   () => transformerOptions.value.find((item) => item.id === selectedId.value) || null
 )
+const reportViewerModalOpen = ref(false)
+
+function buildReportViewerSrc(showWatermark: boolean) {
+  if (!selectedTransformer.value) return ''
+  const params = new URLSearchParams()
+  params.set('trafoId', selectedTransformer.value.id)
+  const lat = Number(String(selectedTransformer.value.latitude || '').replace(',', '.'))
+  const lng = Number(String(selectedTransformer.value.longitude || '').replace(',', '.'))
+  if (Number.isFinite(lat) && Number.isFinite(lng)) {
+    params.set('lat', String(lat))
+    params.set('lng', String(lng))
+  }
+  params.set('munCode', '3106200')
+  params.set('embed', '1')
+  params.set('watermark', showWatermark ? '1' : '0')
+  return `${import.meta.env.BASE_URL}viewer-3d?${params.toString()}`
+}
+
+const reportViewerCardSrc = computed(() => buildReportViewerSrc(false))
+const reportViewerModalSrc = computed(() => buildReportViewerSrc(true))
+
+const reportViewerSrc = computed(() => {
+  return reportViewerModalOpen.value ? reportViewerModalSrc.value : reportViewerCardSrc.value
+})
+
+function openReportViewerModal() {
+  if (!reportViewerSrc.value) return
+  reportViewerModalOpen.value = true
+}
+
+function closeReportViewerModal() {
+  reportViewerModalOpen.value = false
+}
 
 const specialistEdits = ref<Record<string, SpecialistOverride>>({})
 const specialistModalOpen = ref(false)
@@ -1059,6 +1092,14 @@ const manualTreatmentRows = ref<TreatmentRow[]>([])
 const treatmentLimitsOpen = ref(false)
 const historyConditionsOpen = ref(true)
 const historyAnalysesOpen = ref(true)
+const evalCardOpen = ref<Record<'1' | '2' | '3' | '4' | '5' | '6', boolean>>({
+  '1': true,
+  '2': true,
+  '3': true,
+  '4': true,
+  '5': true,
+  '6': true,
+})
 const treatmentForm = ref({
   statusTratamento: 'Concluído',
   dataColeta: '',
@@ -1072,6 +1113,10 @@ const treatmentForm = ref({
   fator100: '',
   dbpc: '',
 })
+
+function toggleEvalCard(card: '1' | '2' | '3' | '4' | '5' | '6') {
+  evalCardOpen.value[card] = !evalCardOpen.value[card]
+}
 
 const analysisColumns: AnalysisColumn[] = [
   { id: 'tipo', label: 'Tipo', group: 'Geral', defaultVisible: true },
@@ -2303,21 +2348,41 @@ watch([activeTab, selectedId], async () => {
       </div>
 
       <div v-if="selectedTransformer && !isGlobalScopeView" class="summary-grid">
-        <article class="summary-card">
-          <h3>{{ selectedTransformer.id }}</h3>
-          <p>{{ selectedTransformer.substation }} • {{ selectedTransformer.reference }}</p>
-          <div class="pill-row">
-            <span class="pill" :class="statusClass(selectedTransformer.status)">
-              Status TR-Óleo: {{ selectedTransformer.status }}
-            </span>
-            <span class="pill" :class="statusClass(selectedTransformer.statusAnalyst)">
-              Status Analista: {{ selectedTransformer.statusAnalyst }}
-            </span>
+        <article class="summary-card summary-viewer-card">
+          <div class="summary-media-container">
+            <button
+              type="button"
+              class="summary-viewer-expand"
+              aria-label="Expandir visualização do transformador"
+              @click="openReportViewerModal"
+            >
+              ⛶
+            </button>
+            <iframe
+              v-if="reportViewerCardSrc"
+              class="summary-viewer-frame"
+              :src="reportViewerCardSrc"
+              title="Visualização do transformador"
+              loading="lazy"
+              scrolling="no"
+            ></iframe>
+            <div v-else class="summary-viewer-fallback">Visualização indisponível para este transformador.</div>
           </div>
         </article>
-
         <article class="summary-card">
-          <h4>Dados principais</h4>
+          <div class="summary-title-row">
+            <h3>{{ selectedTransformer.id }}</h3>
+            <div class="pill-row">
+              <span class="pill" :class="statusClass(selectedTransformer.status)">
+                Status TR-Óleo: {{ selectedTransformer.status }}
+              </span>
+              <span class="pill" :class="statusClass(selectedTransformer.statusAnalyst)">
+                Status Analista: {{ selectedTransformer.statusAnalyst }}
+              </span>
+            </div>
+          </div>
+          <p>{{ selectedTransformer.substation }} • {{ selectedTransformer.reference }}</p>
+          <h4 class="summary-main-data-title">Dados principais</h4>
           <div class="info-grid">
             <div><small>Serial</small><b>{{ selectedTransformer.serial }}</b></div>
             <div><small>TAG</small><b>{{ selectedTransformer.tag }}</b></div>
@@ -2617,8 +2682,15 @@ watch([activeTab, selectedId], async () => {
       </section>
 
       <section v-else-if="activeTab === 'Avaliação Completa'" class="panel panel-eval">
-        <article class="tile eval-card-1">
-          <h4>1 - Resultado das avaliações</h4>
+        <div class="eval-left-stack">
+        <article class="tile eval-card-1" :class="{ 'eval-collapsed': !evalCardOpen['1'] }">
+          <div class="eval-card-head">
+            <h4>1 - Resultado das avaliações</h4>
+            <button type="button" class="eval-collapse-btn" @click="toggleEvalCard('1')">
+              {{ evalCardOpen['1'] ? '−' : '+' }}
+            </button>
+          </div>
+          <template v-if="evalCardOpen['1']">
           <p><b>Avaliação do risco operacional do transformador:</b></p>
           <p>
             Transformador encontra-se com status de normal conforme avaliações realizadas nos históricos das variáveis
@@ -2646,17 +2718,24 @@ watch([activeTab, selectedId], async () => {
           <p>Pentágono 2: D2 - Descargas de alta energia.</p>
           <p><b>Tratamento do óleo isolante:</b></p>
           <p>Óleo isolante em condições normais, nenhuma atividade recomendada.</p>
+          </template>
         </article>
-        <article class="tile eval-card-2">
-          <div class="tile-head-actions">
+        <article class="tile eval-card-2" :class="{ 'eval-collapsed': !evalCardOpen['2'] }">
+          <div class="tile-head-actions eval-card-head-actions">
             <h4>2 - Avaliação do Especialista</h4>
-            <button type="button" class="edit-specialist-btn" @click="openSpecialistModal">
-              <svg class="edit-icon" viewBox="0 0 24 24" aria-hidden="true">
-                <path d="M3 17.25V21h3.75L17.8 9.94l-3.75-3.75L3 17.25zm2.92 2.33H5v-.92l8.06-8.06.92.92L5.92 19.58zM20.71 7.04a1.003 1.003 0 0 0 0-1.42l-2.34-2.34a1.003 1.003 0 0 0-1.42 0l-1.83 1.83 3.75 3.75 1.84-1.82z"/>
-              </svg>
-              Editar avaliação
-            </button>
+            <div class="eval-card-action-group">
+              <button type="button" class="edit-specialist-btn" @click="openSpecialistModal">
+                <svg class="edit-icon" viewBox="0 0 24 24" aria-hidden="true">
+                  <path d="M3 17.25V21h3.75L17.8 9.94l-3.75-3.75L3 17.25zm2.92 2.33H5v-.92l8.06-8.06.92.92L5.92 19.58zM20.71 7.04a1.003 1.003 0 0 0 0-1.42l-2.34-2.34a1.003 1.003 0 0 0-1.42 0l-1.83 1.83 3.75 3.75 1.84-1.82z"/>
+                </svg>
+                Editar avaliação
+              </button>
+              <button type="button" class="eval-collapse-btn" @click="toggleEvalCard('2')">
+                {{ evalCardOpen['2'] ? '−' : '+' }}
+              </button>
+            </div>
           </div>
+          <template v-if="evalCardOpen['2']">
           <p>
             <b>Status:</b>
             <span class="pill eval-status" :class="statusClass(specialistView.statusAnalyst)">
@@ -2668,9 +2747,17 @@ watch([activeTab, selectedId], async () => {
             <b>Modo de falha selecionado:</b>
             {{ specialistView.failureMode }}
           </p>
+          </template>
         </article>
-        <article class="tile eval-card-3">
-          <h4>3 - Última Coleta</h4>
+        </div>
+        <article class="tile eval-card-3" :class="{ 'eval-collapsed': !evalCardOpen['3'] }">
+          <div class="eval-card-head">
+            <h4>3 - Última Coleta</h4>
+            <button type="button" class="eval-collapse-btn" @click="toggleEvalCard('3')">
+              {{ evalCardOpen['3'] ? '−' : '+' }}
+            </button>
+          </div>
+          <template v-if="evalCardOpen['3']">
           <p><b>Guia IEEE Std C57.104™- 2008 para a Interpretação de gases dissolvidos no óleo isolante dos transformadores</b></p>
           <p>
             Foi desenvolvido um critério de quatro níveis para classificar os riscos aos transformadores, quando não há
@@ -2788,9 +2875,16 @@ watch([activeTab, selectedId], async () => {
             julgamento de engenharia e experiência com outros transformadores similares. O critério usa ambos,
             concentrações para gases separados e a concentração total de todos os gases combustíveis (TGC).
           </p>
+          </template>
         </article>
-        <article class="tile eval-card-4">
-          <h4>4 - Avaliação do risco operacional do transformador</h4>
+        <article class="tile eval-card-4" :class="{ 'eval-collapsed': !evalCardOpen['4'] }">
+          <div class="eval-card-head">
+            <h4>4 - Avaliação do risco operacional do transformador</h4>
+            <button type="button" class="eval-collapse-btn" @click="toggleEvalCard('4')">
+              {{ evalCardOpen['4'] ? '−' : '+' }}
+            </button>
+          </div>
+          <template v-if="evalCardOpen['4']">
           <p>
             As probabilidades calculadas representam as probabilidades de residência nos cinco níveis de estados
             operativos do transformador para no ano seguinte ao histórico.
@@ -2825,9 +2919,16 @@ watch([activeTab, selectedId], async () => {
               </div>
             </article>
           </div>
+          </template>
         </article>
-        <article class="tile eval-card-5">
-          <h4>5 - Métodos de identificação de falhas: Triângulos e Pentágonos de Duval.</h4>
+        <article class="tile eval-card-5" :class="{ 'eval-collapsed': !evalCardOpen['5'] }">
+          <div class="eval-card-head">
+            <h4>5 - Métodos de identificação de falhas: Triângulos e Pentágonos de Duval.</h4>
+            <button type="button" class="eval-collapse-btn" @click="toggleEvalCard('5')">
+              {{ evalCardOpen['5'] ? '−' : '+' }}
+            </button>
+          </div>
+          <template v-if="evalCardOpen['5']">
           <div class="duval-grid">
             <article class="duval-table-card">
               <table class="table compact mini-table">
@@ -2876,9 +2977,16 @@ watch([activeTab, selectedId], async () => {
               </table>
             </article>
           </div>
+          </template>
         </article>
-        <article class="tile eval-card-6">
-          <h4>6 - Tratamentos no óleo isolante</h4>
+        <article class="tile eval-card-6" :class="{ 'eval-collapsed': !evalCardOpen['6'] }">
+          <div class="eval-card-head">
+            <h4>6 - Tratamentos no óleo isolante</h4>
+            <button type="button" class="eval-collapse-btn" @click="toggleEvalCard('6')">
+              {{ evalCardOpen['6'] ? '−' : '+' }}
+            </button>
+          </div>
+          <template v-if="evalCardOpen['6']">
           <p>
             Devem ser realizados de acordo com os resultados dos ensaios físico-químicos do óleo isolante, observando
             os limites mínimos e máximos estabelecidos para cada variável de interesse, conforme orientações da norma
@@ -2924,6 +3032,7 @@ watch([activeTab, selectedId], async () => {
               <div><span>F. Pot. 100ºC</span><b>-</b></div>
             </div>
           </div>
+          </template>
         </article>
       </section>
 
@@ -3810,6 +3919,20 @@ watch([activeTab, selectedId], async () => {
           </div>
         </div>
       </div>
+
+      <div v-if="reportViewerModalOpen" class="report-viewer-overlay" @click.self="closeReportViewerModal">
+        <div class="report-viewer-frame">
+          <button type="button" class="report-viewer-close" @click="closeReportViewerModal">✕</button>
+          <iframe
+            v-if="reportViewerModalSrc"
+            class="report-viewer-iframe"
+            :src="reportViewerModalSrc"
+            title="Visualização ampliada do transformador"
+            scrolling="no"
+          ></iframe>
+          <div v-else class="summary-viewer-fallback">Visualização indisponível para este transformador.</div>
+        </div>
+      </div>
     </section>
   </div>
 </template>
@@ -3932,6 +4055,7 @@ watch([activeTab, selectedId], async () => {
   border-radius: 16px;
   padding: 14px;
   background: rgba(248, 250, 252, 0.9);
+  min-height: 340px;
 }
 
 .summary-card h3,
@@ -3939,10 +4063,125 @@ watch([activeTab, selectedId], async () => {
   margin: 0 0 6px;
 }
 
+.summary-title-row{
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  flex-wrap: wrap;
+}
+
 .summary-card p{
   margin: 0;
   color: rgba(15, 23, 42, 0.75);
   font-size: 13px;
+}
+
+.summary-main-data-title{
+  margin-top: 14px !important;
+}
+
+.summary-viewer{
+  position: relative;
+  margin-top: 0;
+  border: 1px solid rgba(15, 23, 42, 0.1);
+  border-radius: 12px;
+  overflow: hidden;
+  background: #ffffff;
+  width: 100%;
+  height: 100%;
+}
+
+.summary-viewer-card .summary-viewer{
+  margin-top: 0;
+}
+
+.summary-viewer-card{
+  padding: 0;
+  overflow: hidden;
+  min-height: 340px;
+}
+
+.summary-media-container{
+  position: relative;
+  width: 100%;
+  height: 100%;
+}
+
+.summary-viewer-expand{
+  position: absolute;
+  top: 8px;
+  right: 8px;
+  z-index: 2;
+  width: 28px;
+  height: 28px;
+  border-radius: 8px;
+  border: 1px solid rgba(15, 23, 42, 0.22);
+  background: rgba(255, 255, 255, 0.86);
+  color: #0f172a;
+  font-size: 14px;
+  line-height: 1;
+  cursor: pointer;
+}
+
+.summary-viewer-expand:hover{
+  background: #ffffff;
+}
+
+.summary-viewer-frame{
+  width: 100%;
+  height: 100%;
+  border: 0;
+  display: block;
+}
+
+.summary-viewer-fallback{
+  padding: 16px;
+  font-size: 13px;
+  color: rgba(15, 23, 42, 0.65);
+}
+
+.report-viewer-overlay{
+  position: fixed;
+  inset: 0;
+  z-index: 80;
+  background: rgba(2, 6, 23, 0.72);
+  backdrop-filter: blur(2px);
+  display: grid;
+  place-items: center;
+  padding: 22px;
+}
+
+.report-viewer-frame{
+  width: min(1280px, 96vw);
+  height: min(92vh, 840px);
+  background: #fff;
+  border-radius: 14px;
+  border: 1px solid rgba(15, 23, 42, 0.16);
+  box-shadow: 0 24px 60px rgba(15, 23, 42, 0.25);
+  position: relative;
+  overflow: hidden;
+}
+
+.report-viewer-close{
+  position: absolute;
+  top: 10px;
+  right: 10px;
+  z-index: 2;
+  width: 30px;
+  height: 30px;
+  border-radius: 999px;
+  border: 1px solid rgba(15, 23, 42, 0.18);
+  background: rgba(255, 255, 255, 0.9);
+  color: #0f172a;
+  cursor: pointer;
+}
+
+.report-viewer-iframe{
+  width: 100%;
+  height: 100%;
+  border: 0;
+  display: block;
 }
 
 .info-grid{
@@ -3968,6 +4207,10 @@ watch([activeTab, selectedId], async () => {
   display: flex;
   flex-wrap: wrap;
   gap: 8px;
+}
+
+.summary-title-row .pill-row{
+  margin-top: 0;
 }
 
 .pill{
@@ -4036,14 +4279,12 @@ watch([activeTab, selectedId], async () => {
   grid-column: 1 / -1;
 }
 
-.panel-eval .eval-card-1{
+.panel-eval .eval-left-stack{
   grid-column: 1;
-  grid-row: 1;
-}
-
-.panel-eval .eval-card-2{
-  grid-column: 1;
-  grid-row: 2;
+  grid-row: 1 / span 2;
+  display: grid;
+  gap: 10px;
+  align-content: start;
 }
 
 .panel-eval .eval-card-3{
@@ -4064,6 +4305,25 @@ watch([activeTab, selectedId], async () => {
 .panel-eval .eval-card-6{
   grid-column: 2;
   grid-row: 4;
+}
+
+.panel-eval{
+  align-items: start;
+}
+
+.panel-eval .tile{
+  height: fit-content;
+  align-self: start;
+}
+
+.panel-eval .eval-card-3{
+  height: auto;
+  align-self: stretch;
+}
+
+.panel-eval .eval-card-6{
+  height: auto;
+  align-self: stretch;
 }
 
 .panel.table-panel{
@@ -4100,6 +4360,58 @@ watch([activeTab, selectedId], async () => {
 
 .tile-head-actions h4{
   margin: 0;
+}
+
+.eval-card-head{
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  margin-bottom: 8px;
+}
+
+.eval-card-head h4{
+  margin: 0;
+}
+
+.eval-card-head-actions{
+  margin-bottom: 8px;
+}
+
+.eval-card-action-group{
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.eval-collapse-btn{
+  width: 24px;
+  height: 24px;
+  border-radius: 6px;
+  border: 1px solid rgba(30, 78, 139, 0.45);
+  background: rgba(30, 78, 139, 0.1);
+  color: #1e4e8b;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 16px;
+  line-height: 1;
+  font-weight: 700;
+  cursor: pointer;
+}
+
+.eval-collapse-btn:hover{
+  background: rgba(30, 78, 139, 0.18);
+}
+
+.panel-eval .tile.eval-collapsed{
+  padding-top: 10px;
+  padding-bottom: 10px;
+}
+
+.panel-eval .tile.eval-collapsed .eval-card-head,
+.panel-eval .tile.eval-collapsed .eval-card-head-actions{
+  margin-bottom: 0;
 }
 
 .tile p{
@@ -5268,6 +5580,10 @@ watch([activeTab, selectedId], async () => {
   .panel-eval .eval-card-4,
   .panel-eval .eval-card-5,
   .panel-eval .eval-card-6{
+    grid-column: auto;
+    grid-row: auto;
+  }
+  .panel-eval .eval-left-stack{
     grid-column: auto;
     grid-row: auto;
   }
