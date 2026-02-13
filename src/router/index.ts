@@ -22,6 +22,16 @@ const router = createRouter({
       name: 'transformer-list',
       component: () => import('../views/TransformerListView.vue'),
     },
+    {
+      path: '/analises',
+      name: 'analises-view',
+      component: () => import('../views/TransformerReportView.vue'),
+    },
+    {
+      path: '/tratamento-oleo',
+      name: 'tratamento-oleo-view',
+      component: () => import('../views/TransformerReportView.vue'),
+    },
   ],
 })
 

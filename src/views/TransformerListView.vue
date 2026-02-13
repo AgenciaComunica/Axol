@@ -8,6 +8,149 @@ import transformersData from '@/assets/transformadores.json'
 const router = useRouter()
 const rawSubstations = (transformersData as any)?.subestacoes || []
 
+const baseTransformers: TableTransformer[] = [
+  {
+    id: 'MG-9701-A01',
+    serial: 'MG-A01',
+    tag: '9701',
+    substation: 'SE VISCONDE DO RIO BRANCO',
+    unit: '-',
+    equipment: '-',
+    commutator: 'SIM',
+    oilFluid: 'NAO IDENTIFICADO',
+    status: 'Normal',
+    statusTr: 'Normal',
+    analystStatus: 'Alerta',
+    primaryVoltage: '-',
+    secondaryVoltage: '-',
+    power: '43 MVA',
+    voltage: '69 kV',
+    year: '1993',
+    manufacturer: 'TRAFO',
+    volume: '-',
+    refrigeration: '-',
+    load: '-',
+    operating: '-',
+    sealed: '-',
+    location: 'SE VISCONDE DO RIO BRANCO',
+    latitude: '-19.912998',
+    longitude: '-43.940933',
+    levels: makeLevels('9701-MG-A01'),
+  },
+  {
+    id: 'MG-9701-A02',
+    serial: 'MG-A02',
+    tag: '9701',
+    substation: 'SE SERENO',
+    unit: '-',
+    equipment: '-',
+    commutator: 'CST',
+    oilFluid: 'MINERAL',
+    status: 'Alerta',
+    statusTr: 'Alerta',
+    analystStatus: 'Normal',
+    primaryVoltage: '-',
+    secondaryVoltage: '-',
+    power: '2 MVA',
+    voltage: '22 kV',
+    year: '2013',
+    manufacturer: 'WEG',
+    volume: '-',
+    refrigeration: '-',
+    load: '-',
+    operating: '-',
+    sealed: '-',
+    location: 'SE SERENO',
+    latitude: '-21.316419',
+    longitude: '-42.650596',
+    levels: makeLevels('9701-MG-A02'),
+  },
+  {
+    id: 'MG-A03',
+    serial: 'MG-A03',
+    tag: '',
+    substation: 'SE CANARANA 138 KV',
+    unit: '-',
+    equipment: '-',
+    commutator: 'SIM',
+    oilFluid: 'MINERAL',
+    status: 'Alerta',
+    statusTr: 'Alerta',
+    analystStatus: 'Alerta',
+    primaryVoltage: '-',
+    secondaryVoltage: '-',
+    power: '30 MVA',
+    voltage: '138 kV',
+    year: '2015',
+    manufacturer: 'NAO IDENTIFICADO',
+    volume: '-',
+    refrigeration: '-',
+    load: '-',
+    operating: '-',
+    sealed: '-',
+    location: 'SE CANARANA 138 KV',
+    latitude: '-20.27848',
+    longitude: '-40.30561',
+    levels: makeLevels('MG-A03'),
+  },
+  {
+    id: 'MG-2FTMTR01-A04',
+    serial: 'MG-A04',
+    tag: '2FTMTR01',
+    substation: 'SE FATIMA',
+    unit: '-',
+    equipment: '-',
+    commutator: 'SIM',
+    oilFluid: 'MINERAL',
+    status: 'Alerta',
+    statusTr: 'Alerta',
+    analystStatus: 'Normal',
+    primaryVoltage: '-',
+    secondaryVoltage: '-',
+    power: '1.25 MVA',
+    voltage: '36 kV',
+    year: '1997',
+    manufacturer: 'WEG',
+    volume: '-',
+    refrigeration: '-',
+    load: '-',
+    operating: '-',
+    sealed: '-',
+    location: 'SE FATIMA',
+    latitude: '-20.663567',
+    longitude: '-43.783096',
+    levels: makeLevels('2FTMTR01-MG-A04'),
+  },
+  {
+    id: 'MG-2CTMTR01-A05',
+    serial: 'MG-A05',
+    tag: '2CTMTR01',
+    substation: 'SE COUTO MAGALHAES',
+    unit: '-',
+    equipment: '-',
+    commutator: 'SIM',
+    oilFluid: 'MINERAL',
+    status: 'Alerta',
+    statusTr: 'Alerta',
+    analystStatus: 'Normal',
+    primaryVoltage: '-',
+    secondaryVoltage: '-',
+    power: '1 MVA',
+    voltage: '34.5 kV',
+    year: '1994',
+    manufacturer: 'GE',
+    volume: '-',
+    refrigeration: '-',
+    load: '-',
+    operating: '-',
+    sealed: '-',
+    location: 'SE COUTO MAGALHAES',
+    latitude: '-19.8945',
+    longitude: '-44.1377',
+    levels: makeLevels('2CTMTR01-MG-A05'),
+  },
+]
+
 const statusRank: Record<string, number> = { Normal: 1, Alerta: 2, Critico: 3 }
 const statusLabelMap: Record<keyof typeof statusRank, string> = {
   Normal: 'Normal',
@@ -125,7 +268,7 @@ function levelClass(item: TableTransformer, key: LevelKey) {
 }
 
 const transformers = computed<TableTransformer[]>(() => {
-  return rawSubstations.flatMap((substation: any) => {
+  const jsonTransformers = rawSubstations.flatMap((substation: any) => {
     const name = substation?.NOME || substation?.SUBESTACAO || 'Subestação'
     const reference = substation?.REFERENCIA ? ` • ${substation.REFERENCIA}` : ''
     return (substation?.transformadores || []).map((trafo: any) => ({
@@ -162,6 +305,14 @@ const transformers = computed<TableTransformer[]>(() => {
       levels: makeLevels(`${trafo?.TAG || ''}-${trafo?.SERIAL || ''}`),
     }))
   })
+
+  const merged = [...baseTransformers, ...jsonTransformers]
+  const byId = new Map<string, TableTransformer>()
+  merged.forEach((item) => {
+    if (!item.id) return
+    if (!byId.has(item.id)) byId.set(item.id, item)
+  })
+  return Array.from(byId.values())
 })
 
 const searchQuery = ref('')
@@ -489,7 +640,7 @@ watch(searchQuery, () => {
                   <div class="actions-cell text-center">
                     <button class="action-trigger" type="button" @click.stop="toggleActions(item.id)">⋯</button>
                     <div v-if="openActionId === item.id" class="action-menu">
-                      <button type="button" class="action-item action-report">
+                      <button type="button" class="action-item action-report" @click="openReport(item)">
                         <span class="action-icon" aria-hidden="true">📄</span>
                         Relatórios
                       </button>
