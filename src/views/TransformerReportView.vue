@@ -136,6 +136,21 @@ const activeTab = ref<ReportTab>(toValidTab(route.query.section))
 const isGlobalAnalisesView = computed(() => route.name === 'analises-view')
 const isGlobalTreatmentView = computed(() => route.name === 'tratamento-oleo-view')
 const isGlobalScopeView = computed(() => isGlobalAnalisesView.value || isGlobalTreatmentView.value)
+const pageEyebrow = computed(() => {
+  if (isGlobalAnalisesView.value) return 'Análises dos Transformadores'
+  if (isGlobalTreatmentView.value) return 'Tratamento de Óleo dos Transformadores'
+  return 'Relatórios de Transformadores'
+})
+const pageTitle = computed(() => {
+  if (isGlobalAnalisesView.value) return 'Análise Geral'
+  if (isGlobalTreatmentView.value) return 'Tratamento Geral'
+  return 'Relatório Consolidado'
+})
+const pageSubtitle = computed(() => {
+  if (isGlobalAnalisesView.value) return 'Visualização consolidada de análises para todos os transformadores.'
+  if (isGlobalTreatmentView.value) return 'Visualização consolidada de tratamento de óleo para todos os transformadores.'
+  return 'Visualização única com dados do transformador e módulos técnicos.'
+})
 const forcedGlobalTab = computed<ReportTab | null>(() => {
   if (isGlobalAnalisesView.value) return 'Histórico de Análises'
   if (isGlobalTreatmentView.value) return 'Tratamento de Óleo'
@@ -153,7 +168,155 @@ const generateReportItems = [
 const generateReportSelected = ref<string[]>([...generateReportItems])
 
 const transformerOptions = computed<Transformer[]>(() => {
-  return rawSubstations.flatMap((substation: any) => {
+  const baseTransformers: Transformer[] = [
+    {
+      id: 'MG-9701-A01',
+      serial: 'MG-A01',
+      tag: '9701',
+      substation: 'SE VISCONDE DO RIO BRANCO',
+      reference: '-',
+      unit: '-',
+      status: 'Normal',
+      statusAnalyst: 'Alerta',
+      oilStatus: 'Normal',
+      treatment: 'Normal',
+      power: '43 MVA',
+      voltage: '69 kV',
+      equipment: '-',
+      commutator: 'SIM',
+      oilFluid: 'NAO IDENTIFICADO',
+      year: '1993',
+      manufacturer: 'TRAFO',
+      volume: '-',
+      refrigeration: '-',
+      load: '-',
+      operating: '-',
+      sealed: '-',
+      analyst: 'alex.fabiano@axol.eng.br',
+      analystNote: 'qwerqwerqwerwqeqwe',
+      failureMode: '-',
+      latitude: '-19.912998',
+      longitude: '-43.940933',
+    },
+    {
+      id: 'MG-9701-A02',
+      serial: 'MG-A02',
+      tag: '9701',
+      substation: 'SE SERENO',
+      reference: '-',
+      unit: '-',
+      status: 'Alerta',
+      statusAnalyst: 'Normal',
+      oilStatus: 'Alerta',
+      treatment: 'Alerta',
+      power: '2 MVA',
+      voltage: '22 kV',
+      equipment: '-',
+      commutator: 'CST',
+      oilFluid: 'MINERAL',
+      year: '2013',
+      manufacturer: 'WEG',
+      volume: '-',
+      refrigeration: '-',
+      load: '-',
+      operating: '-',
+      sealed: '-',
+      analyst: 'alexsandro.oliveira@axol.eng.br',
+      analystNote: 'sdkfasdjfaslkdjfaslkdjfaslkdjfslkdfjlskdf',
+      failureMode: '-',
+      latitude: '-21.316419',
+      longitude: '-42.650596',
+    },
+    {
+      id: 'MG-A03',
+      serial: 'MG-A03',
+      tag: '',
+      substation: 'SE CANARANA 138 KV',
+      reference: '-',
+      unit: '-',
+      status: 'Ainda nao Analisado',
+      statusAnalyst: 'Ainda nao Analisado',
+      oilStatus: 'Ainda nao Analisado',
+      treatment: 'Ainda nao Analisado',
+      power: '30 MVA',
+      voltage: '138 kV',
+      equipment: '-',
+      commutator: 'SIM',
+      oilFluid: 'MINERAL',
+      year: '2015',
+      manufacturer: 'NAO IDENTIFICADO',
+      volume: '-',
+      refrigeration: '-',
+      load: '-',
+      operating: '-',
+      sealed: '-',
+      analyst: '-',
+      analystNote: '-',
+      failureMode: '-',
+      latitude: '-20.27848',
+      longitude: '-40.30561',
+    },
+    {
+      id: 'MG-2FTMTR01-A04',
+      serial: 'MG-A04',
+      tag: '2FTMTR01',
+      substation: 'SE FATIMA',
+      reference: '-',
+      unit: '-',
+      status: 'Alerta',
+      statusAnalyst: 'Normal',
+      oilStatus: 'Alerta',
+      treatment: 'Alerta',
+      power: '1.25 MVA',
+      voltage: '36 kV',
+      equipment: '-',
+      commutator: 'SIM',
+      oilFluid: 'MINERAL',
+      year: '1997',
+      manufacturer: 'WEG',
+      volume: '-',
+      refrigeration: '-',
+      load: '-',
+      operating: '-',
+      sealed: '-',
+      analyst: 'alex.fabiano@axol.eng.br',
+      analystNote: 'Teste agora',
+      failureMode: '-',
+      latitude: '-20.663567',
+      longitude: '-43.783096',
+    },
+    {
+      id: 'MG-2CTMTR01-A05',
+      serial: 'MG-A05',
+      tag: '2CTMTR01',
+      substation: 'SE COUTO MAGALHAES',
+      reference: '-',
+      unit: '-',
+      status: 'Alerta',
+      statusAnalyst: 'Normal',
+      oilStatus: 'Alerta',
+      treatment: 'Alerta',
+      power: '1 MVA',
+      voltage: '34.5 kV',
+      equipment: '-',
+      commutator: 'SIM',
+      oilFluid: 'MINERAL',
+      year: '1994',
+      manufacturer: 'GE',
+      volume: '-',
+      refrigeration: '-',
+      load: '-',
+      operating: '-',
+      sealed: '-',
+      analyst: 'alex.fabiano@axol.eng.br',
+      analystNote: 'Descricao do analista',
+      failureMode: '-',
+      latitude: '-19.8945',
+      longitude: '-44.1377',
+    },
+  ]
+
+  const jsonTransformers = rawSubstations.flatMap((substation: any) => {
     const name = substation?.NOME || substation?.SUBESTACAO || 'Subestação'
     const reference = substation?.REFERENCIA || '-'
     return (substation?.transformadores || []).map((trafo: any) => ({
@@ -186,6 +349,14 @@ const transformerOptions = computed<Transformer[]>(() => {
       longitude: String(trafo?.LONGITUDE || '-'),
     }))
   })
+
+  const merged = [...baseTransformers, ...jsonTransformers]
+  const byId = new Map<string, Transformer>()
+  merged.forEach((item) => {
+    if (!item.id) return
+    if (!byId.has(item.id)) byId.set(item.id, item)
+  })
+  return Array.from(byId.values())
 })
 
 const selectedId = ref(String(route.params.id || ''))
@@ -2074,9 +2245,9 @@ watch([activeTab, selectedId], async () => {
   <div class="report-view">
     <SideMenu />
     <AppHeader
-      eyebrow="Relatórios de Transformadores"
-      title="Relatório Consolidado"
-      subtitle="Visualização única com dados do transformador e módulos técnicos."
+      :eyebrow="pageEyebrow"
+      :title="pageTitle"
+      :subtitle="pageSubtitle"
       :secondaryAction="{ label: 'Start Óleo', onClick: () => {} }"
       :action="{ label: 'Voltar ao Painel', onClick: () => router.push({ name: 'dashboard' }) }"
     />

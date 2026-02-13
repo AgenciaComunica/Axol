@@ -1426,7 +1426,12 @@ function openViewer3D() {
 
 function openTransformerReport() {
   if (!selectedTransformer.value) return
-  router.push({ name: 'transformer-report', params: { id: selectedTransformer.value.id } })
+  transformerModalOpen.value = false
+  router.push({
+    name: 'transformer-report',
+    params: { id: selectedTransformer.value.id },
+    query: { section: 'Avaliação Completa' },
+  })
 }
 
 function closeViewer3D() {
