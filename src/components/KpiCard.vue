@@ -165,10 +165,10 @@ onMounted(() => {
 .title strong{ font-size: 12px; color: rgba(15, 23, 42, 0.65); }
 .title span{ font-size: 20px; color: rgba(15, 23, 42, 0.9); letter-spacing: 0.2px; }
 .title small{ font-size: 12px; color: rgba(15, 23, 42, 0.45); }
-.title small.tone-success{ color: rgba(21, 128, 61, 0.95); }
-.title small.tone-warning{ color: rgba(161, 98, 7, 0.95); }
-.title small.tone-danger{ color: rgba(185, 28, 28, 0.95); }
-.title small.tone-info{ color: rgba(37, 99, 235, 0.95); }
+.title small.tone-success{ color: #15803d; }
+.title small.tone-warning{ color: #a16207; }
+.title small.tone-danger{ color: #b91c1c; }
+.title small.tone-info{ color: #1d4ed8; }
 
 .chev{
   width: 26px;
@@ -251,27 +251,27 @@ onMounted(() => {
 }
 
 .row.tone-success{
-  border-color: rgba(22, 163, 74, 0.25);
-  background: rgba(22, 163, 74, 0.12);
-  color: rgba(21, 128, 61, 0.95);
+  border-color: #4ade80;
+  background: #86efac;
+  color: #14532d;
 }
 
 .row.tone-warning{
-  border-color: rgba(234, 179, 8, 0.3);
-  background: rgba(234, 179, 8, 0.14);
-  color: rgba(161, 98, 7, 0.95);
+  border-color: #facc15;
+  background: #fde68a;
+  color: #78350f;
 }
 
 .row.tone-danger{
-  border-color: rgba(239, 68, 68, 0.25);
-  background: rgba(239, 68, 68, 0.12);
-  color: rgba(185, 28, 28, 0.95);
+  border-color: #f87171;
+  background: #fca5a5;
+  color: #7f1d1d;
 }
 
 .row.tone-info{
-  border-color: rgba(59, 130, 246, 0.2);
-  background: rgba(59, 130, 246, 0.12);
-  color: rgba(37, 99, 235, 0.95);
+  border-color: #60a5fa;
+  background: #93c5fd;
+  color: #1e3a8a;
 }
 
 .row-tags{
@@ -296,21 +296,21 @@ onMounted(() => {
 }
 
 .row-tag.tone-success{
-  background: rgba(22, 163, 74, 0.18);
-  border-color: rgba(22, 163, 74, 0.35);
-  color: rgba(21, 128, 61, 0.95);
+  background: #86efac;
+  border-color: #4ade80;
+  color: #14532d;
 }
 
 .row-tag.tone-warning{
-  background: rgba(234, 179, 8, 0.2);
-  border-color: rgba(234, 179, 8, 0.4);
-  color: rgba(161, 98, 7, 0.95);
+  background: #fde68a;
+  border-color: #facc15;
+  color: #78350f;
 }
 
 .row-tag.tone-danger{
-  background: rgba(239, 68, 68, 0.18);
-  border-color: rgba(239, 68, 68, 0.35);
-  color: rgba(185, 28, 28, 0.95);
+  background: #fca5a5;
+  border-color: #f87171;
+  color: #7f1d1d;
 }
 
 .row-hover{
@@ -360,18 +360,18 @@ onMounted(() => {
 }
 
 .row-hover-cell-head.tone-success{
-  background: rgba(22, 163, 74, 0.18);
-  color: rgba(21, 128, 61, 0.95);
+  background: #86efac;
+  color: #14532d;
 }
 
 .row-hover-cell-head.tone-warning{
-  background: rgba(234, 179, 8, 0.2);
-  color: rgba(161, 98, 7, 0.95);
+  background: #fde68a;
+  color: #78350f;
 }
 
 .row-hover-cell-head.tone-danger{
-  background: rgba(239, 68, 68, 0.18);
-  color: rgba(185, 28, 28, 0.95);
+  background: #fca5a5;
+  color: #7f1d1d;
 }
 .row b{ font-weight: 600; }
 </style>
