@@ -155,9 +155,11 @@ onMounted(() => {
 <style scoped>
 .card{
   border-radius: 18px;
-  border: 1px solid rgba(15, 23, 42, 0.08);
-  background: #ffffff;
-  box-shadow: 0 12px 30px rgba(15, 23, 42, 0.1);
+  border: 1px solid rgba(59, 130, 246, 0.45);
+  background: rgba(255, 255, 255, 0.78);
+  backdrop-filter: blur(4px);
+  -webkit-backdrop-filter: blur(4px);
+  box-shadow: 0 12px 28px rgba(37, 99, 235, 0.2);
   overflow: visible;
 }
 .card.open{
@@ -228,9 +230,9 @@ onMounted(() => {
   width: 56px;
   height: 56px;
   border-radius: 50%;
-  border: 1px solid rgba(15, 23, 42, 0.08);
+  border: 1px solid rgba(132, 152, 171, 0.35);
   overflow: hidden;
-  background: #ffffff;
+  background: rgba(255, 255, 255, 0.92);
 }
 
 .chart-pie :deep(.apexcharts-canvas){
@@ -275,8 +277,8 @@ onMounted(() => {
   gap: 10px;
   padding: 8px 10px;
   border-radius: 12px;
-  border: 1px solid rgba(15, 23, 42, 0.06);
-  background: #f5f6f8;
+  border: 1px solid rgba(132, 152, 171, 0.28);
+  background: rgba(255, 255, 255, 0.84);
   font-size: 12px;
   color: rgba(15, 23, 42, 0.7);
   position: relative;
