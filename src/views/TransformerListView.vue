@@ -217,6 +217,27 @@ type TableTransformer = {
 
 const levelKeys = ['N1', 'N2', 'N3', 'N4', 'N5'] as const
 type LevelKey = (typeof levelKeys)[number]
+const levelColorRgb: Record<LevelKey, [number, number, number]> = {
+  N1: [0, 255, 0],
+  N2: [128, 255, 0],
+  N3: [255, 255, 0],
+  N4: [255, 128, 0],
+  N5: [255, 0, 0],
+}
+const levelBaseFillAlpha: Record<LevelKey, number> = {
+  N1: 0.22,
+  N2: 0.22,
+  N3: 0.26,
+  N4: 0.24,
+  N5: 0.22,
+}
+const levelBaseBorderAlpha: Record<LevelKey, number> = {
+  N1: 0.55,
+  N2: 0.6,
+  N3: 0.62,
+  N4: 0.62,
+  N5: 0.58,
+}
 
 function hashString(value: string) {
   let hash = 0
@@ -259,12 +280,21 @@ function levelText(item: TableTransformer, key: LevelKey) {
 
 function levelClass(item: TableTransformer, key: LevelKey) {
   const value = item.levels?.[key]
-  if (value === null || value === undefined || Number.isNaN(value) || value === 0) return 'level-empty'
-  if (value >= 80) return 'level-critical'
-  if (value >= 60) return 'level-high'
-  if (value >= 40) return 'level-medium'
-  if (value >= 20) return 'level-low'
-  return 'level-very-low'
+  if (value === null || value === undefined || Number.isNaN(value)) return 'level-empty'
+  return `level-${key.toLowerCase()}`
+}
+
+function levelStyle(item: TableTransformer, key: LevelKey) {
+  const value = Number(item.levels?.[key])
+  if (!Number.isFinite(value)) return undefined
+  const pct = Math.max(0, Math.min(100, value))
+  const fillAlpha = levelBaseFillAlpha[key] + (1 - levelBaseFillAlpha[key]) * (pct / 100)
+  const borderAlpha = levelBaseBorderAlpha[key] + (1 - levelBaseBorderAlpha[key]) * (pct / 100)
+  const [r, g, b] = levelColorRgb[key]
+  return {
+    backgroundColor: `rgba(${r}, ${g}, ${b}, ${fillAlpha.toFixed(3)})`,
+    borderColor: `rgba(${r}, ${g}, ${b}, ${borderAlpha.toFixed(3)})`,
+  }
 }
 
 const transformers = computed<TableTransformer[]>(() => {
@@ -688,27 +718,27 @@ watch(rowsPerPage, () => {
                   <span class="status-pill" :class="statusTone(item.analystStatus)">{{ item.analystStatus || '-' }}</span>
                 </template>
                 <template v-else-if="col.id === 'n1'">
-                  <span class="level-pill" :class="levelClass(item, 'N1')">
+                  <span class="level-pill" :class="levelClass(item, 'N1')" :style="levelStyle(item, 'N1')">
                     {{ levelText(item, 'N1') }}
                   </span>
                 </template>
                 <template v-else-if="col.id === 'n2'">
-                  <span class="level-pill" :class="levelClass(item, 'N2')">
+                  <span class="level-pill" :class="levelClass(item, 'N2')" :style="levelStyle(item, 'N2')">
                     {{ levelText(item, 'N2') }}
                   </span>
                 </template>
                 <template v-else-if="col.id === 'n3'">
-                  <span class="level-pill" :class="levelClass(item, 'N3')">
+                  <span class="level-pill" :class="levelClass(item, 'N3')" :style="levelStyle(item, 'N3')">
                     {{ levelText(item, 'N3') }}
                   </span>
                 </template>
                 <template v-else-if="col.id === 'n4'">
-                  <span class="level-pill" :class="levelClass(item, 'N4')">
+                  <span class="level-pill" :class="levelClass(item, 'N4')" :style="levelStyle(item, 'N4')">
                     {{ levelText(item, 'N4') }}
                   </span>
                 </template>
                 <template v-else-if="col.id === 'n5'">
-                  <span class="level-pill" :class="levelClass(item, 'N5')">
+                  <span class="level-pill" :class="levelClass(item, 'N5')" :style="levelStyle(item, 'N5')">
                     {{ levelText(item, 'N5') }}
                   </span>
                 </template>
@@ -1094,7 +1124,7 @@ watch(rowsPerPage, () => {
   border-radius: 999px;
   font-size: 11px;
   font-weight: 700;
-  color: rgba(15, 23, 42, 0.7);
+  color: rgba(15, 23, 42, 0.78);
 }
 
 .level-empty{
@@ -1102,49 +1132,54 @@ watch(rowsPerPage, () => {
   color: rgba(15, 23, 42, 0.55);
 }
 
-.level-very-low{
-  background: #22c55e;
-  color: #ffffff;
+.level-n1{
+  background: rgba(0, 255, 0, 0.22);
+  border: 1px solid rgba(0, 255, 0, 0.55);
+  color: #0b5f0b;
 }
 
-.level-low{
-  background: #84cc16;
-  color: #365314;
+.level-n2{
+  background: rgba(128, 255, 0, 0.22);
+  border: 1px solid rgba(128, 255, 0, 0.6);
+  color: #3f5f00;
 }
 
-.level-medium{
-  background: #eab308;
-  color: #78350f;
+.level-n3{
+  background: rgba(255, 255, 0, 0.26);
+  border: 1px solid rgba(255, 255, 0, 0.62);
+  color: #666300;
 }
 
-.level-high{
-  background: #f97316;
-  color: #ffffff;
+.level-n4{
+  background: rgba(255, 128, 0, 0.24);
+  border: 1px solid rgba(255, 128, 0, 0.62);
+  color: #8a4300;
 }
 
-.level-critical{
-  background: #ef4444;
-  color: #ffffff;
+.level-n5{
+  background: rgba(255, 0, 0, 0.22);
+  border: 1px solid rgba(255, 0, 0, 0.58);
+  color: #8f0000;
 }
 
 .tone-normal{
-  background: rgba(34, 197, 94, 0.12);
-  color: #166534;
+  background: rgba(0, 255, 0, 0.16);
+  color: #0b5f0b;
 }
 
 .status-pill.tone-normal{
-  background: #22c55e;
-  color: #ffffff;
+  background: var(--level-n1);
+  color: #064e06;
 }
 
 .tone-warning{
-  background: rgba(234, 179, 8, 0.16);
-  color: #854d0e;
+  background: rgba(255, 255, 0, 0.2);
+  color: #666300;
 }
 
 .tone-danger{
-  background: rgba(239, 68, 68, 0.12);
-  color: #991b1b;
+  background: rgba(255, 0, 0, 0.16);
+  color: #8f0000;
 }
 
 .tone-neutral{
@@ -1153,12 +1188,12 @@ watch(rowsPerPage, () => {
 }
 
 .status-pill.tone-warning{
-  background: #eab308;
-  color: #422006;
+  background: var(--level-n3);
+  color: #5c5900;
 }
 
 .status-pill.tone-danger{
-  background: #ef4444;
+  background: var(--level-n5);
   color: #ffffff;
 }
 
@@ -1187,9 +1222,9 @@ watch(rowsPerPage, () => {
   border-radius: 999px;
 }
 
-.transformer-table tr.tone-normal td:first-child::before{ background: #22c55e; }
-.transformer-table tr.tone-warning td:first-child::before{ background: #f59f00; }
-.transformer-table tr.tone-danger td:first-child::before{ background: #dc2626; }
+.transformer-table tr.tone-normal td:first-child::before{ background: var(--level-n1); }
+.transformer-table tr.tone-warning td:first-child::before{ background: var(--level-n3); }
+.transformer-table tr.tone-danger td:first-child::before{ background: var(--level-n5); }
 .transformer-table tr.tone-neutral td:first-child::before{ background: #94a3b8; }
 
 .actions-cell{

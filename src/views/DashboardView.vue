@@ -388,9 +388,9 @@ const worstStatusTone = computed(() => {
 
 const statusChart = computed(() => ({
   segments: [
-    { label: 'Normal', value: statusPercents.value.Normal, color: 'var(--status-normal, #2f7f6c)' },
-    { label: 'Alerta', value: statusPercents.value.Alerta, color: 'var(--status-alert, #f7cf29)' },
-    { label: 'Crítico', value: statusPercents.value.Critico, color: 'var(--status-critical, #c85c5c)' },
+    { label: 'Normal', value: statusPercents.value.Normal, color: '#22c55e' },
+    { label: 'Alerta', value: statusPercents.value.Alerta, color: 'var(--status-alert, #ffff00)' },
+    { label: 'Crítico', value: statusPercents.value.Critico, color: 'var(--status-critical, #ff0000)' },
   ],
 }))
 

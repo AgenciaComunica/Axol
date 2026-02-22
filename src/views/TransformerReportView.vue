@@ -2359,6 +2359,10 @@ const riskProbabilities = computed(() => {
   return [100, 0, 0, 0, 0]
 })
 
+function riskLevelColorVar(index: number) {
+  return `var(--level-n${index + 1}, #1e4e8b)`
+}
+
 const oilVariablesByLevel = computed(() => {
   const base = riskProbabilities.value
   const labels = ['TEMP', 'H2O', 'TIF', 'RD', 'EC', 'H2', 'DBDS', 'CARRE', 'GP', 'DGAF', 'CO', 'CO2', 'C2h4', 'C2H2']
@@ -2392,10 +2396,10 @@ function statusClass(value: string) {
 
 function statusOptionStyle(value: string) {
   const tone = statusClass(value)
-  if (tone === 'tone-danger') return { color: '#b91c1c', backgroundColor: 'rgba(220, 38, 38, 0.12)', fontWeight: '700' }
-  if (tone === 'tone-warning') return { color: '#b45309', backgroundColor: 'rgba(245, 158, 11, 0.14)', fontWeight: '700' }
+  if (tone === 'tone-danger') return { color: '#8f0000', backgroundColor: 'rgba(255, 0, 0, 0.16)', fontWeight: '700' }
+  if (tone === 'tone-warning') return { color: '#666300', backgroundColor: 'rgba(255, 255, 0, 0.2)', fontWeight: '700' }
   if (tone === 'tone-neutral') return { color: '#475569', backgroundColor: 'rgba(148, 163, 184, 0.16)', fontWeight: '700' }
-  return { color: '#15803d', backgroundColor: 'rgba(22, 163, 74, 0.12)', fontWeight: '700' }
+  return { color: '#0b5f0b', backgroundColor: 'rgba(0, 255, 0, 0.16)', fontWeight: '700' }
 }
 
 function enhanceMobileTables() {
@@ -3078,9 +3082,14 @@ watch([activeTab, selectedId], async () => {
           <p><b>Probabilidade (%) de operação em risco para o próximo ano</b></p>
 
           <div class="risk-pies">
-            <article v-for="(probability, index) in riskProbabilities" :key="`risk-${index}`" class="risk-pie-card">
+            <article
+              v-for="(probability, index) in riskProbabilities"
+              :key="`risk-${index}`"
+              class="risk-pie-card"
+              :style="{ '--risk-color': riskLevelColorVar(index) }"
+            >
               <h5>Nível-{{ index + 1 }}</h5>
-              <div class="risk-pie" :style="{ '--pct': `${probability}%` }">
+              <div class="risk-pie" :style="{ '--pct': `${probability}%`, '--risk-color': riskLevelColorVar(index) }">
                 <span class="risk-pie-center">{{ probability.toFixed(2) }}%</span>
               </div>
             </article>
@@ -4514,18 +4523,18 @@ watch([activeTab, selectedId], async () => {
 }
 
 .tone-normal{
-  background: rgba(22, 163, 74, 0.2);
-  color: #15803d;
+  background: rgba(0, 255, 0, 0.18);
+  color: #0b5f0b;
 }
 
 .tone-warning{
-  background: rgba(245, 158, 11, 0.22);
-  color: #b45309;
+  background: rgba(255, 255, 0, 0.22);
+  color: #666300;
 }
 
 .tone-danger{
-  background: rgba(220, 38, 38, 0.2);
-  color: #b91c1c;
+  background: rgba(255, 0, 0, 0.18);
+  color: #8f0000;
 }
 
 .tone-neutral{
@@ -4886,13 +4895,18 @@ watch([activeTab, selectedId], async () => {
   font-weight: 700;
 }
 
+.risk-pie-card h5{
+  color: color-mix(in srgb, var(--risk-color, #1e4e8b) 75%, #1f2937 25%);
+}
+
 .risk-pie{
   --pct: 0%;
+  --risk-color: #1e4e8b;
   width: 88px;
   height: 88px;
   margin: 6px auto 8px;
   border-radius: 999px;
-  background: conic-gradient(#1e4e8b var(--pct), rgba(148, 163, 184, 0.25) 0);
+  background: conic-gradient(var(--risk-color) var(--pct), rgba(148, 163, 184, 0.25) 0);
   position: relative;
 }
 
