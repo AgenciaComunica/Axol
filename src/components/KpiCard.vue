@@ -1,5 +1,7 @@
 <script setup lang="ts">
 import { computed, nextTick, onMounted, ref, watch } from 'vue'
+import VueApexCharts from 'vue3-apexcharts'
+import type { ApexOptions } from 'apexcharts'
 
 type KpiRow = {
   label: string
@@ -25,18 +27,36 @@ const open = ref(props.defaultOpen ?? true)
 const bodyRef = ref<HTMLDivElement | null>(null)
 const bodyHeight = ref(0)
 const isOpen = computed(() => open.value)
-const chartStyle = computed(() => {
-  if (!props.chart?.segments?.length) return {}
-  const total = props.chart.segments.reduce((acc, seg) => acc + seg.value, 0) || 1
-  let acc = 0
-  const stops = props.chart.segments.map((seg) => {
-    const start = (acc / total) * 100
-    acc += seg.value
-    const end = (acc / total) * 100
-    return `${seg.color} ${start.toFixed(2)}% ${end.toFixed(2)}%`
-  })
-  return { background: `conic-gradient(${stops.join(', ')})` }
-})
+const chartSeries = computed(() => props.chart?.segments?.map((segment) => segment.value) || [])
+const chartOptions = computed<ApexOptions>(() => ({
+  chart: {
+    type: 'donut',
+    sparkline: { enabled: true },
+    animations: { enabled: false },
+    toolbar: { show: false },
+    parentHeightOffset: 0,
+  },
+  labels: props.chart?.segments?.map((segment) => segment.label) || [],
+  colors: props.chart?.segments?.map((segment) => segment.color) || [],
+  dataLabels: { enabled: false },
+  legend: { show: false },
+  tooltip: { enabled: false },
+  states: {
+    hover: { filter: { type: 'none', value: 0 } },
+    active: { filter: { type: 'none', value: 0 } },
+  },
+  stroke: {
+    width: 1,
+    colors: ['#ffffff'],
+  },
+  plotOptions: {
+    pie: {
+      donut: {
+        size: '62%',
+      },
+    },
+  },
+}))
 
 const bodyStyle = computed(() => ({
   maxHeight: isOpen.value ? `${bodyHeight.value}px` : '0px',
@@ -81,7 +101,9 @@ onMounted(() => {
     </button>
     <div ref="bodyRef" class="body" :style="bodyStyle">
       <div v-if="chart?.segments?.length" class="chart-block">
-        <div class="chart-pie" :style="chartStyle"></div>
+        <div class="chart-pie">
+          <VueApexCharts type="donut" width="56" height="56" :options="chartOptions" :series="chartSeries" />
+        </div>
         <div class="chart-legend">
           <div v-for="segment in chart.segments" :key="segment.label" class="chart-legend-item">
             <span class="chart-dot" :style="{ background: segment.color }"></span>
@@ -206,8 +228,18 @@ onMounted(() => {
   width: 56px;
   height: 56px;
   border-radius: 50%;
-  background: conic-gradient(#e2e8f0 0% 100%);
   border: 1px solid rgba(15, 23, 42, 0.08);
+  overflow: hidden;
+  background: #ffffff;
+}
+
+.chart-pie :deep(.apexcharts-canvas){
+  width: 56px !important;
+  height: 56px !important;
+}
+
+.chart-pie :deep(svg){
+  display: block;
 }
 
 .chart-legend{
