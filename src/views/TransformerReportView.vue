@@ -2359,7 +2359,7 @@ const riskProbabilities = computed(() => {
   const tag = String(trafo?.tag || '').toUpperCase()
   const is9701A01Demo = id.includes('9701-A01') || (tag === '9701' && serial === 'A01')
 
-  if (is9701A01Demo) return [7.5, 18.2, 42.3, 21.0, 11.0]
+  if (is9701A01Demo) return [5, 25, 50, 75, 100]
 
   const status = normalizeStatus(selectedTransformer.value?.statusAnalyst || selectedTransformer.value?.status || '')
   if (status === 'Crítico') return [8.5, 12.2, 19.8, 27.5, 32.0]
