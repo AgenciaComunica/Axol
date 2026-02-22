@@ -135,6 +135,9 @@ function parseBrDate(value: unknown) {
   return new Date(year, month - 1, day).getTime()
 }
 
+const macroTabs = ['TR Óleo', 'TR Rota', 'OLTC'] as const
+type MacroTab = (typeof macroTabs)[number]
+
 const tabs = [
   'Avaliação Completa',
   'Histórico de Análises',
@@ -142,7 +145,6 @@ const tabs = [
   'Coletas',
   'Tratamento de Óleo',
   'Duval',
-  'TR Óleo',
 ] as const
 
 type ReportTab = (typeof tabs)[number]
@@ -153,6 +155,12 @@ function toValidTab(value: unknown): ReportTab {
   return (tabs.find((tab) => tab === text) as ReportTab) || 'Avaliação Completa'
 }
 
+function toValidMacro(value: unknown): MacroTab {
+  const text = String(value || '')
+  return (macroTabs.find((tab) => tab === text) as MacroTab) || 'TR Rota'
+}
+
+const activeMacroTab = ref<MacroTab>(toValidMacro(route.query.macro))
 const activeTab = ref<ReportTab>(toValidTab(route.query.section))
 const isGlobalAnalisesView = computed(() => route.name === 'analises-view')
 const isGlobalTreatmentView = computed(() => route.name === 'tratamento-oleo-view')
@@ -183,6 +191,40 @@ const forcedGlobalTab = computed<ReportTab | null>(() => {
   if (isGlobalTreatmentView.value) return 'Tratamento de Óleo'
   if (isGlobalColetasView.value) return 'Coletas'
   return null
+})
+const isOltcMacro = computed(() => activeMacroTab.value === 'OLTC')
+const isTrRotaMacro = computed(() => activeMacroTab.value === 'TR Rota')
+
+const trOleoSubTabs: ReportTab[] = [
+  'Avaliação Completa',
+  'Histórico de Análises',
+  'Avaliação IEEE',
+  'Coletas',
+  'Tratamento de Óleo',
+  'Duval',
+]
+const trRotaSubTabs: ReportTab[] = ['Avaliação Completa', 'Histórico de Análises']
+const oltcSubTabs: ReportTab[] = [
+  'Avaliação Completa',
+  'Histórico de Análises',
+  'Avaliação IEEE',
+  'Coletas',
+  'Tratamento de Óleo',
+  'Duval',
+]
+
+const activeSubTabs = computed(() => {
+  if (isGlobalScopeView.value) return tabs.map((tab) => ({ value: tab, label: tab }))
+  const base =
+    activeMacroTab.value === 'TR Óleo'
+      ? trOleoSubTabs
+      : activeMacroTab.value === 'TR Rota'
+        ? trRotaSubTabs
+        : oltcSubTabs
+  return base.map((tab) => ({
+    value: tab,
+    label: isTrRotaMacro.value && tab === 'Histórico de Análises' ? 'Análise de Campo' : tab,
+  }))
 })
 const generateReportMenuOpen = ref(false)
 const generateReportWrapRef = ref<HTMLElement | null>(null)
@@ -418,13 +460,21 @@ watch(
   }
 )
 
+watch(
+  () => route.query.macro,
+  (value) => {
+    if (isGlobalScopeView.value) return
+    activeMacroTab.value = toValidMacro(value)
+  }
+)
+
 watch(selectedId, (value) => {
   if (route.name !== 'transformer-report') return
   if (!value || String(route.params.id || '') === value) return
   router.replace({
     name: 'transformer-report',
     params: { id: value },
-    query: { ...route.query, section: activeTab.value },
+    query: { ...route.query, macro: activeMacroTab.value, section: activeTab.value },
   })
 })
 
@@ -434,19 +484,44 @@ watch(selectedId, () => {
 
 watch(activeTab, (value) => {
   if (route.name !== 'transformer-report') return
-  if (String(route.query.section || '') === value) return
+  if (String(route.query.section || '') === value && String(route.query.macro || '') === activeMacroTab.value) return
   router.replace({
     name: 'transformer-report',
     params: { id: selectedId.value || String(route.params.id || '') },
-    query: { ...route.query, section: value },
+    query: { ...route.query, macro: activeMacroTab.value, section: value },
   })
 })
+
+watch(activeMacroTab, (value) => {
+  if (route.name !== 'transformer-report') return
+  const allowed = activeSubTabs.value.map((tab) => tab.value)
+  if (!allowed.includes(activeTab.value)) {
+    activeTab.value = allowed[0] || 'Avaliação Completa'
+  }
+  router.replace({
+    name: 'transformer-report',
+    params: { id: selectedId.value || String(route.params.id || '') },
+    query: { ...route.query, macro: value, section: activeTab.value },
+  })
+}, { immediate: true })
 
 watch(
   forcedGlobalTab,
   (value) => {
     if (!value) return
     if (activeTab.value !== value) activeTab.value = value
+  },
+  { immediate: true }
+)
+
+watch(
+  activeSubTabs,
+  (items) => {
+    const allowed = items.map((tab) => tab.value)
+    if (!allowed.length) return
+    if (!allowed.includes(activeTab.value)) {
+      activeTab.value = allowed[0]!
+    }
   },
   { immediate: true }
 )
@@ -1355,6 +1430,7 @@ const historySwitchEnabled = computed({
 
 const analysisSearchQuery = ref('')
 const analysisRecentTab = ref<AnalysisRecentTab>('padrao')
+const showAnalysisRecentSubtabs = computed(() => isGlobalAnalisesView.value)
 const advancedFilterModalOpen = ref(false)
 const advancedFilterContext = ref<AdvancedFilterContext>('analises')
 const advancedFilterRuleId = ref(1)
@@ -2374,6 +2450,15 @@ watch(analysisRecentTab, () => {
 })
 
 watch(
+  activeMacroTab,
+  () => {
+    if (isGlobalAnalisesView.value) return
+    analysisRecentTab.value = isOltcMacro.value ? 'oltc' : 'padrao'
+  },
+  { immediate: true }
+)
+
+watch(
   analysisVisibleColumnIds,
   (value) => {
     persistColumnIds(analysisColumnsScope, value)
@@ -3089,6 +3174,18 @@ watch([activeTab, selectedId], async () => {
             </div>
           </div>
         </div>
+        <nav class="macro-tabs" aria-label="Tipo de relatório">
+          <button
+            v-for="macro in macroTabs"
+            :key="macro"
+            type="button"
+            class="macro-tab-btn"
+            :class="{ active: activeMacroTab === macro }"
+            @click="activeMacroTab = macro"
+          >
+            {{ macro }}
+          </button>
+        </nav>
         <div class="report-toolbar-actions">
           <button
             type="button"
@@ -3184,14 +3281,14 @@ watch([activeTab, selectedId], async () => {
 
       <nav v-if="!isGlobalScopeView" class="tabs">
         <button
-          v-for="tab in tabs"
-          :key="tab"
+          v-for="tab in activeSubTabs"
+          :key="tab.value"
           type="button"
           class="tab-btn"
-          :class="{ active: activeTab === tab }"
-          @click="activeTab = tab"
+          :class="{ active: activeTab === tab.value }"
+          @click="activeTab = tab.value"
         >
-          {{ tab }}
+          {{ tab.label }}
         </button>
       </nav>
 
@@ -3372,7 +3469,7 @@ watch([activeTab, selectedId], async () => {
                   </section>
                 </div>
               </div>
-              <div class="history-tabs-inline history-tabs-main history-analyses-subtabs">
+              <div v-if="showAnalysisRecentSubtabs" class="history-tabs-inline history-tabs-main history-analyses-subtabs">
                 <button
                   type="button"
                   class="history-tab-btn"
@@ -4995,17 +5092,47 @@ watch([activeTab, selectedId], async () => {
 }
 
 .report-toolbar{
-  display: flex;
-  justify-content: space-between;
+  display: grid;
+  grid-template-columns: max-content 1fr max-content;
   align-items: end;
   gap: 16px;
   margin-bottom: 14px;
+}
+
+.macro-tabs{
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  justify-self: center;
+  width: 100%;
+}
+
+.macro-tab-btn{
+  height: 38px;
+  border-radius: 12px;
+  border: 1px solid rgba(15, 23, 42, 0.14);
+  background: #fff;
+  color: rgba(15, 23, 42, 0.78);
+  padding: 0 16px;
+  font-size: 13px;
+  font-weight: 700;
+  cursor: pointer;
+  white-space: nowrap;
+}
+
+.macro-tab-btn.active{
+  border-color: #1e4e8b;
+  background: #1e4e8b;
+  color: #fff;
+  box-shadow: 0 10px 18px rgba(30, 78, 139, 0.22);
 }
 
 .report-toolbar-actions{
   display: inline-flex;
   align-items: center;
   gap: 8px;
+  justify-self: end;
 }
 
 .report-generate-wrap{
@@ -6974,8 +7101,13 @@ watch([activeTab, selectedId], async () => {
     width: 100%;
   }
   .report-toolbar{
-    flex-direction: column;
+    grid-template-columns: 1fr;
     align-items: stretch;
+  }
+  .macro-tabs{
+    justify-content: flex-start;
+    overflow-x: auto;
+    padding-bottom: 2px;
   }
   .locate-btn{
     width: 100%;
