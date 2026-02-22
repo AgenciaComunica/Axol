@@ -2353,6 +2353,14 @@ const specialTests = computed(() => {
 })
 
 const riskProbabilities = computed(() => {
+  const trafo = selectedTransformer.value
+  const id = String(trafo?.id || '').toUpperCase()
+  const serial = String(trafo?.serial || '').toUpperCase()
+  const tag = String(trafo?.tag || '').toUpperCase()
+  const is9701A01Demo = id.includes('9701-A01') || (tag === '9701' && serial === 'A01')
+
+  if (is9701A01Demo) return [7.5, 18.2, 42.3, 21.0, 11.0]
+
   const status = normalizeStatus(selectedTransformer.value?.statusAnalyst || selectedTransformer.value?.status || '')
   if (status === 'Crítico') return [8.5, 12.2, 19.8, 27.5, 32.0]
   if (status === 'Alerta') return [0, 0, 85.14, 14.86, 0]
@@ -2363,23 +2371,103 @@ function riskLevelColorVar(index: number) {
   return `var(--level-n${index + 1}, #1e4e8b)`
 }
 
-const oilVariablesByLevel = computed(() => {
-  const base = riskProbabilities.value
-  const labels = ['TEMP', 'H2O', 'TIF', 'RD', 'EC', 'H2', 'DBDS', 'CARRE', 'GP', 'DGAF', 'CO', 'CO2', 'C2h4', 'C2H2']
-  return base.map((value, index) => {
+function riskLevelColor(index: number, probability: number) {
+  const levelRgb: Record<number, [number, number, number]> = {
+    0: [0, 255, 0], // N1
+    1: [128, 255, 0], // N2
+    2: [255, 255, 0], // N3
+    3: [255, 128, 0], // N4
+    4: [255, 0, 0], // N5
+  }
+  const [r, g, b] = levelRgb[index] || [30, 78, 139]
+  const pct = Math.max(0, Math.min(100, Number(probability) || 0))
+  const alpha = pct / 100
+  return `rgba(${r}, ${g}, ${b}, ${alpha.toFixed(3)})`
+}
+
+const riskParameterDefs = [
+  { key: 'TEMP', label: 'TEMP', tooltip: 'TEMP - Temperatura' },
+  { key: 'H2O', label: 'H₂O', tooltip: 'H₂O - Água' },
+  { key: 'TIF', label: 'TIF', tooltip: 'TIF - Tensão Interfacial' },
+  { key: 'RD', label: 'RD', tooltip: 'RD - Rigidez Dielétrica' },
+  { key: 'EC', label: 'EC', tooltip: 'EC - Ensaio de Cor' },
+  { key: 'H2', label: 'H₂', tooltip: 'H₂ - Hidrogênio' },
+  { key: 'DBDS', label: 'DBDS', tooltip: 'DBDS - Dibenzil Dissulfeto' },
+  { key: 'CARRE', label: 'CARRE', tooltip: 'CARRE - Carregamento' },
+  { key: 'GP', label: 'GP', tooltip: 'GP - Grau de Polimerização' },
+  { key: 'DGAF', label: 'DGAF', tooltip: 'DGAF - Diagnóstico de Gases de Falha' },
+  { key: 'CO', label: 'CO', tooltip: 'CO - Monóxido de Carbono' },
+  { key: 'CO2', label: 'CO₂', tooltip: 'CO₂ - Dióxido de Carbono' },
+  { key: 'C2H4', label: 'C₂H₄', tooltip: 'C₂H₄ - Etileno' },
+  { key: 'C2H2', label: 'C₂H₂', tooltip: 'C₂H₂ - Acetileno' },
+]
+const demoRiskHeatmapByLabel: Record<string, number[]> = {
+  TEMP: [0, 1, 0, 0, 0],
+  H2O: [0, 12, 0, 0, 0],
+  TIF: [0, 0, 35, 0, 0],
+  RD: [0, 0, 0, 55, 0],
+  EC: [0, 0, 0, 0, 78],
+  H2: [0, 0, 0, 18, 0],
+  DBDS: [0, 0, 4, 0, 0],
+  CARRE: [0, 22, 0, 0, 0],
+  GP: [0, 0, 0, 0, 100],
+  DGAF: [0, 0, 0, 48, 0],
+  CO: [0, 9, 0, 0, 0],
+  CO2: [0, 0, 0, 0, 64],
+  C2H4: [0, 0, 14, 0, 0],
+  C2H2: [0, 0, 0, 0, 8],
+}
+
+const riskHeatmapRows = computed(() => {
+  const trafo = selectedTransformer.value
+  const id = String(trafo?.id || '').toUpperCase()
+  const serial = String(trafo?.serial || '').toUpperCase()
+  const tag = String(trafo?.tag || '').toUpperCase()
+  const is9701A01Demo = id.includes('9701-A01') || (tag === '9701' && serial === 'A01')
+
+  if (is9701A01Demo) {
+    return riskParameterDefs.map((parameter) => ({
+      key: parameter.key,
+      label: parameter.label,
+      tooltip: parameter.tooltip,
+      values: demoRiskHeatmapByLabel[parameter.key] || [0, 0, 0, 0, 0],
+    }))
+  }
+
+  const levels = riskProbabilities.value.map((value, index) => {
     const scale = Math.max(value, 8)
-    const vars = labels.map((_, labelIndex) => {
+    return riskParameterDefs.map((_, labelIndex) => {
       const ratio = 0.15 + ((labelIndex % 7) * 0.06) + index * 0.015
       return Number((scale * ratio).toFixed(2))
     })
-    return {
-      title: `Nível-${index + 1}`,
-      labels,
-      vars,
-      max: Math.max(...vars, 1),
-    }
   })
+
+  return riskParameterDefs.map((parameter, rowIndex) => ({
+    key: parameter.key,
+    label: parameter.label,
+    tooltip: parameter.tooltip,
+    values: levels.map((levelValues) => levelValues[rowIndex] || 0),
+  }))
 })
+
+function riskHeatCellStyle(value: number) {
+  const safe = Number.isFinite(value) ? Math.max(0, Math.min(100, value)) : 0
+  if (safe <= 0) {
+    return {
+      backgroundColor: 'transparent',
+      borderColor: 'rgba(148, 163, 184, 0.2)',
+      color: 'rgba(71, 85, 105, 0.7)',
+    }
+  }
+
+  const normalized = (safe - 1) / 99
+  const alpha = 0.12 + Math.max(0, normalized) * 0.88
+  return {
+    backgroundColor: `rgba(255, 0, 0, ${alpha.toFixed(3)})`,
+    borderColor: `rgba(185, 28, 28, ${(0.28 + normalized * 0.52).toFixed(3)})`,
+    color: safe >= 62 ? '#ffffff' : '#7f1d1d',
+  }
+}
 
 function statusClass(value: string) {
   const text = (value || '')
@@ -3081,39 +3169,50 @@ watch([activeTab, selectedId], async () => {
           </p>
           <p><b>Probabilidade (%) de operação em risco para o próximo ano</b></p>
 
-          <div class="risk-pies">
+          <div class="risk-grid-shell">
+          <div class="risk-pies risk-pies-aligned">
+            <div class="risk-pies-tab" aria-label="Parâmetros">Parâmetros</div>
             <article
               v-for="(probability, index) in riskProbabilities"
               :key="`risk-${index}`"
               class="risk-pie-card"
-              :style="{ '--risk-color': riskLevelColorVar(index) }"
+              :style="{ '--risk-color': riskLevelColor(index, probability), '--risk-color-solid': riskLevelColorVar(index) }"
             >
               <h5>Nível-{{ index + 1 }}</h5>
-              <div class="risk-pie" :style="{ '--pct': `${probability}%`, '--risk-color': riskLevelColorVar(index) }">
+              <div class="risk-pie" :style="{ '--pct': `${probability}%`, '--risk-color': riskLevelColor(index, probability) }">
                 <span class="risk-pie-center">{{ probability.toFixed(2) }}%</span>
               </div>
             </article>
           </div>
 
+          <div class="risk-heatmap-wrap">
+            <div class="risk-heatmap-grid">
+              <template v-for="row in riskHeatmapRows" :key="`risk-row-${row.key}`">
+                <div class="risk-heatmap-label" :title="row.tooltip" :data-tooltip="row.tooltip">{{ row.label }}</div>
+                <div
+                  v-for="(value, idx) in row.values"
+                  :key="`risk-cell-${row.key}-${idx}`"
+                  class="risk-heatmap-cell"
+                  :style="riskHeatCellStyle(value)"
+                >
+                  {{ value.toFixed(2) }}%
+                </div>
+              </template>
+            </div>
+          </div>
+          </div>
+
           <p><b>Variáveis do óleo que levaram o transformador aos estados de risco:</b></p>
           <p>
-            A seguir são apresentadas as variáveis do óleo isolante que levaram o transformador a operar nas regiões
+            A matrix acima apresenta as variáveis do óleo isolante que levaram o transformador a operar nas regiões
             de risco (N1 a N5).
           </p>
 
-          <div class="risk-bars-grid">
-            <article v-for="(level, idx) in oilVariablesByLevel" :key="`bar-${idx}`" class="risk-bar-card">
-              <h5>{{ level.title }}</h5>
-              <div class="risk-bars">
-                <div v-for="(value, varIdx) in level.vars" :key="`${level.title}-${varIdx}`" class="risk-bar-item">
-                  <span class="risk-bar-label">{{ level.labels[varIdx] }}</span>
-                  <div class="risk-bar-track">
-                    <div class="risk-bar-fill" :style="{ width: `${(value / level.max) * 100}%` }"></div>
-                  </div>
-                  <span class="risk-bar-value">{{ value }}</span>
-                </div>
-              </div>
-            </article>
+          <div class="risk-heatmap-legend">
+            <span class="risk-legend-title">Escala de cor:</span>
+            <span class="risk-legend-stop">0%</span>
+            <div class="risk-legend-scale"></div>
+            <span class="risk-legend-stop">100%</span>
           </div>
           </template>
         </article>
@@ -4881,22 +4980,55 @@ watch([activeTab, selectedId], async () => {
   margin: 10px 0 14px;
 }
 
+.risk-grid-shell{
+  --risk-label-col: 140px;
+  --risk-col-width: 124px;
+  --risk-col-gap: 10px;
+  width: 100%;
+  overflow-x: auto;
+}
+
+.risk-pies-aligned{
+  grid-template-columns: var(--risk-label-col) repeat(5, minmax(0, 1fr));
+  column-gap: var(--risk-col-gap);
+  width: 100%;
+  min-width: 0;
+  margin-bottom: 0;
+}
+
+.risk-pies-tab{
+  align-self: end;
+  justify-self: start;
+  width: var(--risk-label-col);
+  box-sizing: border-box;
+  padding: 6px 12px 7px;
+  border: 1px solid rgba(15, 23, 42, 0.1);
+  border-bottom: none;
+  border-top-left-radius: 12px;
+  border-top-right-radius: 10px;
+  background: rgba(15, 23, 42, 0.05);
+  font-size: 12px;
+  font-weight: 700;
+  color: rgba(15, 23, 42, 0.78);
+  text-align: center;
+  transform: translateY(1px);
+}
+
 .risk-pie-card{
   border: 1px solid rgba(15, 23, 42, 0.08);
-  border-radius: 10px;
+  border-radius: 10px 10px 0 0;
   padding: 10px;
   text-align: center;
   background: rgba(248, 250, 252, 0.65);
 }
 
-.risk-pie-card h5,
-.risk-bar-card h5{
+.risk-pie-card h5{
   text-align: center;
   font-weight: 700;
 }
 
 .risk-pie-card h5{
-  color: color-mix(in srgb, var(--risk-color, #1e4e8b) 75%, #1f2937 25%);
+  color: color-mix(in srgb, var(--risk-color-solid, #1e4e8b) 75%, #1f2937 25%);
 }
 
 .risk-pie{
@@ -4930,59 +5062,101 @@ watch([activeTab, selectedId], async () => {
   color: #123a6d;
 }
 
-.risk-bars-grid{
-  display: grid;
-  grid-template-columns: repeat(5, minmax(0, 1fr));
-  gap: 10px;
-  margin-top: 10px;
+.risk-heatmap-wrap{
+  border: 1px solid rgba(15, 23, 42, 0.1);
+  border-top: none;
+  border-radius: 0 0 12px 12px;
+  background: rgba(248, 250, 252, 0.75);
+  overflow: hidden;
+  width: 100%;
+  min-width: 0;
 }
 
-.risk-bar-card{
+.risk-heatmap-grid{
+  display: grid;
+  grid-template-columns: var(--risk-label-col) repeat(5, minmax(0, 1fr));
+  column-gap: var(--risk-col-gap);
+  width: 100%;
+  min-width: 0;
+}
+
+.risk-heatmap-grid > div{
   border: 1px solid rgba(15, 23, 42, 0.08);
-  border-radius: 10px;
-  padding: 10px;
-  background: rgba(248, 250, 252, 0.65);
+  padding: 8px;
+  text-align: center;
+  box-sizing: border-box;
 }
 
-.risk-bars{
-  display: grid;
-  gap: 6px;
+.risk-heatmap-grid > :nth-child(-n + 6){
+  border-top: none;
 }
 
-.risk-bar-item{
-  display: grid;
-  grid-template-columns: 54px 1fr auto;
+.risk-heatmap-label{
+  position: relative;
+  text-align: left;
+  font-size: 11px;
+  font-weight: 700;
+  color: rgba(15, 23, 42, 0.78);
+  background: rgba(255, 255, 255, 0.88);
+  cursor: help;
+}
+
+.risk-heatmap-label::after{
+  content: attr(data-tooltip);
+  position: absolute;
+  left: 100%;
+  top: 50%;
+  transform: translate(8px, -50%);
+  background: rgba(15, 23, 42, 0.92);
+  color: #fff;
+  border-radius: 8px;
+  padding: 6px 8px;
+  font-size: 11px;
+  font-weight: 500;
+  line-height: 1.25;
+  white-space: nowrap;
+  opacity: 0;
+  pointer-events: none;
+  transition: opacity 0.15s ease;
+  z-index: 20;
+}
+
+.risk-heatmap-label:hover::after{
+  opacity: 1;
+}
+
+.risk-heatmap-cell{
+  min-width: 0;
+  font-size: 11px;
+  font-weight: 700;
+  line-height: 1.2;
+}
+
+.risk-heatmap-legend{
+  margin-top: 10px;
+  display: flex;
+  flex-wrap: wrap;
   align-items: center;
   gap: 8px;
+  font-size: 11px;
+  color: rgba(15, 23, 42, 0.72);
 }
 
-.risk-bar-label{
-  font-size: 10px;
-  font-weight: 600;
-  color: rgba(15, 23, 42, 0.75);
-  text-align: left;
+.risk-legend-title{
+  font-weight: 700;
+  color: rgba(15, 23, 42, 0.78);
 }
 
-.risk-bar-track{
-  width: 100%;
-  height: 7px;
+.risk-legend-scale{
+  width: 180px;
+  height: 10px;
   border-radius: 999px;
-  background: rgba(148, 163, 184, 0.25);
-  overflow: hidden;
+  border: 1px solid rgba(15, 23, 42, 0.12);
+  background: linear-gradient(90deg, rgba(226, 232, 240, 0.95) 0%, rgba(255, 0, 0, 0.12) 35%, rgba(255, 0, 0, 1) 100%);
 }
 
-.risk-bar-fill{
-  height: 100%;
-  border-radius: inherit;
-  background: #1e4e8b;
-}
-
-.risk-bar-value{
-  font-size: 10px;
-  font-weight: 600;
-  color: rgba(15, 23, 42, 0.62);
-  min-width: 34px;
-  text-align: right;
+.risk-legend-stop{
+  white-space: nowrap;
 }
 
 .panel-eval .tile p b{
@@ -5926,9 +6100,14 @@ watch([activeTab, selectedId], async () => {
     grid-column: auto;
     grid-row: auto;
   }
-  .risk-pies,
-  .risk-bars-grid{
+  .risk-pies:not(.risk-pies-aligned){
     grid-template-columns: 1fr 1fr;
+  }
+  .risk-pies-aligned{
+    min-width: 760px;
+  }
+  .risk-heatmap-wrap{
+    min-width: 760px;
   }
   .duval-grid{
     grid-template-columns: 1fr;
