@@ -85,6 +85,16 @@ type TransformerPickerGroup = {
 type TransformerPickerEntry =
   | { kind: 'group'; key: string; index: number; group: TransformerPickerGroup }
   | { kind: 'item'; key: string; index: number; group: TransformerPickerGroup; item: Transformer }
+type AdvancedFilterContext = 'analises' | 'coletas' | 'tratamento'
+type AdvancedOperator = '=' | '>' | '<' | '>=' | '<='
+type AdvancedConnector = 'AND' | 'OR'
+type AdvancedFilterRule = {
+  id: number
+  field: string
+  operator: AdvancedOperator
+  value: string
+  connector: AdvancedConnector
+}
 
 const route = useRoute()
 const router = useRouter()
@@ -1345,6 +1355,29 @@ const historySwitchEnabled = computed({
 
 const analysisSearchQuery = ref('')
 const analysisRecentTab = ref<AnalysisRecentTab>('padrao')
+const advancedFilterModalOpen = ref(false)
+const advancedFilterContext = ref<AdvancedFilterContext>('analises')
+const advancedFilterRuleId = ref(1)
+const advancedFilterPillHover = ref<Record<AdvancedFilterContext, boolean>>({
+  analises: false,
+  coletas: false,
+  tratamento: false,
+})
+const advancedFilterApplied = ref<Record<AdvancedFilterContext, boolean>>({
+  analises: false,
+  coletas: false,
+  tratamento: false,
+})
+const advancedFilterRulesDraft = ref<Record<AdvancedFilterContext, AdvancedFilterRule[]>>({
+  analises: [],
+  coletas: [],
+  tratamento: [],
+})
+const advancedFilterRulesApplied = ref<Record<AdvancedFilterContext, AdvancedFilterRule[]>>({
+  analises: [],
+  coletas: [],
+  tratamento: [],
+})
 const analysisColumnsMenuOpen = ref(false)
 const analysisColumnsWrapRef = ref<HTMLElement | null>(null)
 const analysisNewMenuOpen = ref(false)
@@ -2081,20 +2114,168 @@ const oltcUnifiedAnalysisRows = computed<UnifiedAnalysisRow[]>(() => {
     .sort((a, b) => b.sortTime - a.sortTime)
 })
 
+const coletasAdvancedColumns = [
+  { value: 'transformador', label: 'Transformador' },
+  { value: 'status', label: 'Status' },
+  { value: 'statusUltimaColeta', label: 'Status Última Coleta' },
+  { value: 'dataColeta', label: 'Data Coleta' },
+  { value: 'subestacao', label: 'Subestação' },
+  { value: 'unidade', label: 'Unidade' },
+  { value: 'tag', label: 'Tag' },
+  { value: 'tipoAnalise', label: 'Tipo de Análise' },
+  { value: 'faltamDias', label: 'Faltam Dia(s)' },
+]
+
+const analysisAdvancedColumns = computed(() =>
+  (analysisRecentTab.value === 'oltc' ? oltcAnalysisColumns : analysisColumns).map((column) => ({
+    value: column.id,
+    label: column.label,
+  }))
+)
+const treatmentAdvancedColumns = computed(() =>
+  treatmentColumns.map((column) => ({ value: column.id, label: column.label }))
+)
+const activeAdvancedFilterFieldOptions = computed(() => {
+  if (advancedFilterContext.value === 'analises') return analysisAdvancedColumns.value
+  if (advancedFilterContext.value === 'coletas') return coletasAdvancedColumns
+  return treatmentAdvancedColumns.value
+})
+
+function createAdvancedRule(context: AdvancedFilterContext): AdvancedFilterRule {
+  const options =
+    context === 'analises'
+      ? analysisAdvancedColumns.value
+      : context === 'coletas'
+        ? coletasAdvancedColumns
+        : treatmentAdvancedColumns.value
+  return {
+    id: advancedFilterRuleId.value++,
+    field: options[0]?.value || '',
+    operator: '=',
+    value: '',
+    connector: 'AND',
+  }
+}
+
+function normalizeComparable(value: unknown) {
+  return String(value ?? '').trim().toLowerCase()
+}
+
+function parseComparableNumber(value: unknown) {
+  const parsed = Number(String(value ?? '').trim().replace(',', '.'))
+  return Number.isFinite(parsed) ? parsed : null
+}
+
+function advancedRuleMatches(row: Record<string, unknown>, rule: AdvancedFilterRule) {
+  const fieldValue = row[rule.field]
+  const leftNum = parseComparableNumber(fieldValue)
+  const rightNum = parseComparableNumber(rule.value)
+  if (leftNum !== null && rightNum !== null) {
+    if (rule.operator === '=') return leftNum === rightNum
+    if (rule.operator === '>') return leftNum > rightNum
+    if (rule.operator === '<') return leftNum < rightNum
+    if (rule.operator === '>=') return leftNum >= rightNum
+    return leftNum <= rightNum
+  }
+
+  const left = normalizeComparable(fieldValue)
+  const right = normalizeComparable(rule.value)
+  if (!right) return true
+  if (rule.operator === '=') return left.includes(right)
+  if (rule.operator === '>') return left > right
+  if (rule.operator === '<') return left < right
+  if (rule.operator === '>=') return left >= right
+  return left <= right
+}
+
+function matchesAdvancedFilterContext(context: AdvancedFilterContext, row: Record<string, unknown>) {
+  if (!advancedFilterApplied.value[context]) return true
+  const rules = advancedFilterRulesApplied.value[context].filter((rule) => rule.field && rule.value.trim())
+  if (!rules.length) return true
+  let result = advancedRuleMatches(row, rules[0]!)
+  for (let index = 1; index < rules.length; index += 1) {
+    const rule = rules[index]!
+    const current = advancedRuleMatches(row, rule)
+    result = rule.connector === 'OR' ? result || current : result && current
+  }
+  return result
+}
+
+function openAdvancedFilterModal(context: AdvancedFilterContext) {
+  advancedFilterContext.value = context
+  const appliedRules = advancedFilterRulesApplied.value[context]
+  advancedFilterRulesDraft.value[context] = appliedRules.length
+    ? appliedRules.map((rule) => ({ ...rule }))
+    : [createAdvancedRule(context)]
+  advancedFilterModalOpen.value = true
+  advancedFilterPillHover.value[context] = false
+}
+
+function closeAdvancedFilterModal() {
+  advancedFilterModalOpen.value = false
+}
+
+function addAdvancedFilterRule() {
+  const context = advancedFilterContext.value
+  advancedFilterRulesDraft.value[context] = [
+    ...advancedFilterRulesDraft.value[context],
+    createAdvancedRule(context),
+  ]
+}
+
+function removeAdvancedFilterRule(ruleId: number) {
+  const context = advancedFilterContext.value
+  const current = advancedFilterRulesDraft.value[context]
+  if (current.length === 1) {
+    advancedFilterRulesDraft.value[context] = [createAdvancedRule(context)]
+    return
+  }
+  advancedFilterRulesDraft.value[context] = current.filter((rule) => rule.id !== ruleId)
+}
+
+function applyAdvancedFilterModal() {
+  const context = advancedFilterContext.value
+  const validRules = advancedFilterRulesDraft.value[context].filter((rule) => rule.field && rule.value.trim())
+  advancedFilterRulesApplied.value[context] = validRules.map((rule) => ({ ...rule }))
+  advancedFilterApplied.value[context] = validRules.length > 0
+  advancedFilterModalOpen.value = false
+  if (context === 'analises') analysisPage.value = 1
+}
+
+function clearAdvancedFilter(context: AdvancedFilterContext) {
+  advancedFilterApplied.value[context] = false
+  advancedFilterPillHover.value[context] = false
+  advancedFilterRulesApplied.value[context] = []
+  advancedFilterRulesDraft.value[context] = []
+  if (context === 'analises') analysisPage.value = 1
+}
+
+function handleAdvancedFilterPillClick(context: AdvancedFilterContext) {
+  if (advancedFilterApplied.value[context]) {
+    clearAdvancedFilter(context)
+    return
+  }
+  openAdvancedFilterModal(context)
+}
+
 const filteredDefaultAnalysisRows = computed(() => {
   const query = analysisSearchQuery.value.trim().toLowerCase()
-  if (!query) return unifiedAnalysisRows.value
-  return unifiedAnalysisRows.value.filter((row) =>
+  const queryFiltered = !query
+    ? unifiedAnalysisRows.value
+    : unifiedAnalysisRows.value.filter((row) =>
     Object.values(row).some((value) => String(value).toLowerCase().includes(query))
   )
+  return queryFiltered.filter((row) => matchesAdvancedFilterContext('analises', row as Record<string, unknown>))
 })
 
 const filteredOltcAnalysisRows = computed(() => {
   const query = analysisSearchQuery.value.trim().toLowerCase()
-  if (!query) return oltcUnifiedAnalysisRows.value
-  return oltcUnifiedAnalysisRows.value.filter((row) =>
+  const queryFiltered = !query
+    ? oltcUnifiedAnalysisRows.value
+    : oltcUnifiedAnalysisRows.value.filter((row) =>
     Object.values(row).some((value) => String(value).toLowerCase().includes(query))
   )
+  return queryFiltered.filter((row) => matchesAdvancedFilterContext('analises', row as Record<string, unknown>))
 })
 
 const filteredUnifiedAnalysisRows = computed(() =>
@@ -2343,14 +2524,16 @@ const coletasFilteredRows = computed(() => {
   const selectedQuarter = coletasFilterQuarter.value
   const selectedMonth = coletasFilterMonth.value
   const selectedYear = coletasFilterYear.value
-  if (!selectedQuarter && !selectedMonth && !selectedYear) return rows
-  return rows.filter((row) => {
+  const periodFiltered = (!selectedQuarter && !selectedMonth && !selectedYear)
+    ? rows
+    : rows.filter((row) => {
     const { month, year, quarter } = getBrDateMonthYear(row.dataColeta)
     if (selectedQuarter && quarter !== selectedQuarter) return false
     if (selectedMonth && month !== selectedMonth) return false
     if (selectedYear && year !== selectedYear) return false
     return true
   })
+  return periodFiltered.filter((row) => matchesAdvancedFilterContext('coletas', row as Record<string, unknown>))
 })
 
 const treatmentColumns: TreatmentColumn[] = [
@@ -2496,10 +2679,12 @@ const treatmentRows = computed<TreatmentRow[]>(() => {
 
 const treatmentFilteredRows = computed(() => {
   const query = treatmentSearch.value.trim().toLowerCase()
-  if (!query) return treatmentRows.value
-  return treatmentRows.value.filter((row) =>
+  const queryFiltered = !query
+    ? treatmentRows.value
+    : treatmentRows.value.filter((row) =>
     Object.values(row).some((value) => String(value).toLowerCase().includes(query))
   )
+  return queryFiltered.filter((row) => matchesAdvancedFilterContext('tratamento', row as Record<string, unknown>))
 })
 
 const specialTests = computed(() => {
@@ -3079,6 +3264,23 @@ watch([activeTab, selectedId], async () => {
                   </section>
                 </div>
               </div>
+              <button
+                v-if="isGlobalAnalisesView"
+                type="button"
+                class="history-columns-trigger advanced-filter-pill"
+                :class="{
+                  applied: advancedFilterApplied.analises,
+                  'hover-remove': advancedFilterApplied.analises && advancedFilterPillHover.analises,
+                }"
+                @mouseenter="advancedFilterPillHover.analises = true"
+                @mouseleave="advancedFilterPillHover.analises = false"
+                @click="handleAdvancedFilterPillClick('analises')"
+              >
+                <span class="advanced-filter-pill-icon" aria-hidden="true">
+                  {{ advancedFilterApplied.analises ? (advancedFilterPillHover.analises ? '✕' : '✓') : '⚙' }}
+                </span>
+                <span>Filtro avançado</span>
+              </button>
               <div class="history-tabs-inline history-tabs-main history-analyses-subtabs">
                 <button
                   type="button"
@@ -3727,6 +3929,23 @@ watch([activeTab, selectedId], async () => {
                   </option>
                 </select>
               </div>
+              <button
+                v-if="isGlobalColetasView"
+                type="button"
+                class="history-columns-trigger advanced-filter-pill"
+                :class="{
+                  applied: advancedFilterApplied.coletas,
+                  'hover-remove': advancedFilterApplied.coletas && advancedFilterPillHover.coletas,
+                }"
+                @mouseenter="advancedFilterPillHover.coletas = true"
+                @mouseleave="advancedFilterPillHover.coletas = false"
+                @click="handleAdvancedFilterPillClick('coletas')"
+              >
+                <span class="advanced-filter-pill-icon" aria-hidden="true">
+                  {{ advancedFilterApplied.coletas ? (advancedFilterPillHover.coletas ? '✕' : '✓') : '⚙' }}
+                </span>
+                <span>Filtro avançado</span>
+              </button>
               <div class="history-tabs-inline history-tabs-main">
                 <button
                   type="button"
@@ -3968,6 +4187,23 @@ watch([activeTab, selectedId], async () => {
                   </label>
                 </div>
               </div>
+              <button
+                v-if="isGlobalTreatmentView"
+                type="button"
+                class="history-columns-trigger advanced-filter-pill"
+                :class="{
+                  applied: advancedFilterApplied.tratamento,
+                  'hover-remove': advancedFilterApplied.tratamento && advancedFilterPillHover.tratamento,
+                }"
+                @mouseenter="advancedFilterPillHover.tratamento = true"
+                @mouseleave="advancedFilterPillHover.tratamento = false"
+                @click="handleAdvancedFilterPillClick('tratamento')"
+              >
+                <span class="advanced-filter-pill-icon" aria-hidden="true">
+                  {{ advancedFilterApplied.tratamento ? (advancedFilterPillHover.tratamento ? '✕' : '✓') : '⚙' }}
+                </span>
+                <span>Filtro avançado</span>
+              </button>
             </div>
           </div>
 
@@ -4141,6 +4377,56 @@ watch([activeTab, selectedId], async () => {
           <div class="modal-actions">
             <button type="button" class="secondary-btn" @click="closeSpecialistModal">Cancelar</button>
             <button type="button" class="primary-btn" @click="saveSpecialistModal">Salvar</button>
+          </div>
+        </div>
+      </div>
+
+      <div v-if="advancedFilterModalOpen" class="modal-overlay" @click="closeAdvancedFilterModal">
+        <div class="modal-card analysis-modal-card advanced-filter-modal-card" @click.stop>
+          <h4>Filtro Avançado</h4>
+          <div class="advanced-filter-rules">
+            <div
+              v-for="(rule, index) in advancedFilterRulesDraft[advancedFilterContext]"
+              :key="`advanced-rule-${advancedFilterContext}-${rule.id}`"
+              class="advanced-filter-row"
+            >
+              <select v-if="index > 0" v-model="rule.connector" aria-label="Operador lógico">
+                <option value="AND">AND</option>
+                <option value="OR">OR</option>
+              </select>
+              <span v-else class="advanced-filter-first">SE</span>
+              <select v-model="rule.field" aria-label="Campo do filtro">
+                <option
+                  v-for="option in activeAdvancedFilterFieldOptions"
+                  :key="`advanced-field-${advancedFilterContext}-${option.value}`"
+                  :value="option.value"
+                >
+                  {{ option.label }}
+                </option>
+              </select>
+              <select v-model="rule.operator" aria-label="Operador">
+                <option value="=">=</option>
+                <option value=">">&gt;</option>
+                <option value="<">&lt;</option>
+                <option value=">=">&gt;=</option>
+                <option value="<=">&lt;=</option>
+              </select>
+              <input v-model="rule.value" type="text" placeholder="Valor" aria-label="Valor da expressão" />
+              <button type="button" class="advanced-filter-remove-btn" @click="removeAdvancedFilterRule(rule.id)">
+                Remover
+              </button>
+            </div>
+          </div>
+          <div class="advanced-filter-footer">
+            <button type="button" class="history-action-btn small" @click="addAdvancedFilterRule">+ Condição</button>
+            <div class="advanced-filter-footer-actions">
+              <button type="button" class="history-action-btn small neutral" @click="closeAdvancedFilterModal">
+                Cancelar
+              </button>
+              <button type="button" class="history-action-btn small" @click="applyAdvancedFilterModal">
+                Aplicar
+              </button>
+            </div>
           </div>
         </div>
       </div>
@@ -5615,6 +5901,73 @@ watch([activeTab, selectedId], async () => {
   overflow: auto;
 }
 
+.advanced-filter-modal-card{
+  width: min(980px, 100%);
+}
+
+.advanced-filter-rules{
+  display: grid;
+  gap: 10px;
+  max-height: min(56vh, 460px);
+  overflow: auto;
+  padding-right: 4px;
+}
+
+.advanced-filter-row{
+  display: grid;
+  grid-template-columns: 92px minmax(170px, 1fr) 90px minmax(180px, 1fr) auto;
+  gap: 8px;
+  align-items: center;
+}
+
+.advanced-filter-row select,
+.advanced-filter-row input{
+  height: 34px;
+  border-radius: 10px;
+  border: 1px solid rgba(15, 23, 42, 0.14);
+  background: #fff;
+  color: rgba(15, 23, 42, 0.82);
+  padding: 0 10px;
+  font-size: 12px;
+}
+
+.advanced-filter-first{
+  height: 34px;
+  border-radius: 10px;
+  border: 1px dashed rgba(15, 23, 42, 0.22);
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 11px;
+  font-weight: 700;
+  color: rgba(15, 23, 42, 0.65);
+}
+
+.advanced-filter-remove-btn{
+  height: 34px;
+  border-radius: 10px;
+  border: 1px solid rgba(220, 38, 38, 0.35);
+  background: rgba(220, 38, 38, 0.08);
+  color: #b91c1c;
+  padding: 0 10px;
+  font-size: 12px;
+  font-weight: 700;
+  cursor: pointer;
+}
+
+.advanced-filter-footer{
+  margin-top: 14px;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+}
+
+.advanced-filter-footer-actions{
+  display: inline-flex;
+  gap: 8px;
+}
+
 .modal-card h4{
   margin: 0 0 12px;
   color: #123a6d;
@@ -6170,6 +6523,11 @@ watch([activeTab, selectedId], async () => {
   font-size: 12px;
 }
 
+.history-action-btn.small.neutral{
+  background: rgba(15, 23, 42, 0.06);
+  color: rgba(15, 23, 42, 0.8);
+}
+
 .history-action-icon{
   font-size: 12px;
 }
@@ -6297,6 +6655,41 @@ watch([activeTab, selectedId], async () => {
   font-size: 12px;
   font-weight: 600;
   cursor: pointer;
+}
+
+.advanced-filter-pill{
+  padding-inline: 12px;
+  border-radius: 999px;
+}
+
+.advanced-filter-pill-icon{
+  width: 16px;
+  height: 16px;
+  border-radius: 999px;
+  border: 1px solid rgba(15, 23, 42, 0.26);
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 10px;
+  font-weight: 700;
+  line-height: 1;
+}
+
+.advanced-filter-pill.applied{
+  border-color: rgba(22, 163, 74, 0.45);
+  color: #166534;
+}
+
+.advanced-filter-pill.applied .advanced-filter-pill-icon{
+  background: #16a34a;
+  border-color: #16a34a;
+  color: #fff;
+}
+
+.advanced-filter-pill.hover-remove .advanced-filter-pill-icon{
+  background: #dc2626;
+  border-color: #dc2626;
+  color: #fff;
 }
 
 .history-columns-trigger i{
@@ -6603,6 +6996,9 @@ watch([activeTab, selectedId], async () => {
     justify-content: flex-start;
   }
   .analysis-form-grid{
+    grid-template-columns: 1fr;
+  }
+  .advanced-filter-row{
     grid-template-columns: 1fr;
   }
   .modal-grid{
