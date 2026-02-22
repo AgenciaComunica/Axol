@@ -76,6 +76,15 @@ type TreatmentColumn = {
   defaultVisible: boolean
 }
 type TreatmentRow = Record<string, string | number> & { id: string }
+type TransformerPickerGroup = {
+  substation: string
+  items: Transformer[]
+  filteredItems: Transformer[]
+  groupMatch: boolean
+}
+type TransformerPickerEntry =
+  | { kind: 'group'; key: string; index: number; group: TransformerPickerGroup }
+  | { kind: 'item'; key: string; index: number; group: TransformerPickerGroup; item: Transformer }
 
 const route = useRoute()
 const router = useRouter()
@@ -409,6 +418,10 @@ watch(selectedId, (value) => {
   })
 })
 
+watch(selectedId, () => {
+  ensureSelectedGroupExpanded()
+})
+
 watch(activeTab, (value) => {
   if (route.name !== 'transformer-report') return
   if (String(route.query.section || '') === value) return
@@ -431,6 +444,162 @@ watch(
 const selectedTransformer = computed(
   () => transformerOptions.value.find((item) => item.id === selectedId.value) || null
 )
+const transformerPickerWrapRef = ref<HTMLElement | null>(null)
+const transformerPickerMenuRef = ref<HTMLElement | null>(null)
+const transformerPickerTriggerRef = ref<HTMLButtonElement | null>(null)
+const transformerPickerSearchRef = ref<HTMLInputElement | null>(null)
+const transformerPickerOpen = ref(false)
+const transformerPickerSearch = ref('')
+const transformerPickerFocusedIndex = ref(-1)
+const transformerPickerExpanded = ref<Record<string, boolean>>({})
+const selectedTransformerLabel = computed(() =>
+  selectedTransformer.value ? `${selectedTransformer.value.id} • ${selectedTransformer.value.substation}` : 'Selecionar'
+)
+const transformerPickerGroups = computed<TransformerPickerGroup[]>(() => {
+  const groups = new Map<string, Transformer[]>()
+  transformerOptions.value.forEach((item) => {
+    const key = String(item.substation || 'Sem Subestação')
+    if (!groups.has(key)) groups.set(key, [])
+    groups.get(key)!.push(item)
+  })
+
+  const query = transformerPickerSearch.value.trim().toLowerCase()
+  return Array.from(groups.entries())
+    .sort(([a], [b]) => a.localeCompare(b, 'pt-BR'))
+    .map(([substation, items]) => {
+      const sortedItems = [...items].sort((a, b) => a.id.localeCompare(b.id, 'pt-BR'))
+      const groupMatch = !!query && substation.toLowerCase().includes(query)
+      const filteredItems = !query
+        ? sortedItems
+        : sortedItems.filter((item) => {
+            const haystack = [item.id, item.serial, item.tag, item.substation, item.reference]
+              .join(' ')
+              .toLowerCase()
+            return haystack.includes(query)
+          })
+      return { substation, items: sortedItems, filteredItems, groupMatch }
+    })
+    .filter((group) => !query || group.groupMatch || group.filteredItems.length > 0)
+})
+
+function isTransformerGroupExpanded(group: TransformerPickerGroup) {
+  if (transformerPickerSearch.value.trim()) return true
+  return !!transformerPickerExpanded.value[group.substation]
+}
+
+function visibleTransformerItems(group: TransformerPickerGroup) {
+  if (!transformerPickerSearch.value.trim()) return group.items
+  if (group.groupMatch) return group.items
+  return group.filteredItems
+}
+
+const transformerPickerEntries = computed<TransformerPickerEntry[]>(() => {
+  const entries: TransformerPickerEntry[] = []
+  let index = 0
+  transformerPickerGroups.value.forEach((group) => {
+    entries.push({ kind: 'group', key: `group-${group.substation}`, index, group })
+    index += 1
+    if (isTransformerGroupExpanded(group)) {
+      visibleTransformerItems(group).forEach((item) => {
+        entries.push({ kind: 'item', key: `item-${item.id}`, index, group, item })
+        index += 1
+      })
+    }
+  })
+  return entries
+})
+
+function ensureSelectedGroupExpanded() {
+  const selected = selectedTransformer.value
+  if (!selected) return
+  transformerPickerExpanded.value = {
+    ...transformerPickerExpanded.value,
+    [selected.substation]: true,
+  }
+}
+
+function openTransformerPicker() {
+  ensureSelectedGroupExpanded()
+  transformerPickerOpen.value = true
+  nextTick(() => {
+    transformerPickerSearchRef.value?.focus()
+  })
+}
+
+function closeTransformerPicker() {
+  transformerPickerOpen.value = false
+  transformerPickerSearch.value = ''
+  transformerPickerFocusedIndex.value = -1
+}
+
+function toggleTransformerPicker() {
+  if (transformerPickerOpen.value) {
+    closeTransformerPicker()
+    return
+  }
+  openTransformerPicker()
+}
+
+function toggleTransformerGroup(substation: string) {
+  if (transformerPickerSearch.value.trim()) return
+  transformerPickerExpanded.value = {
+    ...transformerPickerExpanded.value,
+    [substation]: !transformerPickerExpanded.value[substation],
+  }
+}
+
+function selectTransformerFromPicker(item: Transformer) {
+  selectedId.value = item.id
+  closeTransformerPicker()
+  nextTick(() => transformerPickerTriggerRef.value?.focus())
+}
+
+function focusTransformerPickerEntry(index: number) {
+  const el = transformerPickerMenuRef.value?.querySelector<HTMLElement>(`[data-trafo-index="${index}"]`)
+  el?.focus()
+}
+
+function moveTransformerPickerFocus(step: number) {
+  const entries = transformerPickerEntries.value
+  if (!entries.length) return
+  const total = entries.length
+  const current = transformerPickerFocusedIndex.value
+  const next = current < 0 ? (step > 0 ? 0 : total - 1) : (current + step + total) % total
+  transformerPickerFocusedIndex.value = next
+  nextTick(() => focusTransformerPickerEntry(next))
+}
+
+function handleTransformerPickerKeydown(event: KeyboardEvent) {
+  if (!transformerPickerOpen.value) return
+  if (event.key === 'Escape') {
+    event.preventDefault()
+    closeTransformerPicker()
+    nextTick(() => transformerPickerTriggerRef.value?.focus())
+    return
+  }
+  if (event.key === 'ArrowDown') {
+    event.preventDefault()
+    moveTransformerPickerFocus(1)
+    return
+  }
+  if (event.key === 'ArrowUp') {
+    event.preventDefault()
+    moveTransformerPickerFocus(-1)
+    return
+  }
+  if (event.key === 'Home') {
+    event.preventDefault()
+    transformerPickerFocusedIndex.value = 0
+    nextTick(() => focusTransformerPickerEntry(0))
+    return
+  }
+  if (event.key === 'End') {
+    event.preventDefault()
+    const last = transformerPickerEntries.value.length - 1
+    transformerPickerFocusedIndex.value = last
+    nextTick(() => focusTransformerPickerEntry(last))
+  }
+}
 const reportViewerModalOpen = ref(false)
 
 function buildReportViewerSrc(showWatermark: boolean) {
@@ -1409,6 +1578,7 @@ function closeAnalysisColumnsOnOutsideClick(event: MouseEvent) {
   const target = event.target as Node | null
   if (!target) return
   if (
+    transformerPickerWrapRef.value?.contains(target) ||
     generateReportWrapRef.value?.contains(target) ||
     analysisColumnsWrapRef.value?.contains(target) ||
     analysisNewWrapRef.value?.contains(target) ||
@@ -1428,6 +1598,9 @@ function closeAnalysisColumnsOnOutsideClick(event: MouseEvent) {
   coletasExportMenuOpen.value = false
   treatmentColumnsMenuOpen.value = false
   treatmentNewMenuOpen.value = false
+  transformerPickerOpen.value = false
+  transformerPickerSearch.value = ''
+  transformerPickerFocusedIndex.value = -1
 }
 
 function toggleGenerateReportMenu() {
@@ -2577,13 +2750,74 @@ watch([activeTab, selectedId], async () => {
 
     <section class="report-shell">
       <div v-if="!isGlobalScopeView" class="report-toolbar">
-        <div v-if="!isGlobalScopeView" class="selector">
-          <label for="trafo-select">Selecionar transformador</label>
-          <select id="trafo-select" v-model="selectedId">
-            <option v-for="item in transformerOptions" :key="item.id" :value="item.id">
-              {{ item.id }} • {{ item.substation }}
-            </option>
-          </select>
+        <div v-if="!isGlobalScopeView" ref="transformerPickerWrapRef" class="selector">
+          <label for="trafo-picker-trigger">Selecionar transformador</label>
+          <button
+            id="trafo-picker-trigger"
+            ref="transformerPickerTriggerRef"
+            type="button"
+            class="transformer-picker-trigger"
+            :aria-expanded="transformerPickerOpen ? 'true' : 'false'"
+            aria-haspopup="listbox"
+            @click="toggleTransformerPicker"
+            @keydown.down.prevent="openTransformerPicker"
+          >
+            <span class="transformer-picker-trigger-label">{{ selectedTransformerLabel }}</span>
+            <i aria-hidden="true">{{ transformerPickerOpen ? '▴' : '▾' }}</i>
+          </button>
+          <div
+            v-if="transformerPickerOpen"
+            ref="transformerPickerMenuRef"
+            class="transformer-picker-menu"
+            @keydown="handleTransformerPickerKeydown"
+          >
+            <div class="transformer-picker-search-wrap">
+              <input
+                ref="transformerPickerSearchRef"
+                v-model="transformerPickerSearch"
+                type="text"
+                class="transformer-picker-search"
+                placeholder="Buscar subestação ou transformador..."
+                aria-label="Buscar subestação ou transformador"
+                @keydown.down.prevent="moveTransformerPickerFocus(1)"
+                @keydown.up.prevent="moveTransformerPickerFocus(-1)"
+              />
+            </div>
+            <div class="transformer-picker-list" role="listbox" aria-label="Transformadores por subestação">
+              <template v-for="entry in transformerPickerEntries" :key="entry.key">
+                <button
+                  v-if="entry.kind === 'group'"
+                  type="button"
+                  class="transformer-picker-group"
+                  :data-trafo-index="entry.index"
+                  :aria-expanded="isTransformerGroupExpanded(entry.group) ? 'true' : 'false'"
+                  @click="toggleTransformerGroup(entry.group.substation)"
+                >
+                  <span class="transformer-picker-group-main">
+                    <i class="transformer-picker-caret" aria-hidden="true">
+                      {{ isTransformerGroupExpanded(entry.group) ? '−' : '+' }}
+                    </i>
+                    {{ entry.group.substation }}
+                  </span>
+                  <small>{{ visibleTransformerItems(entry.group).length }}</small>
+                </button>
+                <button
+                  v-else
+                  type="button"
+                  class="transformer-picker-item"
+                  :class="{ active: entry.item.id === selectedId }"
+                  :data-trafo-index="entry.index"
+                  @click="selectTransformerFromPicker(entry.item)"
+                >
+                  <span>{{ entry.item.id }}</span>
+                  <small>{{ entry.item.serial }}</small>
+                </button>
+              </template>
+              <div v-if="!transformerPickerEntries.length" class="transformer-picker-empty">
+                Nenhum transformador encontrado.
+              </div>
+            </div>
+          </div>
         </div>
         <div class="report-toolbar-actions">
           <button
@@ -4389,6 +4623,7 @@ watch([activeTab, selectedId], async () => {
 .selector{
   display: grid;
   gap: 6px;
+  position: relative;
 }
 
 .selector label{
@@ -4398,13 +4633,138 @@ watch([activeTab, selectedId], async () => {
   color: rgba(15, 23, 42, 0.55);
 }
 
-.selector select{
+.transformer-picker-trigger{
   min-width: 340px;
   height: 38px;
   border-radius: 12px;
   border: 1px solid rgba(15, 23, 42, 0.12);
   background: #fff;
   padding: 0 12px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  color: rgba(15, 23, 42, 0.82);
+  cursor: pointer;
+}
+
+.transformer-picker-trigger-label{
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.transformer-picker-menu{
+  position: absolute;
+  top: calc(100% + 6px);
+  left: 0;
+  z-index: 48;
+  width: min(420px, 92vw);
+  border-radius: 12px;
+  border: 1px solid rgba(15, 23, 42, 0.12);
+  background: #fff;
+  box-shadow: 0 12px 28px rgba(15, 23, 42, 0.14);
+  padding: 8px;
+  display: grid;
+  gap: 8px;
+}
+
+.transformer-picker-search-wrap{
+  padding: 2px;
+}
+
+.transformer-picker-search{
+  width: 100%;
+  height: 36px;
+  border-radius: 10px;
+  border: 1px solid rgba(15, 23, 42, 0.12);
+  padding: 0 10px;
+  font-size: 12px;
+  color: rgba(15, 23, 42, 0.82);
+  outline: none;
+}
+
+.transformer-picker-search:focus{
+  border-color: #1e4e8b;
+  box-shadow: 0 0 0 2px rgba(30, 78, 139, 0.14);
+}
+
+.transformer-picker-list{
+  max-height: 320px;
+  overflow: auto;
+  display: grid;
+  gap: 4px;
+  padding-right: 2px;
+}
+
+.transformer-picker-group,
+.transformer-picker-item{
+  width: 100%;
+  border: 1px solid rgba(15, 23, 42, 0.08);
+  background: #fff;
+  border-radius: 10px;
+  padding: 8px 10px;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  text-align: left;
+  cursor: pointer;
+  color: rgba(15, 23, 42, 0.8);
+}
+
+.transformer-picker-group-main{
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 12px;
+  font-weight: 700;
+}
+
+.transformer-picker-caret{
+  width: 16px;
+  height: 16px;
+  border-radius: 999px;
+  border: 1px solid rgba(15, 23, 42, 0.2);
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  font-style: normal;
+  font-size: 12px;
+  line-height: 1;
+}
+
+.transformer-picker-group small,
+.transformer-picker-item small{
+  font-size: 11px;
+  color: rgba(15, 23, 42, 0.55);
+}
+
+.transformer-picker-item{
+  padding-left: 34px;
+}
+
+.transformer-picker-item.active{
+  border-color: rgba(30, 78, 139, 0.45);
+  background: rgba(30, 78, 139, 0.08);
+}
+
+.transformer-picker-group:hover,
+.transformer-picker-item:hover{
+  background: rgba(15, 23, 42, 0.04);
+}
+
+.transformer-picker-group:focus-visible,
+.transformer-picker-item:focus-visible{
+  outline: 2px solid rgba(30, 78, 139, 0.4);
+  outline-offset: 1px;
+}
+
+.transformer-picker-empty{
+  padding: 10px;
+  font-size: 12px;
+  color: rgba(15, 23, 42, 0.55);
+  text-align: center;
 }
 
 .locate-btn{
@@ -6060,8 +6420,12 @@ watch([activeTab, selectedId], async () => {
   .report-view{
     padding: 90px 16px 40px;
   }
-  .selector select{
+  .transformer-picker-trigger{
     min-width: 100%;
+  }
+  .transformer-picker-menu{
+    min-width: 100%;
+    width: 100%;
   }
   .report-toolbar{
     flex-direction: column;
