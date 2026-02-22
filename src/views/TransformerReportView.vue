@@ -86,7 +86,7 @@ type TransformerPickerEntry =
   | { kind: 'group'; key: string; index: number; group: TransformerPickerGroup }
   | { kind: 'item'; key: string; index: number; group: TransformerPickerGroup; item: Transformer }
 type AdvancedFilterContext = 'analises' | 'coletas' | 'tratamento'
-type AdvancedOperator = '=' | '>' | '<' | '>=' | '<='
+type AdvancedOperator = '=' | '!=' | '>' | '<' | '>=' | '<='
 type AdvancedConnector = 'AND' | 'OR'
 type AdvancedFilterRule = {
   id: number
@@ -1358,11 +1358,6 @@ const analysisRecentTab = ref<AnalysisRecentTab>('padrao')
 const advancedFilterModalOpen = ref(false)
 const advancedFilterContext = ref<AdvancedFilterContext>('analises')
 const advancedFilterRuleId = ref(1)
-const advancedFilterPillHover = ref<Record<AdvancedFilterContext, boolean>>({
-  analises: false,
-  coletas: false,
-  tratamento: false,
-})
 const advancedFilterApplied = ref<Record<AdvancedFilterContext, boolean>>({
   analises: false,
   coletas: false,
@@ -1542,11 +1537,51 @@ const oltcAnalysisColumns: OltcAnalysisColumn[] = [
   { id: 'ensaioDbpc', label: 'Ensaio de DBPC', group: 'Físico Químico', defaultVisible: false },
 ]
 
+function getColumnsStorageUserKey() {
+  if (typeof window === 'undefined') return 'anon'
+  return (
+    window.localStorage.getItem('axol.user.id')
+    || window.localStorage.getItem('axol.user.email')
+    || window.localStorage.getItem('axol.user')
+    || 'anon'
+  )
+}
+
+function buildColumnsStorageKey(scope: string) {
+  return `${scope}.${getColumnsStorageUserKey()}`
+}
+
+function loadStoredColumnIds(scope: string, defaults: string[], allowed: string[]) {
+  if (typeof window === 'undefined') return defaults
+  try {
+    const raw = window.localStorage.getItem(buildColumnsStorageKey(scope))
+    if (!raw) return defaults
+    const parsed = JSON.parse(raw)
+    if (!Array.isArray(parsed)) return defaults
+    const filtered = parsed.filter((value): value is string => typeof value === 'string' && allowed.includes(value))
+    return filtered.length ? filtered : defaults
+  } catch {
+    return defaults
+  }
+}
+
+function persistColumnIds(scope: string, value: string[]) {
+  if (typeof window === 'undefined') return
+  window.localStorage.setItem(buildColumnsStorageKey(scope), JSON.stringify(value))
+}
+
+const analysisColumnsScope = 'axol.columns.report.analysis.default'
+const analysisColumnDefaults = analysisColumns.filter((column) => column.defaultVisible).map((column) => column.id)
+const analysisColumnAllowed = analysisColumns.map((column) => column.id)
+const oltcAnalysisColumnsScope = 'axol.columns.report.analysis.oltc'
+const oltcAnalysisColumnDefaults = oltcAnalysisColumns.filter((column) => column.defaultVisible).map((column) => column.id)
+const oltcAnalysisColumnAllowed = oltcAnalysisColumns.map((column) => column.id)
+
 const analysisVisibleColumnIds = ref<string[]>(
-  analysisColumns.filter((column) => column.defaultVisible).map((column) => column.id)
+  loadStoredColumnIds(analysisColumnsScope, analysisColumnDefaults, analysisColumnAllowed)
 )
 const oltcAnalysisVisibleColumnIds = ref<string[]>(
-  oltcAnalysisColumns.filter((column) => column.defaultVisible).map((column) => column.id)
+  loadStoredColumnIds(oltcAnalysisColumnsScope, oltcAnalysisColumnDefaults, oltcAnalysisColumnAllowed)
 )
 
 const analysisVisibleColumns = computed(() =>
@@ -2140,6 +2175,28 @@ const activeAdvancedFilterFieldOptions = computed(() => {
   if (advancedFilterContext.value === 'coletas') return coletasAdvancedColumns
   return treatmentAdvancedColumns.value
 })
+const advancedAnalysisFieldEnumOptions: Record<string, string[]> = {
+  tipo: ['Cromatografia', 'Físico Químico', 'Ensaios Especiais'],
+  statusOltc: ['Normal', 'Alerta', 'Crítico', 'Pendente'],
+  enxofreCorrosivo: ['CORROSIVO', 'NAO CORROSIVO'],
+}
+const advancedColetasFieldEnumOptions: Record<string, string[]> = {
+  status: ['Pendente', 'Atrasada', 'Coletado'],
+  statusUltimaColeta: ['Normal', 'Alerta', 'Crítico', 'Pendente'],
+  tipoAnalise: ['Cromatografia', 'Físico Químico', 'Ensaios Especiais'],
+}
+const advancedTreatmentFieldEnumOptions: Record<string, string[]> = {
+  statusTratamento: ['Concluído', 'Pendente', 'Em Andamento'],
+  comutador: ['SIM', 'NÃO', 'CST', '-'],
+  operando: ['SIM', 'NÃO', '-'],
+  selado: ['SIM', 'NÃO', '-'],
+}
+
+function getAdvancedFieldValueOptions(context: AdvancedFilterContext, field: string) {
+  if (context === 'analises') return advancedAnalysisFieldEnumOptions[field] || []
+  if (context === 'coletas') return advancedColetasFieldEnumOptions[field] || []
+  return advancedTreatmentFieldEnumOptions[field] || []
+}
 
 function createAdvancedRule(context: AdvancedFilterContext): AdvancedFilterRule {
   const options =
@@ -2172,6 +2229,7 @@ function advancedRuleMatches(row: Record<string, unknown>, rule: AdvancedFilterR
   const rightNum = parseComparableNumber(rule.value)
   if (leftNum !== null && rightNum !== null) {
     if (rule.operator === '=') return leftNum === rightNum
+    if (rule.operator === '!=') return leftNum !== rightNum
     if (rule.operator === '>') return leftNum > rightNum
     if (rule.operator === '<') return leftNum < rightNum
     if (rule.operator === '>=') return leftNum >= rightNum
@@ -2182,6 +2240,7 @@ function advancedRuleMatches(row: Record<string, unknown>, rule: AdvancedFilterR
   const right = normalizeComparable(rule.value)
   if (!right) return true
   if (rule.operator === '=') return left.includes(right)
+  if (rule.operator === '!=') return !left.includes(right)
   if (rule.operator === '>') return left > right
   if (rule.operator === '<') return left < right
   if (rule.operator === '>=') return left >= right
@@ -2208,7 +2267,6 @@ function openAdvancedFilterModal(context: AdvancedFilterContext) {
     ? appliedRules.map((rule) => ({ ...rule }))
     : [createAdvancedRule(context)]
   advancedFilterModalOpen.value = true
-  advancedFilterPillHover.value[context] = false
 }
 
 function closeAdvancedFilterModal() {
@@ -2244,18 +2302,18 @@ function applyAdvancedFilterModal() {
 
 function clearAdvancedFilter(context: AdvancedFilterContext) {
   advancedFilterApplied.value[context] = false
-  advancedFilterPillHover.value[context] = false
   advancedFilterRulesApplied.value[context] = []
   advancedFilterRulesDraft.value[context] = []
   if (context === 'analises') analysisPage.value = 1
 }
 
 function handleAdvancedFilterPillClick(context: AdvancedFilterContext) {
-  if (advancedFilterApplied.value[context]) {
-    clearAdvancedFilter(context)
-    return
-  }
   openAdvancedFilterModal(context)
+}
+
+function clearAdvancedFilterDraft() {
+  const context = advancedFilterContext.value
+  advancedFilterRulesDraft.value[context] = [createAdvancedRule(context)]
 }
 
 const filteredDefaultAnalysisRows = computed(() => {
@@ -2314,6 +2372,22 @@ watch(analysisRecentTab, () => {
   analysisColumnsMenuOpen.value = false
   analysisExportSelected.value = [...analysisExportOptions.value]
 })
+
+watch(
+  analysisVisibleColumnIds,
+  (value) => {
+    persistColumnIds(analysisColumnsScope, value)
+  },
+  { deep: true }
+)
+
+watch(
+  oltcAnalysisVisibleColumnIds,
+  (value) => {
+    persistColumnIds(oltcAnalysisColumnsScope, value)
+  },
+  { deep: true }
+)
 
 watch(
   () => route.name,
@@ -2566,12 +2640,23 @@ const treatmentColumns: TreatmentColumn[] = [
   { id: 'dbpc', label: 'DBPC', defaultVisible: false },
 ]
 
+const treatmentColumnsScope = 'axol.columns.report.treatment'
+const treatmentColumnDefaults = treatmentColumns.filter((column) => column.defaultVisible).map((column) => column.id)
+const treatmentColumnAllowed = treatmentColumns.map((column) => column.id)
 const treatmentVisibleColumnIds = ref<string[]>(
-  treatmentColumns.filter((column) => column.defaultVisible).map((column) => column.id)
+  loadStoredColumnIds(treatmentColumnsScope, treatmentColumnDefaults, treatmentColumnAllowed)
 )
 
 const treatmentVisibleColumns = computed(() =>
   treatmentColumns.filter((column) => treatmentVisibleColumnIds.value.includes(column.id))
+)
+
+watch(
+  treatmentVisibleColumnIds,
+  (value) => {
+    persistColumnIds(treatmentColumnsScope, value)
+  },
+  { deep: true }
 )
 
 const treatmentRows = computed<TreatmentRow[]>(() => {
@@ -3240,6 +3325,29 @@ watch([activeTab, selectedId], async () => {
                   aria-label="Pesquisar análises recentes"
                 />
               </label>
+              <button
+                v-if="isGlobalAnalisesView"
+                type="button"
+                class="history-columns-trigger advanced-filter-pill"
+                :class="{ applied: advancedFilterApplied.analises }"
+                @click="handleAdvancedFilterPillClick('analises')"
+              >
+                <span
+                  v-if="advancedFilterApplied.analises"
+                  class="advanced-filter-clear-btn"
+                  role="button"
+                  tabindex="0"
+                  aria-label="Remover filtro avançado"
+                  @click.stop="clearAdvancedFilter('analises')"
+                  @keydown.enter.stop.prevent="clearAdvancedFilter('analises')"
+                  @keydown.space.stop.prevent="clearAdvancedFilter('analises')"
+                >
+                  <span class="advanced-filter-icon-check" aria-hidden="true">✓</span>
+                  <span class="advanced-filter-icon-remove" aria-hidden="true">✕</span>
+                </span>
+                <span v-else class="advanced-filter-pill-icon" aria-hidden="true">⚙</span>
+                <span>Filtro avançado</span>
+              </button>
               <div ref="analysisColumnsWrapRef" class="history-columns-picker">
                 <button type="button" class="history-columns-trigger" @click="toggleAnalysisColumnsMenu">
                   <span>Colunas</span>
@@ -3264,23 +3372,6 @@ watch([activeTab, selectedId], async () => {
                   </section>
                 </div>
               </div>
-              <button
-                v-if="isGlobalAnalisesView"
-                type="button"
-                class="history-columns-trigger advanced-filter-pill"
-                :class="{
-                  applied: advancedFilterApplied.analises,
-                  'hover-remove': advancedFilterApplied.analises && advancedFilterPillHover.analises,
-                }"
-                @mouseenter="advancedFilterPillHover.analises = true"
-                @mouseleave="advancedFilterPillHover.analises = false"
-                @click="handleAdvancedFilterPillClick('analises')"
-              >
-                <span class="advanced-filter-pill-icon" aria-hidden="true">
-                  {{ advancedFilterApplied.analises ? (advancedFilterPillHover.analises ? '✕' : '✓') : '⚙' }}
-                </span>
-                <span>Filtro avançado</span>
-              </button>
               <div class="history-tabs-inline history-tabs-main history-analyses-subtabs">
                 <button
                   type="button"
@@ -3933,17 +4024,23 @@ watch([activeTab, selectedId], async () => {
                 v-if="isGlobalColetasView"
                 type="button"
                 class="history-columns-trigger advanced-filter-pill"
-                :class="{
-                  applied: advancedFilterApplied.coletas,
-                  'hover-remove': advancedFilterApplied.coletas && advancedFilterPillHover.coletas,
-                }"
-                @mouseenter="advancedFilterPillHover.coletas = true"
-                @mouseleave="advancedFilterPillHover.coletas = false"
+                :class="{ applied: advancedFilterApplied.coletas }"
                 @click="handleAdvancedFilterPillClick('coletas')"
               >
-                <span class="advanced-filter-pill-icon" aria-hidden="true">
-                  {{ advancedFilterApplied.coletas ? (advancedFilterPillHover.coletas ? '✕' : '✓') : '⚙' }}
+                <span
+                  v-if="advancedFilterApplied.coletas"
+                  class="advanced-filter-clear-btn"
+                  role="button"
+                  tabindex="0"
+                  aria-label="Remover filtro avançado"
+                  @click.stop="clearAdvancedFilter('coletas')"
+                  @keydown.enter.stop.prevent="clearAdvancedFilter('coletas')"
+                  @keydown.space.stop.prevent="clearAdvancedFilter('coletas')"
+                >
+                  <span class="advanced-filter-icon-check" aria-hidden="true">✓</span>
+                  <span class="advanced-filter-icon-remove" aria-hidden="true">✕</span>
                 </span>
+                <span v-else class="advanced-filter-pill-icon" aria-hidden="true">⚙</span>
                 <span>Filtro avançado</span>
               </button>
               <div class="history-tabs-inline history-tabs-main">
@@ -4170,6 +4267,29 @@ watch([activeTab, selectedId], async () => {
                   aria-label="Filtrar tratamento de óleo"
                 />
               </label>
+              <button
+                v-if="isGlobalTreatmentView"
+                type="button"
+                class="history-columns-trigger advanced-filter-pill"
+                :class="{ applied: advancedFilterApplied.tratamento }"
+                @click="handleAdvancedFilterPillClick('tratamento')"
+              >
+                <span
+                  v-if="advancedFilterApplied.tratamento"
+                  class="advanced-filter-clear-btn"
+                  role="button"
+                  tabindex="0"
+                  aria-label="Remover filtro avançado"
+                  @click.stop="clearAdvancedFilter('tratamento')"
+                  @keydown.enter.stop.prevent="clearAdvancedFilter('tratamento')"
+                  @keydown.space.stop.prevent="clearAdvancedFilter('tratamento')"
+                >
+                  <span class="advanced-filter-icon-check" aria-hidden="true">✓</span>
+                  <span class="advanced-filter-icon-remove" aria-hidden="true">✕</span>
+                </span>
+                <span v-else class="advanced-filter-pill-icon" aria-hidden="true">⚙</span>
+                <span>Filtro avançado</span>
+              </button>
               <div ref="treatmentColumnsWrapRef" class="history-columns-picker">
                 <button type="button" class="history-columns-trigger" @click="toggleTreatmentColumnsMenu">
                   <span>Colunas</span>
@@ -4187,23 +4307,6 @@ watch([activeTab, selectedId], async () => {
                   </label>
                 </div>
               </div>
-              <button
-                v-if="isGlobalTreatmentView"
-                type="button"
-                class="history-columns-trigger advanced-filter-pill"
-                :class="{
-                  applied: advancedFilterApplied.tratamento,
-                  'hover-remove': advancedFilterApplied.tratamento && advancedFilterPillHover.tratamento,
-                }"
-                @mouseenter="advancedFilterPillHover.tratamento = true"
-                @mouseleave="advancedFilterPillHover.tratamento = false"
-                @click="handleAdvancedFilterPillClick('tratamento')"
-              >
-                <span class="advanced-filter-pill-icon" aria-hidden="true">
-                  {{ advancedFilterApplied.tratamento ? (advancedFilterPillHover.tratamento ? '✕' : '✓') : '⚙' }}
-                </span>
-                <span>Filtro avançado</span>
-              </button>
             </div>
           </div>
 
@@ -4391,8 +4494,8 @@ watch([activeTab, selectedId], async () => {
               class="advanced-filter-row"
             >
               <select v-if="index > 0" v-model="rule.connector" aria-label="Operador lógico">
-                <option value="AND">AND</option>
-                <option value="OR">OR</option>
+                <option value="AND">E</option>
+                <option value="OR">OU</option>
               </select>
               <span v-else class="advanced-filter-first">SE</span>
               <select v-model="rule.field" aria-label="Campo do filtro">
@@ -4405,13 +4508,28 @@ watch([activeTab, selectedId], async () => {
                 </option>
               </select>
               <select v-model="rule.operator" aria-label="Operador">
-                <option value="=">=</option>
+                <option value="=">==</option>
+                <option value="!=">!=</option>
                 <option value=">">&gt;</option>
                 <option value="<">&lt;</option>
                 <option value=">=">&gt;=</option>
                 <option value="<=">&lt;=</option>
               </select>
-              <input v-model="rule.value" type="text" placeholder="Valor" aria-label="Valor da expressão" />
+              <select
+                v-if="getAdvancedFieldValueOptions(advancedFilterContext, rule.field).length"
+                v-model="rule.value"
+                aria-label="Valor da expressão"
+              >
+                <option value="">Selecione</option>
+                <option
+                  v-for="option in getAdvancedFieldValueOptions(advancedFilterContext, rule.field)"
+                  :key="`advanced-value-${advancedFilterContext}-${rule.id}-${option}`"
+                  :value="option"
+                >
+                  {{ option }}
+                </option>
+              </select>
+              <input v-else v-model="rule.value" type="text" placeholder="Valor" aria-label="Valor da expressão" />
               <button type="button" class="advanced-filter-remove-btn" @click="removeAdvancedFilterRule(rule.id)">
                 Remover
               </button>
@@ -4420,6 +4538,9 @@ watch([activeTab, selectedId], async () => {
           <div class="advanced-filter-footer">
             <button type="button" class="history-action-btn small" @click="addAdvancedFilterRule">+ Condição</button>
             <div class="advanced-filter-footer-actions">
+              <button type="button" class="history-action-btn small neutral" @click="clearAdvancedFilterDraft">
+                Limpar
+              </button>
               <button type="button" class="history-action-btn small neutral" @click="closeAdvancedFilterModal">
                 Cancelar
               </button>
@@ -6680,16 +6801,48 @@ watch([activeTab, selectedId], async () => {
   color: #166534;
 }
 
-.advanced-filter-pill.applied .advanced-filter-pill-icon{
+.advanced-filter-clear-btn{
+  width: 18px;
+  height: 18px;
+  border-radius: 999px;
+  border: 1px solid #16a34a;
   background: #16a34a;
-  border-color: #16a34a;
   color: #fff;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  position: relative;
+  cursor: pointer;
 }
 
-.advanced-filter-pill.hover-remove .advanced-filter-pill-icon{
+.advanced-filter-icon-check,
+.advanced-filter-icon-remove{
+  position: absolute;
+  font-size: 11px;
+  font-weight: 800;
+  line-height: 1;
+  transition: opacity 0.15s ease;
+}
+
+.advanced-filter-icon-check{
+  opacity: 1;
+}
+
+.advanced-filter-icon-remove{
+  opacity: 0;
+}
+
+.advanced-filter-clear-btn:hover{
   background: #dc2626;
   border-color: #dc2626;
-  color: #fff;
+}
+
+.advanced-filter-clear-btn:hover .advanced-filter-icon-check{
+  opacity: 0;
+}
+
+.advanced-filter-clear-btn:hover .advanced-filter-icon-remove{
+  opacity: 1;
 }
 
 .history-columns-trigger i{

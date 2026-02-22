@@ -416,7 +416,7 @@ type ColumnConfig = {
   defaultVisible: boolean
 }
 
-type AdvancedOperator = '=' | '>' | '<' | '>=' | '<='
+type AdvancedOperator = '=' | '!=' | '>' | '<' | '>=' | '<='
 type AdvancedConnector = 'AND' | 'OR'
 type AdvancedFilterRule = {
   id: number
@@ -457,21 +457,69 @@ const columns: ColumnConfig[] = [
   { id: 'actions', label: 'Ações', align: 'center', defaultVisible: true },
 ]
 
+function getColumnsStorageUserKey() {
+  if (typeof window === 'undefined') return 'anon'
+  return (
+    window.localStorage.getItem('axol.user.id')
+    || window.localStorage.getItem('axol.user.email')
+    || window.localStorage.getItem('axol.user')
+    || 'anon'
+  )
+}
+
+function buildColumnsStorageKey(scope: string) {
+  return `${scope}.${getColumnsStorageUserKey()}`
+}
+
+function loadStoredColumnIds(scope: string, defaults: string[], allowed: string[]) {
+  if (typeof window === 'undefined') return defaults
+  try {
+    const raw = window.localStorage.getItem(buildColumnsStorageKey(scope))
+    if (!raw) return defaults
+    const parsed = JSON.parse(raw)
+    if (!Array.isArray(parsed)) return defaults
+    const filtered = parsed.filter((value): value is string => typeof value === 'string' && allowed.includes(value))
+    return filtered.length ? filtered : defaults
+  } catch {
+    return defaults
+  }
+}
+
+function persistColumnIds(scope: string, value: string[]) {
+  if (typeof window === 'undefined') return
+  window.localStorage.setItem(buildColumnsStorageKey(scope), JSON.stringify(value))
+}
+
+const transformerColumnsScope = 'axol.columns.transformers'
+const transformerColumnDefaults = columns.filter((col) => col.defaultVisible).map((col) => col.id)
+const transformerColumnAllowed = columns.map((col) => col.id)
 const visibleColumnIds = ref<string[]>(
-  columns.filter((col) => col.defaultVisible).map((col) => col.id)
+  loadStoredColumnIds(transformerColumnsScope, transformerColumnDefaults, transformerColumnAllowed)
 )
 
 const visibleColumns = computed(() => columns.filter((col) => visibleColumnIds.value.includes(col.id)))
 
 const advancedFilterModalOpen = ref(false)
 const advancedFilterApplied = ref(false)
-const advancedFilterPillHover = ref(false)
 const advancedRuleId = ref(1)
 const advancedRulesDraft = ref<AdvancedFilterRule[]>([])
 const advancedRulesApplied = ref<AdvancedFilterRule[]>([])
 const advancedFieldOptions = columns
   .filter((column) => column.id !== 'actions')
   .map((column) => ({ value: column.id, label: column.label }))
+const advancedFieldEnumOptions: Record<string, string[]> = {
+  status: ['Normal', 'Alerta', 'Crítico', 'Pendente'],
+  statusTr: ['Normal', 'Alerta', 'Crítico', 'Pendente'],
+  analystStatus: ['Normal', 'Alerta', 'Crítico', 'Pendente'],
+  commutator: ['SIM', 'NÃO', 'CST'],
+  oilFluid: ['MINERAL', 'NAO IDENTIFICADO'],
+  operating: ['SIM', 'NÃO', '-'],
+  sealed: ['SIM', 'NÃO', '-'],
+}
+
+function getAdvancedFieldValueOptions(field: string) {
+  return advancedFieldEnumOptions[field] || []
+}
 
 function createDefaultAdvancedRule(): AdvancedFilterRule {
   return {
@@ -501,6 +549,7 @@ function advancedRuleMatch(item: TableTransformer, rule: AdvancedFilterRule) {
 
   if (leftNum !== null && rightNum !== null) {
     if (rule.operator === '=') return leftNum === rightNum
+    if (rule.operator === '!=') return leftNum !== rightNum
     if (rule.operator === '>') return leftNum > rightNum
     if (rule.operator === '<') return leftNum < rightNum
     if (rule.operator === '>=') return leftNum >= rightNum
@@ -511,6 +560,7 @@ function advancedRuleMatch(item: TableTransformer, rule: AdvancedFilterRule) {
   const right = normalizeComparable(rule.value)
   if (!right) return true
   if (rule.operator === '=') return left.includes(right)
+  if (rule.operator === '!=') return !left.includes(right)
   if (rule.operator === '>') return left > right
   if (rule.operator === '<') return left < right
   if (rule.operator === '>=') return left >= right
@@ -576,7 +626,6 @@ function openAdvancedFilterModal() {
     ? advancedRulesApplied.value.map((rule) => ({ ...rule }))
     : [createDefaultAdvancedRule()]
   advancedFilterModalOpen.value = true
-  advancedFilterPillHover.value = false
 }
 
 function addAdvancedRule() {
@@ -605,18 +654,17 @@ function applyAdvancedFilter() {
 
 function clearAdvancedFilter() {
   advancedFilterApplied.value = false
-  advancedFilterPillHover.value = false
   advancedRulesApplied.value = []
   advancedRulesDraft.value = []
   page.value = 1
 }
 
 function handleAdvancedFilterPillClick() {
-  if (advancedFilterApplied.value) {
-    clearAdvancedFilter()
-    return
-  }
   openAdvancedFilterModal()
+}
+
+function clearAdvancedFilterDraft() {
+  advancedRulesDraft.value = [createDefaultAdvancedRule()]
 }
 
 function toggleColumn(id: string) {
@@ -710,6 +758,14 @@ watch(searchQuery, () => {
 watch(rowsPerPage, () => {
   page.value = 1
 })
+
+watch(
+  visibleColumnIds,
+  (value) => {
+    persistColumnIds(transformerColumnsScope, value)
+  },
+  { deep: true }
+)
 </script>
 
 <template>
@@ -734,6 +790,27 @@ watch(rowsPerPage, () => {
               aria-label="Pesquisar transformador"
             />
           </div>
+          <button
+            type="button"
+            class="ghost-btn advanced-filter-pill"
+            @click="handleAdvancedFilterPillClick"
+          >
+            <span
+              v-if="advancedFilterApplied"
+              class="advanced-filter-clear-btn"
+              role="button"
+              tabindex="0"
+              aria-label="Remover filtro avançado"
+              @click.stop="clearAdvancedFilter"
+              @keydown.enter.stop.prevent="clearAdvancedFilter"
+              @keydown.space.stop.prevent="clearAdvancedFilter"
+            >
+              <span class="advanced-filter-icon-check" aria-hidden="true">✓</span>
+              <span class="advanced-filter-icon-remove" aria-hidden="true">✕</span>
+            </span>
+            <span v-else class="advanced-filter-icon" aria-hidden="true">⚙</span>
+            Filtro avançado
+          </button>
           <div class="columns-wrap" ref="columnsWrapRef">
             <button type="button" class="ghost-btn columns-btn" @click="toggleColumnsMenu">
               Colunas
@@ -749,23 +826,6 @@ watch(rowsPerPage, () => {
               </label>
             </div>
           </div>
-          <button
-            type="button"
-            class="ghost-btn advanced-filter-pill"
-            :class="{ applied: advancedFilterApplied, 'hover-remove': advancedFilterApplied && advancedFilterPillHover }"
-            @mouseenter="advancedFilterPillHover = true"
-            @mouseleave="advancedFilterPillHover = false"
-            @click="handleAdvancedFilterPillClick"
-          >
-            <span class="advanced-filter-icon" aria-hidden="true">
-              {{
-                advancedFilterApplied
-                  ? (advancedFilterPillHover ? '✕' : '✓')
-                  : '⚙'
-              }}
-            </span>
-            Filtro avançado
-          </button>
         </div>
         <div class="table-head-right">
           <div class="export-wrap" ref="newWrapRef">
@@ -1033,8 +1093,8 @@ watch(rowsPerPage, () => {
         <div class="advanced-filter-rules">
           <div v-for="(rule, index) in advancedRulesDraft" :key="`advanced-rule-${rule.id}`" class="advanced-filter-row">
             <select v-if="index > 0" v-model="rule.connector" aria-label="Operador lógico">
-              <option value="AND">AND</option>
-              <option value="OR">OR</option>
+              <option value="AND">E</option>
+              <option value="OR">OU</option>
             </select>
             <span v-else class="advanced-filter-first">SE</span>
             <select v-model="rule.field" aria-label="Campo">
@@ -1043,19 +1103,35 @@ watch(rowsPerPage, () => {
               </option>
             </select>
             <select v-model="rule.operator" aria-label="Operador">
-              <option value="=">=</option>
+              <option value="=">==</option>
+              <option value="!=">!=</option>
               <option value=">">&gt;</option>
               <option value="<">&lt;</option>
               <option value=">=">&gt;=</option>
               <option value="<=">&lt;=</option>
             </select>
-            <input v-model="rule.value" type="text" placeholder="Valor" aria-label="Valor da expressão" />
+            <select
+              v-if="getAdvancedFieldValueOptions(rule.field).length"
+              v-model="rule.value"
+              aria-label="Valor da expressão"
+            >
+              <option value="">Selecione</option>
+              <option
+                v-for="option in getAdvancedFieldValueOptions(rule.field)"
+                :key="`advanced-value-${rule.id}-${option}`"
+                :value="option"
+              >
+                {{ option }}
+              </option>
+            </select>
+            <input v-else v-model="rule.value" type="text" placeholder="Valor" aria-label="Valor da expressão" />
             <button type="button" class="advanced-filter-remove" @click="removeAdvancedRule(rule.id)">Remover</button>
           </div>
         </div>
         <div class="advanced-filter-footer">
           <button type="button" class="modal-btn secondary" @click="addAdvancedRule">+ Condição</button>
           <div class="advanced-filter-footer-right">
+            <button type="button" class="modal-btn secondary" @click="clearAdvancedFilterDraft">Limpar</button>
             <button type="button" class="modal-btn secondary" @click="closeAdvancedFilterModal">Cancelar</button>
             <button type="button" class="modal-btn primary" @click="applyAdvancedFilter">Aplicar</button>
           </div>
@@ -1162,16 +1238,49 @@ watch(rowsPerPage, () => {
   color: #166534;
 }
 
-.advanced-filter-pill.applied .advanced-filter-icon{
+.advanced-filter-clear-btn{
+  width: 18px;
+  height: 18px;
+  border-radius: 999px;
+  border: 1px solid #16a34a;
   background: #16a34a;
-  border-color: #16a34a;
-  color: #ffffff;
+  color: #fff;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  padding: 0;
+  position: relative;
+  cursor: pointer;
 }
 
-.advanced-filter-pill.hover-remove .advanced-filter-icon{
-  background: #dc2626;
+.advanced-filter-icon-check,
+.advanced-filter-icon-remove{
+  position: absolute;
+  font-size: 11px;
+  font-weight: 800;
+  line-height: 1;
+  transition: opacity 0.15s ease;
+}
+
+.advanced-filter-icon-check{
+  opacity: 1;
+}
+
+.advanced-filter-icon-remove{
+  opacity: 0;
+}
+
+.advanced-filter-clear-btn:hover{
   border-color: #dc2626;
-  color: #ffffff;
+  background: #dc2626;
+}
+
+.advanced-filter-clear-btn:hover .advanced-filter-icon-check{
+  opacity: 0;
+}
+
+.advanced-filter-clear-btn:hover .advanced-filter-icon-remove{
+  opacity: 1;
 }
 
 .columns-menu{
