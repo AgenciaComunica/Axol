@@ -4230,7 +4230,7 @@ watch([activeTab, selectedId], async () => {
 <style scoped>
 .report-view{
   min-height: 100vh;
-  background: radial-gradient(circle at 20% 10%, #f4f7ff 0%, #f8fafc 45%, #ffffff 100%);
+  background: var(--app-bg-gradient);
   padding: 32px 32px 60px 96px;
   color: #0f172a;
   overflow-x: hidden;

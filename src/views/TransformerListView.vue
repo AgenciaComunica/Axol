@@ -858,7 +858,7 @@ watch(rowsPerPage, () => {
 <style scoped>
 .transformer-list{
   min-height: 100vh;
-  background: radial-gradient(circle at 20% 20%, #f5f7ff 0%, #f8fafc 45%, #ffffff 100%);
+  background: var(--app-bg-gradient);
   padding: 32px 32px 60px 96px;
   color: #0f172a;
   overflow-x: hidden;

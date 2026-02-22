@@ -2195,7 +2195,7 @@ watch(
 <style scoped>
 .prototype{
   min-height: 100vh;
-  background: radial-gradient(1200px 800px at 20% 0%, #ffffff 0%, #f4f5f7 48%, #f2f3f5 100%);
+  background: var(--app-bg-gradient);
   color: var(--color-text, #0f172a);
 }
 

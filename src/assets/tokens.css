@@ -9,4 +9,8 @@
   --status-normal: #2f7f6c;
   --status-alert: #f7cf29;
   --status-critical: #c85c5c;
+  --app-bg-start: #e4ebf0;
+  --app-bg-mid: #d3dde5;
+  --app-bg-end: #c3cfd9;
+  --app-bg-gradient: radial-gradient(1200px 800px at 20% 0%, var(--app-bg-start) 0%, var(--app-bg-mid) 48%, var(--app-bg-end) 100%);
 }
