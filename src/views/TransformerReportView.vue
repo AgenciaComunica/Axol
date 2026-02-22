@@ -76,6 +76,25 @@ type TreatmentColumn = {
   defaultVisible: boolean
 }
 type TreatmentRow = Record<string, string | number> & { id: string }
+type TransformerPickerGroup = {
+  substation: string
+  items: Transformer[]
+  filteredItems: Transformer[]
+  groupMatch: boolean
+}
+type TransformerPickerEntry =
+  | { kind: 'group'; key: string; index: number; group: TransformerPickerGroup }
+  | { kind: 'item'; key: string; index: number; group: TransformerPickerGroup; item: Transformer }
+type AdvancedFilterContext = 'analises' | 'coletas' | 'tratamento'
+type AdvancedOperator = '=' | '!=' | '>' | '<' | '>=' | '<='
+type AdvancedConnector = 'AND' | 'OR'
+type AdvancedFilterRule = {
+  id: number
+  field: string
+  operator: AdvancedOperator
+  value: string
+  connector: AdvancedConnector
+}
 
 const route = useRoute()
 const router = useRouter()
@@ -116,6 +135,9 @@ function parseBrDate(value: unknown) {
   return new Date(year, month - 1, day).getTime()
 }
 
+const macroTabs = ['TR Óleo', 'TR Rota', 'OLTC'] as const
+type MacroTab = (typeof macroTabs)[number]
+
 const tabs = [
   'Avaliação Completa',
   'Histórico de Análises',
@@ -123,7 +145,6 @@ const tabs = [
   'Coletas',
   'Tratamento de Óleo',
   'Duval',
-  'TR Óleo',
 ] as const
 
 type ReportTab = (typeof tabs)[number]
@@ -134,6 +155,12 @@ function toValidTab(value: unknown): ReportTab {
   return (tabs.find((tab) => tab === text) as ReportTab) || 'Avaliação Completa'
 }
 
+function toValidMacro(value: unknown): MacroTab {
+  const text = String(value || '')
+  return (macroTabs.find((tab) => tab === text) as MacroTab) || 'TR Rota'
+}
+
+const activeMacroTab = ref<MacroTab>(toValidMacro(route.query.macro))
 const activeTab = ref<ReportTab>(toValidTab(route.query.section))
 const isGlobalAnalisesView = computed(() => route.name === 'analises-view')
 const isGlobalTreatmentView = computed(() => route.name === 'tratamento-oleo-view')
@@ -164,6 +191,40 @@ const forcedGlobalTab = computed<ReportTab | null>(() => {
   if (isGlobalTreatmentView.value) return 'Tratamento de Óleo'
   if (isGlobalColetasView.value) return 'Coletas'
   return null
+})
+const isOltcMacro = computed(() => activeMacroTab.value === 'OLTC')
+const isTrRotaMacro = computed(() => activeMacroTab.value === 'TR Rota')
+
+const trOleoSubTabs: ReportTab[] = [
+  'Avaliação Completa',
+  'Histórico de Análises',
+  'Avaliação IEEE',
+  'Coletas',
+  'Tratamento de Óleo',
+  'Duval',
+]
+const trRotaSubTabs: ReportTab[] = ['Avaliação Completa', 'Histórico de Análises']
+const oltcSubTabs: ReportTab[] = [
+  'Avaliação Completa',
+  'Histórico de Análises',
+  'Avaliação IEEE',
+  'Coletas',
+  'Tratamento de Óleo',
+  'Duval',
+]
+
+const activeSubTabs = computed(() => {
+  if (isGlobalScopeView.value) return tabs.map((tab) => ({ value: tab, label: tab }))
+  const base =
+    activeMacroTab.value === 'TR Óleo'
+      ? trOleoSubTabs
+      : activeMacroTab.value === 'TR Rota'
+        ? trRotaSubTabs
+        : oltcSubTabs
+  return base.map((tab) => ({
+    value: tab,
+    label: isTrRotaMacro.value && tab === 'Histórico de Análises' ? 'Análise de Campo' : tab,
+  }))
 })
 const generateReportMenuOpen = ref(false)
 const generateReportWrapRef = ref<HTMLElement | null>(null)
@@ -399,25 +460,50 @@ watch(
   }
 )
 
+watch(
+  () => route.query.macro,
+  (value) => {
+    if (isGlobalScopeView.value) return
+    activeMacroTab.value = toValidMacro(value)
+  }
+)
+
 watch(selectedId, (value) => {
   if (route.name !== 'transformer-report') return
   if (!value || String(route.params.id || '') === value) return
   router.replace({
     name: 'transformer-report',
     params: { id: value },
-    query: { ...route.query, section: activeTab.value },
+    query: { ...route.query, macro: activeMacroTab.value, section: activeTab.value },
   })
+})
+
+watch(selectedId, () => {
+  ensureSelectedGroupExpanded()
 })
 
 watch(activeTab, (value) => {
   if (route.name !== 'transformer-report') return
-  if (String(route.query.section || '') === value) return
+  if (String(route.query.section || '') === value && String(route.query.macro || '') === activeMacroTab.value) return
   router.replace({
     name: 'transformer-report',
     params: { id: selectedId.value || String(route.params.id || '') },
-    query: { ...route.query, section: value },
+    query: { ...route.query, macro: activeMacroTab.value, section: value },
   })
 })
+
+watch(activeMacroTab, (value) => {
+  if (route.name !== 'transformer-report') return
+  const allowed = activeSubTabs.value.map((tab) => tab.value)
+  if (!allowed.includes(activeTab.value)) {
+    activeTab.value = allowed[0] || 'Avaliação Completa'
+  }
+  router.replace({
+    name: 'transformer-report',
+    params: { id: selectedId.value || String(route.params.id || '') },
+    query: { ...route.query, macro: value, section: activeTab.value },
+  })
+}, { immediate: true })
 
 watch(
   forcedGlobalTab,
@@ -428,9 +514,177 @@ watch(
   { immediate: true }
 )
 
+watch(
+  activeSubTabs,
+  (items) => {
+    const allowed = items.map((tab) => tab.value)
+    if (!allowed.length) return
+    if (!allowed.includes(activeTab.value)) {
+      activeTab.value = allowed[0]!
+    }
+  },
+  { immediate: true }
+)
+
 const selectedTransformer = computed(
   () => transformerOptions.value.find((item) => item.id === selectedId.value) || null
 )
+const transformerPickerWrapRef = ref<HTMLElement | null>(null)
+const transformerPickerMenuRef = ref<HTMLElement | null>(null)
+const transformerPickerTriggerRef = ref<HTMLButtonElement | null>(null)
+const transformerPickerSearchRef = ref<HTMLInputElement | null>(null)
+const transformerPickerOpen = ref(false)
+const transformerPickerSearch = ref('')
+const transformerPickerFocusedIndex = ref(-1)
+const transformerPickerExpanded = ref<Record<string, boolean>>({})
+const selectedTransformerLabel = computed(() =>
+  selectedTransformer.value ? `${selectedTransformer.value.id} • ${selectedTransformer.value.substation}` : 'Selecionar'
+)
+const transformerPickerGroups = computed<TransformerPickerGroup[]>(() => {
+  const groups = new Map<string, Transformer[]>()
+  transformerOptions.value.forEach((item) => {
+    const key = String(item.substation || 'Sem Subestação')
+    if (!groups.has(key)) groups.set(key, [])
+    groups.get(key)!.push(item)
+  })
+
+  const query = transformerPickerSearch.value.trim().toLowerCase()
+  return Array.from(groups.entries())
+    .sort(([a], [b]) => a.localeCompare(b, 'pt-BR'))
+    .map(([substation, items]) => {
+      const sortedItems = [...items].sort((a, b) => a.id.localeCompare(b.id, 'pt-BR'))
+      const groupMatch = !!query && substation.toLowerCase().includes(query)
+      const filteredItems = !query
+        ? sortedItems
+        : sortedItems.filter((item) => {
+            const haystack = [item.id, item.serial, item.tag, item.substation, item.reference]
+              .join(' ')
+              .toLowerCase()
+            return haystack.includes(query)
+          })
+      return { substation, items: sortedItems, filteredItems, groupMatch }
+    })
+    .filter((group) => !query || group.groupMatch || group.filteredItems.length > 0)
+})
+
+function isTransformerGroupExpanded(group: TransformerPickerGroup) {
+  if (transformerPickerSearch.value.trim()) return true
+  return !!transformerPickerExpanded.value[group.substation]
+}
+
+function visibleTransformerItems(group: TransformerPickerGroup) {
+  if (!transformerPickerSearch.value.trim()) return group.items
+  if (group.groupMatch) return group.items
+  return group.filteredItems
+}
+
+const transformerPickerEntries = computed<TransformerPickerEntry[]>(() => {
+  const entries: TransformerPickerEntry[] = []
+  let index = 0
+  transformerPickerGroups.value.forEach((group) => {
+    entries.push({ kind: 'group', key: `group-${group.substation}`, index, group })
+    index += 1
+    if (isTransformerGroupExpanded(group)) {
+      visibleTransformerItems(group).forEach((item) => {
+        entries.push({ kind: 'item', key: `item-${item.id}`, index, group, item })
+        index += 1
+      })
+    }
+  })
+  return entries
+})
+
+function ensureSelectedGroupExpanded() {
+  const selected = selectedTransformer.value
+  if (!selected) return
+  transformerPickerExpanded.value = {
+    ...transformerPickerExpanded.value,
+    [selected.substation]: true,
+  }
+}
+
+function openTransformerPicker() {
+  ensureSelectedGroupExpanded()
+  transformerPickerOpen.value = true
+  nextTick(() => {
+    transformerPickerSearchRef.value?.focus()
+  })
+}
+
+function closeTransformerPicker() {
+  transformerPickerOpen.value = false
+  transformerPickerSearch.value = ''
+  transformerPickerFocusedIndex.value = -1
+}
+
+function toggleTransformerPicker() {
+  if (transformerPickerOpen.value) {
+    closeTransformerPicker()
+    return
+  }
+  openTransformerPicker()
+}
+
+function toggleTransformerGroup(substation: string) {
+  if (transformerPickerSearch.value.trim()) return
+  transformerPickerExpanded.value = {
+    ...transformerPickerExpanded.value,
+    [substation]: !transformerPickerExpanded.value[substation],
+  }
+}
+
+function selectTransformerFromPicker(item: Transformer) {
+  selectedId.value = item.id
+  closeTransformerPicker()
+  nextTick(() => transformerPickerTriggerRef.value?.focus())
+}
+
+function focusTransformerPickerEntry(index: number) {
+  const el = transformerPickerMenuRef.value?.querySelector<HTMLElement>(`[data-trafo-index="${index}"]`)
+  el?.focus()
+}
+
+function moveTransformerPickerFocus(step: number) {
+  const entries = transformerPickerEntries.value
+  if (!entries.length) return
+  const total = entries.length
+  const current = transformerPickerFocusedIndex.value
+  const next = current < 0 ? (step > 0 ? 0 : total - 1) : (current + step + total) % total
+  transformerPickerFocusedIndex.value = next
+  nextTick(() => focusTransformerPickerEntry(next))
+}
+
+function handleTransformerPickerKeydown(event: KeyboardEvent) {
+  if (!transformerPickerOpen.value) return
+  if (event.key === 'Escape') {
+    event.preventDefault()
+    closeTransformerPicker()
+    nextTick(() => transformerPickerTriggerRef.value?.focus())
+    return
+  }
+  if (event.key === 'ArrowDown') {
+    event.preventDefault()
+    moveTransformerPickerFocus(1)
+    return
+  }
+  if (event.key === 'ArrowUp') {
+    event.preventDefault()
+    moveTransformerPickerFocus(-1)
+    return
+  }
+  if (event.key === 'Home') {
+    event.preventDefault()
+    transformerPickerFocusedIndex.value = 0
+    nextTick(() => focusTransformerPickerEntry(0))
+    return
+  }
+  if (event.key === 'End') {
+    event.preventDefault()
+    const last = transformerPickerEntries.value.length - 1
+    transformerPickerFocusedIndex.value = last
+    nextTick(() => focusTransformerPickerEntry(last))
+  }
+}
 const reportViewerModalOpen = ref(false)
 
 function buildReportViewerSrc(showWatermark: boolean) {
@@ -1176,6 +1430,25 @@ const historySwitchEnabled = computed({
 
 const analysisSearchQuery = ref('')
 const analysisRecentTab = ref<AnalysisRecentTab>('padrao')
+const showAnalysisRecentSubtabs = computed(() => isGlobalAnalisesView.value)
+const advancedFilterModalOpen = ref(false)
+const advancedFilterContext = ref<AdvancedFilterContext>('analises')
+const advancedFilterRuleId = ref(1)
+const advancedFilterApplied = ref<Record<AdvancedFilterContext, boolean>>({
+  analises: false,
+  coletas: false,
+  tratamento: false,
+})
+const advancedFilterRulesDraft = ref<Record<AdvancedFilterContext, AdvancedFilterRule[]>>({
+  analises: [],
+  coletas: [],
+  tratamento: [],
+})
+const advancedFilterRulesApplied = ref<Record<AdvancedFilterContext, AdvancedFilterRule[]>>({
+  analises: [],
+  coletas: [],
+  tratamento: [],
+})
 const analysisColumnsMenuOpen = ref(false)
 const analysisColumnsWrapRef = ref<HTMLElement | null>(null)
 const analysisNewMenuOpen = ref(false)
@@ -1340,11 +1613,51 @@ const oltcAnalysisColumns: OltcAnalysisColumn[] = [
   { id: 'ensaioDbpc', label: 'Ensaio de DBPC', group: 'Físico Químico', defaultVisible: false },
 ]
 
+function getColumnsStorageUserKey() {
+  if (typeof window === 'undefined') return 'anon'
+  return (
+    window.localStorage.getItem('axol.user.id')
+    || window.localStorage.getItem('axol.user.email')
+    || window.localStorage.getItem('axol.user')
+    || 'anon'
+  )
+}
+
+function buildColumnsStorageKey(scope: string) {
+  return `${scope}.${getColumnsStorageUserKey()}`
+}
+
+function loadStoredColumnIds(scope: string, defaults: string[], allowed: string[]) {
+  if (typeof window === 'undefined') return defaults
+  try {
+    const raw = window.localStorage.getItem(buildColumnsStorageKey(scope))
+    if (!raw) return defaults
+    const parsed = JSON.parse(raw)
+    if (!Array.isArray(parsed)) return defaults
+    const filtered = parsed.filter((value): value is string => typeof value === 'string' && allowed.includes(value))
+    return filtered.length ? filtered : defaults
+  } catch {
+    return defaults
+  }
+}
+
+function persistColumnIds(scope: string, value: string[]) {
+  if (typeof window === 'undefined') return
+  window.localStorage.setItem(buildColumnsStorageKey(scope), JSON.stringify(value))
+}
+
+const analysisColumnsScope = 'axol.columns.report.analysis.default'
+const analysisColumnDefaults = analysisColumns.filter((column) => column.defaultVisible).map((column) => column.id)
+const analysisColumnAllowed = analysisColumns.map((column) => column.id)
+const oltcAnalysisColumnsScope = 'axol.columns.report.analysis.oltc'
+const oltcAnalysisColumnDefaults = oltcAnalysisColumns.filter((column) => column.defaultVisible).map((column) => column.id)
+const oltcAnalysisColumnAllowed = oltcAnalysisColumns.map((column) => column.id)
+
 const analysisVisibleColumnIds = ref<string[]>(
-  analysisColumns.filter((column) => column.defaultVisible).map((column) => column.id)
+  loadStoredColumnIds(analysisColumnsScope, analysisColumnDefaults, analysisColumnAllowed)
 )
 const oltcAnalysisVisibleColumnIds = ref<string[]>(
-  oltcAnalysisColumns.filter((column) => column.defaultVisible).map((column) => column.id)
+  loadStoredColumnIds(oltcAnalysisColumnsScope, oltcAnalysisColumnDefaults, oltcAnalysisColumnAllowed)
 )
 
 const analysisVisibleColumns = computed(() =>
@@ -1409,6 +1722,7 @@ function closeAnalysisColumnsOnOutsideClick(event: MouseEvent) {
   const target = event.target as Node | null
   if (!target) return
   if (
+    transformerPickerWrapRef.value?.contains(target) ||
     generateReportWrapRef.value?.contains(target) ||
     analysisColumnsWrapRef.value?.contains(target) ||
     analysisNewWrapRef.value?.contains(target) ||
@@ -1428,6 +1742,9 @@ function closeAnalysisColumnsOnOutsideClick(event: MouseEvent) {
   coletasExportMenuOpen.value = false
   treatmentColumnsMenuOpen.value = false
   treatmentNewMenuOpen.value = false
+  transformerPickerOpen.value = false
+  transformerPickerSearch.value = ''
+  transformerPickerFocusedIndex.value = -1
 }
 
 function toggleGenerateReportMenu() {
@@ -1908,20 +2225,191 @@ const oltcUnifiedAnalysisRows = computed<UnifiedAnalysisRow[]>(() => {
     .sort((a, b) => b.sortTime - a.sortTime)
 })
 
+const coletasAdvancedColumns = [
+  { value: 'transformador', label: 'Transformador' },
+  { value: 'status', label: 'Status' },
+  { value: 'statusUltimaColeta', label: 'Status Última Coleta' },
+  { value: 'dataColeta', label: 'Data Coleta' },
+  { value: 'subestacao', label: 'Subestação' },
+  { value: 'unidade', label: 'Unidade' },
+  { value: 'tag', label: 'Tag' },
+  { value: 'tipoAnalise', label: 'Tipo de Análise' },
+  { value: 'faltamDias', label: 'Faltam Dia(s)' },
+]
+
+const analysisAdvancedColumns = computed(() =>
+  (analysisRecentTab.value === 'oltc' ? oltcAnalysisColumns : analysisColumns).map((column) => ({
+    value: column.id,
+    label: column.label,
+  }))
+)
+const treatmentAdvancedColumns = computed(() =>
+  treatmentColumns.map((column) => ({ value: column.id, label: column.label }))
+)
+const activeAdvancedFilterFieldOptions = computed(() => {
+  if (advancedFilterContext.value === 'analises') return analysisAdvancedColumns.value
+  if (advancedFilterContext.value === 'coletas') return coletasAdvancedColumns
+  return treatmentAdvancedColumns.value
+})
+const advancedAnalysisFieldEnumOptions: Record<string, string[]> = {
+  tipo: ['Cromatografia', 'Físico Químico', 'Ensaios Especiais'],
+  statusOltc: ['Normal', 'Alerta', 'Crítico', 'Pendente'],
+  enxofreCorrosivo: ['CORROSIVO', 'NAO CORROSIVO'],
+}
+const advancedColetasFieldEnumOptions: Record<string, string[]> = {
+  status: ['Pendente', 'Atrasada', 'Coletado'],
+  statusUltimaColeta: ['Normal', 'Alerta', 'Crítico', 'Pendente'],
+  tipoAnalise: ['Cromatografia', 'Físico Químico', 'Ensaios Especiais'],
+}
+const advancedTreatmentFieldEnumOptions: Record<string, string[]> = {
+  statusTratamento: ['Concluído', 'Pendente', 'Em Andamento'],
+  comutador: ['SIM', 'NÃO', 'CST', '-'],
+  operando: ['SIM', 'NÃO', '-'],
+  selado: ['SIM', 'NÃO', '-'],
+}
+
+function getAdvancedFieldValueOptions(context: AdvancedFilterContext, field: string) {
+  if (context === 'analises') return advancedAnalysisFieldEnumOptions[field] || []
+  if (context === 'coletas') return advancedColetasFieldEnumOptions[field] || []
+  return advancedTreatmentFieldEnumOptions[field] || []
+}
+
+function createAdvancedRule(context: AdvancedFilterContext): AdvancedFilterRule {
+  const options =
+    context === 'analises'
+      ? analysisAdvancedColumns.value
+      : context === 'coletas'
+        ? coletasAdvancedColumns
+        : treatmentAdvancedColumns.value
+  return {
+    id: advancedFilterRuleId.value++,
+    field: options[0]?.value || '',
+    operator: '=',
+    value: '',
+    connector: 'AND',
+  }
+}
+
+function normalizeComparable(value: unknown) {
+  return String(value ?? '').trim().toLowerCase()
+}
+
+function parseComparableNumber(value: unknown) {
+  const parsed = Number(String(value ?? '').trim().replace(',', '.'))
+  return Number.isFinite(parsed) ? parsed : null
+}
+
+function advancedRuleMatches(row: Record<string, unknown>, rule: AdvancedFilterRule) {
+  const fieldValue = row[rule.field]
+  const leftNum = parseComparableNumber(fieldValue)
+  const rightNum = parseComparableNumber(rule.value)
+  if (leftNum !== null && rightNum !== null) {
+    if (rule.operator === '=') return leftNum === rightNum
+    if (rule.operator === '!=') return leftNum !== rightNum
+    if (rule.operator === '>') return leftNum > rightNum
+    if (rule.operator === '<') return leftNum < rightNum
+    if (rule.operator === '>=') return leftNum >= rightNum
+    return leftNum <= rightNum
+  }
+
+  const left = normalizeComparable(fieldValue)
+  const right = normalizeComparable(rule.value)
+  if (!right) return true
+  if (rule.operator === '=') return left.includes(right)
+  if (rule.operator === '!=') return !left.includes(right)
+  if (rule.operator === '>') return left > right
+  if (rule.operator === '<') return left < right
+  if (rule.operator === '>=') return left >= right
+  return left <= right
+}
+
+function matchesAdvancedFilterContext(context: AdvancedFilterContext, row: Record<string, unknown>) {
+  if (!advancedFilterApplied.value[context]) return true
+  const rules = advancedFilterRulesApplied.value[context].filter((rule) => rule.field && rule.value.trim())
+  if (!rules.length) return true
+  let result = advancedRuleMatches(row, rules[0]!)
+  for (let index = 1; index < rules.length; index += 1) {
+    const rule = rules[index]!
+    const current = advancedRuleMatches(row, rule)
+    result = rule.connector === 'OR' ? result || current : result && current
+  }
+  return result
+}
+
+function openAdvancedFilterModal(context: AdvancedFilterContext) {
+  advancedFilterContext.value = context
+  const appliedRules = advancedFilterRulesApplied.value[context]
+  advancedFilterRulesDraft.value[context] = appliedRules.length
+    ? appliedRules.map((rule) => ({ ...rule }))
+    : [createAdvancedRule(context)]
+  advancedFilterModalOpen.value = true
+}
+
+function closeAdvancedFilterModal() {
+  advancedFilterModalOpen.value = false
+}
+
+function addAdvancedFilterRule() {
+  const context = advancedFilterContext.value
+  advancedFilterRulesDraft.value[context] = [
+    ...advancedFilterRulesDraft.value[context],
+    createAdvancedRule(context),
+  ]
+}
+
+function removeAdvancedFilterRule(ruleId: number) {
+  const context = advancedFilterContext.value
+  const current = advancedFilterRulesDraft.value[context]
+  if (current.length === 1) {
+    advancedFilterRulesDraft.value[context] = [createAdvancedRule(context)]
+    return
+  }
+  advancedFilterRulesDraft.value[context] = current.filter((rule) => rule.id !== ruleId)
+}
+
+function applyAdvancedFilterModal() {
+  const context = advancedFilterContext.value
+  const validRules = advancedFilterRulesDraft.value[context].filter((rule) => rule.field && rule.value.trim())
+  advancedFilterRulesApplied.value[context] = validRules.map((rule) => ({ ...rule }))
+  advancedFilterApplied.value[context] = validRules.length > 0
+  advancedFilterModalOpen.value = false
+  if (context === 'analises') analysisPage.value = 1
+}
+
+function clearAdvancedFilter(context: AdvancedFilterContext) {
+  advancedFilterApplied.value[context] = false
+  advancedFilterRulesApplied.value[context] = []
+  advancedFilterRulesDraft.value[context] = []
+  if (context === 'analises') analysisPage.value = 1
+}
+
+function handleAdvancedFilterPillClick(context: AdvancedFilterContext) {
+  openAdvancedFilterModal(context)
+}
+
+function clearAdvancedFilterDraft() {
+  const context = advancedFilterContext.value
+  advancedFilterRulesDraft.value[context] = [createAdvancedRule(context)]
+}
+
 const filteredDefaultAnalysisRows = computed(() => {
   const query = analysisSearchQuery.value.trim().toLowerCase()
-  if (!query) return unifiedAnalysisRows.value
-  return unifiedAnalysisRows.value.filter((row) =>
+  const queryFiltered = !query
+    ? unifiedAnalysisRows.value
+    : unifiedAnalysisRows.value.filter((row) =>
     Object.values(row).some((value) => String(value).toLowerCase().includes(query))
   )
+  return queryFiltered.filter((row) => matchesAdvancedFilterContext('analises', row as Record<string, unknown>))
 })
 
 const filteredOltcAnalysisRows = computed(() => {
   const query = analysisSearchQuery.value.trim().toLowerCase()
-  if (!query) return oltcUnifiedAnalysisRows.value
-  return oltcUnifiedAnalysisRows.value.filter((row) =>
+  const queryFiltered = !query
+    ? oltcUnifiedAnalysisRows.value
+    : oltcUnifiedAnalysisRows.value.filter((row) =>
     Object.values(row).some((value) => String(value).toLowerCase().includes(query))
   )
+  return queryFiltered.filter((row) => matchesAdvancedFilterContext('analises', row as Record<string, unknown>))
 })
 
 const filteredUnifiedAnalysisRows = computed(() =>
@@ -1960,6 +2448,31 @@ watch(analysisRecentTab, () => {
   analysisColumnsMenuOpen.value = false
   analysisExportSelected.value = [...analysisExportOptions.value]
 })
+
+watch(
+  activeMacroTab,
+  () => {
+    if (isGlobalAnalisesView.value) return
+    analysisRecentTab.value = isOltcMacro.value ? 'oltc' : 'padrao'
+  },
+  { immediate: true }
+)
+
+watch(
+  analysisVisibleColumnIds,
+  (value) => {
+    persistColumnIds(analysisColumnsScope, value)
+  },
+  { deep: true }
+)
+
+watch(
+  oltcAnalysisVisibleColumnIds,
+  (value) => {
+    persistColumnIds(oltcAnalysisColumnsScope, value)
+  },
+  { deep: true }
+)
 
 watch(
   () => route.name,
@@ -2170,14 +2683,16 @@ const coletasFilteredRows = computed(() => {
   const selectedQuarter = coletasFilterQuarter.value
   const selectedMonth = coletasFilterMonth.value
   const selectedYear = coletasFilterYear.value
-  if (!selectedQuarter && !selectedMonth && !selectedYear) return rows
-  return rows.filter((row) => {
+  const periodFiltered = (!selectedQuarter && !selectedMonth && !selectedYear)
+    ? rows
+    : rows.filter((row) => {
     const { month, year, quarter } = getBrDateMonthYear(row.dataColeta)
     if (selectedQuarter && quarter !== selectedQuarter) return false
     if (selectedMonth && month !== selectedMonth) return false
     if (selectedYear && year !== selectedYear) return false
     return true
   })
+  return periodFiltered.filter((row) => matchesAdvancedFilterContext('coletas', row as Record<string, unknown>))
 })
 
 const treatmentColumns: TreatmentColumn[] = [
@@ -2210,12 +2725,23 @@ const treatmentColumns: TreatmentColumn[] = [
   { id: 'dbpc', label: 'DBPC', defaultVisible: false },
 ]
 
+const treatmentColumnsScope = 'axol.columns.report.treatment'
+const treatmentColumnDefaults = treatmentColumns.filter((column) => column.defaultVisible).map((column) => column.id)
+const treatmentColumnAllowed = treatmentColumns.map((column) => column.id)
 const treatmentVisibleColumnIds = ref<string[]>(
-  treatmentColumns.filter((column) => column.defaultVisible).map((column) => column.id)
+  loadStoredColumnIds(treatmentColumnsScope, treatmentColumnDefaults, treatmentColumnAllowed)
 )
 
 const treatmentVisibleColumns = computed(() =>
   treatmentColumns.filter((column) => treatmentVisibleColumnIds.value.includes(column.id))
+)
+
+watch(
+  treatmentVisibleColumnIds,
+  (value) => {
+    persistColumnIds(treatmentColumnsScope, value)
+  },
+  { deep: true }
 )
 
 const treatmentRows = computed<TreatmentRow[]>(() => {
@@ -2323,10 +2849,12 @@ const treatmentRows = computed<TreatmentRow[]>(() => {
 
 const treatmentFilteredRows = computed(() => {
   const query = treatmentSearch.value.trim().toLowerCase()
-  if (!query) return treatmentRows.value
-  return treatmentRows.value.filter((row) =>
+  const queryFiltered = !query
+    ? treatmentRows.value
+    : treatmentRows.value.filter((row) =>
     Object.values(row).some((value) => String(value).toLowerCase().includes(query))
   )
+  return queryFiltered.filter((row) => matchesAdvancedFilterContext('tratamento', row as Record<string, unknown>))
 })
 
 const specialTests = computed(() => {
@@ -2353,29 +2881,121 @@ const specialTests = computed(() => {
 })
 
 const riskProbabilities = computed(() => {
+  const trafo = selectedTransformer.value
+  const id = String(trafo?.id || '').toUpperCase()
+  const serial = String(trafo?.serial || '').toUpperCase()
+  const tag = String(trafo?.tag || '').toUpperCase()
+  const is9701A01Demo = id.includes('9701-A01') || (tag === '9701' && serial === 'A01')
+
+  if (is9701A01Demo) return [5, 25, 50, 75, 100]
+
   const status = normalizeStatus(selectedTransformer.value?.statusAnalyst || selectedTransformer.value?.status || '')
   if (status === 'Crítico') return [8.5, 12.2, 19.8, 27.5, 32.0]
   if (status === 'Alerta') return [0, 0, 85.14, 14.86, 0]
   return [100, 0, 0, 0, 0]
 })
 
-const oilVariablesByLevel = computed(() => {
-  const base = riskProbabilities.value
-  const labels = ['TEMP', 'H2O', 'TIF', 'RD', 'EC', 'H2', 'DBDS', 'CARRE', 'GP', 'DGAF', 'CO', 'CO2', 'C2h4', 'C2H2']
-  return base.map((value, index) => {
+function riskLevelColorVar(index: number) {
+  return `var(--level-n${index + 1}, #1e4e8b)`
+}
+
+function riskLevelColor(index: number, probability: number) {
+  const levelRgb: Record<number, [number, number, number]> = {
+    0: [0, 255, 0], // N1
+    1: [128, 255, 0], // N2
+    2: [255, 255, 0], // N3
+    3: [255, 128, 0], // N4
+    4: [255, 0, 0], // N5
+  }
+  const [r, g, b] = levelRgb[index] || [30, 78, 139]
+  const pct = Math.max(0, Math.min(100, Number(probability) || 0))
+  const alpha = pct / 100
+  return `rgba(${r}, ${g}, ${b}, ${alpha.toFixed(3)})`
+}
+
+const riskParameterDefs = [
+  { key: 'TEMP', label: 'TEMP', tooltip: 'TEMP - Temperatura' },
+  { key: 'H2O', label: 'H₂O', tooltip: 'H₂O - Água' },
+  { key: 'TIF', label: 'TIF', tooltip: 'TIF - Tensão Interfacial' },
+  { key: 'RD', label: 'RD', tooltip: 'RD - Rigidez Dielétrica' },
+  { key: 'EC', label: 'EC', tooltip: 'EC - Ensaio de Cor' },
+  { key: 'H2', label: 'H₂', tooltip: 'H₂ - Hidrogênio' },
+  { key: 'DBDS', label: 'DBDS', tooltip: 'DBDS - Dibenzil Dissulfeto' },
+  { key: 'CARRE', label: 'CARRE', tooltip: 'CARRE - Carregamento' },
+  { key: 'GP', label: 'GP', tooltip: 'GP - Grau de Polimerização' },
+  { key: 'DGAF', label: 'DGAF', tooltip: 'DGAF - Diagnóstico de Gases de Falha' },
+  { key: 'CO', label: 'CO', tooltip: 'CO - Monóxido de Carbono' },
+  { key: 'CO2', label: 'CO₂', tooltip: 'CO₂ - Dióxido de Carbono' },
+  { key: 'C2H4', label: 'C₂H₄', tooltip: 'C₂H₄ - Etileno' },
+  { key: 'C2H2', label: 'C₂H₂', tooltip: 'C₂H₂ - Acetileno' },
+]
+const demoRiskHeatmapByLabel: Record<string, number[]> = {
+  TEMP: [0, 1, 0, 0, 0],
+  H2O: [0, 12, 0, 0, 0],
+  TIF: [0, 0, 35, 0, 0],
+  RD: [0, 0, 0, 55, 0],
+  EC: [0, 0, 0, 0, 78],
+  H2: [0, 0, 0, 18, 0],
+  DBDS: [0, 0, 4, 0, 0],
+  CARRE: [0, 22, 0, 0, 0],
+  GP: [0, 0, 0, 0, 100],
+  DGAF: [0, 0, 0, 48, 0],
+  CO: [0, 9, 0, 0, 0],
+  CO2: [0, 0, 0, 0, 64],
+  C2H4: [0, 0, 14, 0, 0],
+  C2H2: [0, 0, 0, 0, 8],
+}
+
+const riskHeatmapRows = computed(() => {
+  const trafo = selectedTransformer.value
+  const id = String(trafo?.id || '').toUpperCase()
+  const serial = String(trafo?.serial || '').toUpperCase()
+  const tag = String(trafo?.tag || '').toUpperCase()
+  const is9701A01Demo = id.includes('9701-A01') || (tag === '9701' && serial === 'A01')
+
+  if (is9701A01Demo) {
+    return riskParameterDefs.map((parameter) => ({
+      key: parameter.key,
+      label: parameter.label,
+      tooltip: parameter.tooltip,
+      values: demoRiskHeatmapByLabel[parameter.key] || [0, 0, 0, 0, 0],
+    }))
+  }
+
+  const levels = riskProbabilities.value.map((value, index) => {
     const scale = Math.max(value, 8)
-    const vars = labels.map((_, labelIndex) => {
+    return riskParameterDefs.map((_, labelIndex) => {
       const ratio = 0.15 + ((labelIndex % 7) * 0.06) + index * 0.015
       return Number((scale * ratio).toFixed(2))
     })
-    return {
-      title: `Nível-${index + 1}`,
-      labels,
-      vars,
-      max: Math.max(...vars, 1),
-    }
   })
+
+  return riskParameterDefs.map((parameter, rowIndex) => ({
+    key: parameter.key,
+    label: parameter.label,
+    tooltip: parameter.tooltip,
+    values: levels.map((levelValues) => levelValues[rowIndex] || 0),
+  }))
 })
+
+function riskHeatCellStyle(value: number) {
+  const safe = Number.isFinite(value) ? Math.max(0, Math.min(100, value)) : 0
+  if (safe <= 0) {
+    return {
+      backgroundColor: 'transparent',
+      borderColor: 'rgba(148, 163, 184, 0.2)',
+      color: 'rgba(71, 85, 105, 0.7)',
+    }
+  }
+
+  const normalized = (safe - 1) / 99
+  const alpha = 0.12 + Math.max(0, normalized) * 0.88
+  return {
+    backgroundColor: `rgba(255, 0, 0, ${alpha.toFixed(3)})`,
+    borderColor: `rgba(185, 28, 28, ${(0.28 + normalized * 0.52).toFixed(3)})`,
+    color: safe >= 62 ? '#ffffff' : '#7f1d1d',
+  }
+}
 
 function statusClass(value: string) {
   const text = (value || '')
@@ -2392,10 +3012,10 @@ function statusClass(value: string) {
 
 function statusOptionStyle(value: string) {
   const tone = statusClass(value)
-  if (tone === 'tone-danger') return { color: '#b91c1c', backgroundColor: 'rgba(220, 38, 38, 0.12)', fontWeight: '700' }
-  if (tone === 'tone-warning') return { color: '#b45309', backgroundColor: 'rgba(245, 158, 11, 0.14)', fontWeight: '700' }
+  if (tone === 'tone-danger') return { color: '#8f0000', backgroundColor: 'rgba(255, 0, 0, 0.16)', fontWeight: '700' }
+  if (tone === 'tone-warning') return { color: '#666300', backgroundColor: 'rgba(255, 255, 0, 0.2)', fontWeight: '700' }
   if (tone === 'tone-neutral') return { color: '#475569', backgroundColor: 'rgba(148, 163, 184, 0.16)', fontWeight: '700' }
-  return { color: '#15803d', backgroundColor: 'rgba(22, 163, 74, 0.12)', fontWeight: '700' }
+  return { color: '#0b5f0b', backgroundColor: 'rgba(0, 255, 0, 0.16)', fontWeight: '700' }
 }
 
 function enhanceMobileTables() {
@@ -2485,14 +3105,87 @@ watch([activeTab, selectedId], async () => {
 
     <section class="report-shell">
       <div v-if="!isGlobalScopeView" class="report-toolbar">
-        <div v-if="!isGlobalScopeView" class="selector">
-          <label for="trafo-select">Selecionar transformador</label>
-          <select id="trafo-select" v-model="selectedId">
-            <option v-for="item in transformerOptions" :key="item.id" :value="item.id">
-              {{ item.id }} • {{ item.substation }}
-            </option>
-          </select>
+        <div v-if="!isGlobalScopeView" ref="transformerPickerWrapRef" class="selector">
+          <label for="trafo-picker-trigger">Selecionar transformador</label>
+          <button
+            id="trafo-picker-trigger"
+            ref="transformerPickerTriggerRef"
+            type="button"
+            class="transformer-picker-trigger"
+            :aria-expanded="transformerPickerOpen ? 'true' : 'false'"
+            aria-haspopup="listbox"
+            @click="toggleTransformerPicker"
+            @keydown.down.prevent="openTransformerPicker"
+          >
+            <span class="transformer-picker-trigger-label">{{ selectedTransformerLabel }}</span>
+            <i aria-hidden="true">{{ transformerPickerOpen ? '▴' : '▾' }}</i>
+          </button>
+          <div
+            v-if="transformerPickerOpen"
+            ref="transformerPickerMenuRef"
+            class="transformer-picker-menu"
+            @keydown="handleTransformerPickerKeydown"
+          >
+            <div class="transformer-picker-search-wrap">
+              <input
+                ref="transformerPickerSearchRef"
+                v-model="transformerPickerSearch"
+                type="text"
+                class="transformer-picker-search"
+                placeholder="Buscar subestação ou transformador..."
+                aria-label="Buscar subestação ou transformador"
+                @keydown.down.prevent="moveTransformerPickerFocus(1)"
+                @keydown.up.prevent="moveTransformerPickerFocus(-1)"
+              />
+            </div>
+            <div class="transformer-picker-list" role="listbox" aria-label="Transformadores por subestação">
+              <template v-for="entry in transformerPickerEntries" :key="entry.key">
+                <button
+                  v-if="entry.kind === 'group'"
+                  type="button"
+                  class="transformer-picker-group"
+                  :data-trafo-index="entry.index"
+                  :aria-expanded="isTransformerGroupExpanded(entry.group) ? 'true' : 'false'"
+                  @click="toggleTransformerGroup(entry.group.substation)"
+                >
+                  <span class="transformer-picker-group-main">
+                    <i class="transformer-picker-caret" aria-hidden="true">
+                      {{ isTransformerGroupExpanded(entry.group) ? '−' : '+' }}
+                    </i>
+                    {{ entry.group.substation }}
+                  </span>
+                  <small>{{ visibleTransformerItems(entry.group).length }}</small>
+                </button>
+                <button
+                  v-else
+                  type="button"
+                  class="transformer-picker-item"
+                  :class="{ active: entry.item.id === selectedId }"
+                  :data-trafo-index="entry.index"
+                  @click="selectTransformerFromPicker(entry.item)"
+                >
+                  <span>{{ entry.item.id }}</span>
+                  <small>{{ entry.item.serial }}</small>
+                </button>
+              </template>
+              <div v-if="!transformerPickerEntries.length" class="transformer-picker-empty">
+                Nenhum transformador encontrado.
+              </div>
+            </div>
+          </div>
         </div>
+        <nav class="macro-tabs" aria-label="Tipo de relatório">
+          <button
+            v-for="macro in macroTabs"
+            :key="macro"
+            type="button"
+            class="macro-tab-btn"
+            :class="{ active: activeMacroTab === macro }"
+            @click="activeMacroTab = macro"
+          >
+            {{ macro }}
+          </button>
+        </nav>
         <div class="report-toolbar-actions">
           <button
             type="button"
@@ -2588,14 +3281,14 @@ watch([activeTab, selectedId], async () => {
 
       <nav v-if="!isGlobalScopeView" class="tabs">
         <button
-          v-for="tab in tabs"
-          :key="tab"
+          v-for="tab in activeSubTabs"
+          :key="tab.value"
           type="button"
           class="tab-btn"
-          :class="{ active: activeTab === tab }"
-          @click="activeTab = tab"
+          :class="{ active: activeTab === tab.value }"
+          @click="activeTab = tab.value"
         >
-          {{ tab }}
+          {{ tab.label }}
         </button>
       </nav>
 
@@ -2729,6 +3422,29 @@ watch([activeTab, selectedId], async () => {
                   aria-label="Pesquisar análises recentes"
                 />
               </label>
+              <button
+                v-if="isGlobalAnalisesView"
+                type="button"
+                class="history-columns-trigger advanced-filter-pill"
+                :class="{ applied: advancedFilterApplied.analises }"
+                @click="handleAdvancedFilterPillClick('analises')"
+              >
+                <span
+                  v-if="advancedFilterApplied.analises"
+                  class="advanced-filter-clear-btn"
+                  role="button"
+                  tabindex="0"
+                  aria-label="Remover filtro avançado"
+                  @click.stop="clearAdvancedFilter('analises')"
+                  @keydown.enter.stop.prevent="clearAdvancedFilter('analises')"
+                  @keydown.space.stop.prevent="clearAdvancedFilter('analises')"
+                >
+                  <span class="advanced-filter-icon-check" aria-hidden="true">✓</span>
+                  <span class="advanced-filter-icon-remove" aria-hidden="true">✕</span>
+                </span>
+                <span v-else class="advanced-filter-pill-icon" aria-hidden="true">⚙</span>
+                <span>Filtro avançado</span>
+              </button>
               <div ref="analysisColumnsWrapRef" class="history-columns-picker">
                 <button type="button" class="history-columns-trigger" @click="toggleAnalysisColumnsMenu">
                   <span>Colunas</span>
@@ -2753,7 +3469,7 @@ watch([activeTab, selectedId], async () => {
                   </section>
                 </div>
               </div>
-              <div class="history-tabs-inline history-tabs-main history-analyses-subtabs">
+              <div v-if="showAnalysisRecentSubtabs" class="history-tabs-inline history-tabs-main history-analyses-subtabs">
                 <button
                   type="button"
                   class="history-tab-btn"
@@ -3077,34 +3793,50 @@ watch([activeTab, selectedId], async () => {
           </p>
           <p><b>Probabilidade (%) de operação em risco para o próximo ano</b></p>
 
-          <div class="risk-pies">
-            <article v-for="(probability, index) in riskProbabilities" :key="`risk-${index}`" class="risk-pie-card">
+          <div class="risk-grid-shell">
+          <div class="risk-pies risk-pies-aligned">
+            <div class="risk-pies-tab" aria-label="Parâmetros">Parâmetros</div>
+            <article
+              v-for="(probability, index) in riskProbabilities"
+              :key="`risk-${index}`"
+              class="risk-pie-card"
+              :style="{ '--risk-color': riskLevelColor(index, probability), '--risk-color-solid': riskLevelColorVar(index) }"
+            >
               <h5>Nível-{{ index + 1 }}</h5>
-              <div class="risk-pie" :style="{ '--pct': `${probability}%` }">
+              <div class="risk-pie" :style="{ '--pct': `${probability}%`, '--risk-color': riskLevelColor(index, probability) }">
                 <span class="risk-pie-center">{{ probability.toFixed(2) }}%</span>
               </div>
             </article>
           </div>
 
+          <div class="risk-heatmap-wrap">
+            <div class="risk-heatmap-grid">
+              <template v-for="row in riskHeatmapRows" :key="`risk-row-${row.key}`">
+                <div class="risk-heatmap-label" :title="row.tooltip" :data-tooltip="row.tooltip">{{ row.label }}</div>
+                <div
+                  v-for="(value, idx) in row.values"
+                  :key="`risk-cell-${row.key}-${idx}`"
+                  class="risk-heatmap-cell"
+                  :style="riskHeatCellStyle(value)"
+                >
+                  {{ value.toFixed(2) }}%
+                </div>
+              </template>
+            </div>
+          </div>
+          </div>
+
           <p><b>Variáveis do óleo que levaram o transformador aos estados de risco:</b></p>
           <p>
-            A seguir são apresentadas as variáveis do óleo isolante que levaram o transformador a operar nas regiões
+            A matrix acima apresenta as variáveis do óleo isolante que levaram o transformador a operar nas regiões
             de risco (N1 a N5).
           </p>
 
-          <div class="risk-bars-grid">
-            <article v-for="(level, idx) in oilVariablesByLevel" :key="`bar-${idx}`" class="risk-bar-card">
-              <h5>{{ level.title }}</h5>
-              <div class="risk-bars">
-                <div v-for="(value, varIdx) in level.vars" :key="`${level.title}-${varIdx}`" class="risk-bar-item">
-                  <span class="risk-bar-label">{{ level.labels[varIdx] }}</span>
-                  <div class="risk-bar-track">
-                    <div class="risk-bar-fill" :style="{ width: `${(value / level.max) * 100}%` }"></div>
-                  </div>
-                  <span class="risk-bar-value">{{ value }}</span>
-                </div>
-              </div>
-            </article>
+          <div class="risk-heatmap-legend">
+            <span class="risk-legend-title">Escala de cor:</span>
+            <span class="risk-legend-stop">0%</span>
+            <div class="risk-legend-scale"></div>
+            <span class="risk-legend-stop">100%</span>
           </div>
           </template>
         </article>
@@ -3385,6 +4117,29 @@ watch([activeTab, selectedId], async () => {
                   </option>
                 </select>
               </div>
+              <button
+                v-if="isGlobalColetasView"
+                type="button"
+                class="history-columns-trigger advanced-filter-pill"
+                :class="{ applied: advancedFilterApplied.coletas }"
+                @click="handleAdvancedFilterPillClick('coletas')"
+              >
+                <span
+                  v-if="advancedFilterApplied.coletas"
+                  class="advanced-filter-clear-btn"
+                  role="button"
+                  tabindex="0"
+                  aria-label="Remover filtro avançado"
+                  @click.stop="clearAdvancedFilter('coletas')"
+                  @keydown.enter.stop.prevent="clearAdvancedFilter('coletas')"
+                  @keydown.space.stop.prevent="clearAdvancedFilter('coletas')"
+                >
+                  <span class="advanced-filter-icon-check" aria-hidden="true">✓</span>
+                  <span class="advanced-filter-icon-remove" aria-hidden="true">✕</span>
+                </span>
+                <span v-else class="advanced-filter-pill-icon" aria-hidden="true">⚙</span>
+                <span>Filtro avançado</span>
+              </button>
               <div class="history-tabs-inline history-tabs-main">
                 <button
                   type="button"
@@ -3609,6 +4364,29 @@ watch([activeTab, selectedId], async () => {
                   aria-label="Filtrar tratamento de óleo"
                 />
               </label>
+              <button
+                v-if="isGlobalTreatmentView"
+                type="button"
+                class="history-columns-trigger advanced-filter-pill"
+                :class="{ applied: advancedFilterApplied.tratamento }"
+                @click="handleAdvancedFilterPillClick('tratamento')"
+              >
+                <span
+                  v-if="advancedFilterApplied.tratamento"
+                  class="advanced-filter-clear-btn"
+                  role="button"
+                  tabindex="0"
+                  aria-label="Remover filtro avançado"
+                  @click.stop="clearAdvancedFilter('tratamento')"
+                  @keydown.enter.stop.prevent="clearAdvancedFilter('tratamento')"
+                  @keydown.space.stop.prevent="clearAdvancedFilter('tratamento')"
+                >
+                  <span class="advanced-filter-icon-check" aria-hidden="true">✓</span>
+                  <span class="advanced-filter-icon-remove" aria-hidden="true">✕</span>
+                </span>
+                <span v-else class="advanced-filter-pill-icon" aria-hidden="true">⚙</span>
+                <span>Filtro avançado</span>
+              </button>
               <div ref="treatmentColumnsWrapRef" class="history-columns-picker">
                 <button type="button" class="history-columns-trigger" @click="toggleTreatmentColumnsMenu">
                   <span>Colunas</span>
@@ -3799,6 +4577,74 @@ watch([activeTab, selectedId], async () => {
           <div class="modal-actions">
             <button type="button" class="secondary-btn" @click="closeSpecialistModal">Cancelar</button>
             <button type="button" class="primary-btn" @click="saveSpecialistModal">Salvar</button>
+          </div>
+        </div>
+      </div>
+
+      <div v-if="advancedFilterModalOpen" class="modal-overlay" @click="closeAdvancedFilterModal">
+        <div class="modal-card analysis-modal-card advanced-filter-modal-card" @click.stop>
+          <h4>Filtro Avançado</h4>
+          <div class="advanced-filter-rules">
+            <div
+              v-for="(rule, index) in advancedFilterRulesDraft[advancedFilterContext]"
+              :key="`advanced-rule-${advancedFilterContext}-${rule.id}`"
+              class="advanced-filter-row"
+            >
+              <select v-if="index > 0" v-model="rule.connector" aria-label="Operador lógico">
+                <option value="AND">E</option>
+                <option value="OR">OU</option>
+              </select>
+              <span v-else class="advanced-filter-first">SE</span>
+              <select v-model="rule.field" aria-label="Campo do filtro">
+                <option
+                  v-for="option in activeAdvancedFilterFieldOptions"
+                  :key="`advanced-field-${advancedFilterContext}-${option.value}`"
+                  :value="option.value"
+                >
+                  {{ option.label }}
+                </option>
+              </select>
+              <select v-model="rule.operator" aria-label="Operador">
+                <option value="=">==</option>
+                <option value="!=">!=</option>
+                <option value=">">&gt;</option>
+                <option value="<">&lt;</option>
+                <option value=">=">&gt;=</option>
+                <option value="<=">&lt;=</option>
+              </select>
+              <select
+                v-if="getAdvancedFieldValueOptions(advancedFilterContext, rule.field).length"
+                v-model="rule.value"
+                aria-label="Valor da expressão"
+              >
+                <option value="">Selecione</option>
+                <option
+                  v-for="option in getAdvancedFieldValueOptions(advancedFilterContext, rule.field)"
+                  :key="`advanced-value-${advancedFilterContext}-${rule.id}-${option}`"
+                  :value="option"
+                >
+                  {{ option }}
+                </option>
+              </select>
+              <input v-else v-model="rule.value" type="text" placeholder="Valor" aria-label="Valor da expressão" />
+              <button type="button" class="advanced-filter-remove-btn" @click="removeAdvancedFilterRule(rule.id)">
+                Remover
+              </button>
+            </div>
+          </div>
+          <div class="advanced-filter-footer">
+            <button type="button" class="history-action-btn small" @click="addAdvancedFilterRule">+ Condição</button>
+            <div class="advanced-filter-footer-actions">
+              <button type="button" class="history-action-btn small neutral" @click="clearAdvancedFilterDraft">
+                Limpar
+              </button>
+              <button type="button" class="history-action-btn small neutral" @click="closeAdvancedFilterModal">
+                Cancelar
+              </button>
+              <button type="button" class="history-action-btn small" @click="applyAdvancedFilterModal">
+                Aplicar
+              </button>
+            </div>
           </div>
         </div>
       </div>
@@ -4230,7 +5076,7 @@ watch([activeTab, selectedId], async () => {
 <style scoped>
 .report-view{
   min-height: 100vh;
-  background: radial-gradient(circle at 20% 10%, #f4f7ff 0%, #f8fafc 45%, #ffffff 100%);
+  background: var(--app-bg-gradient);
   padding: 32px 32px 60px 96px;
   color: #0f172a;
   overflow-x: hidden;
@@ -4246,17 +5092,47 @@ watch([activeTab, selectedId], async () => {
 }
 
 .report-toolbar{
-  display: flex;
-  justify-content: space-between;
+  display: grid;
+  grid-template-columns: max-content 1fr max-content;
   align-items: end;
   gap: 16px;
   margin-bottom: 14px;
+}
+
+.macro-tabs{
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  justify-self: center;
+  width: 100%;
+}
+
+.macro-tab-btn{
+  height: 38px;
+  border-radius: 12px;
+  border: 1px solid rgba(15, 23, 42, 0.14);
+  background: #fff;
+  color: rgba(15, 23, 42, 0.78);
+  padding: 0 16px;
+  font-size: 13px;
+  font-weight: 700;
+  cursor: pointer;
+  white-space: nowrap;
+}
+
+.macro-tab-btn.active{
+  border-color: #1e4e8b;
+  background: #1e4e8b;
+  color: #fff;
+  box-shadow: 0 10px 18px rgba(30, 78, 139, 0.22);
 }
 
 .report-toolbar-actions{
   display: inline-flex;
   align-items: center;
   gap: 8px;
+  justify-self: end;
 }
 
 .report-generate-wrap{
@@ -4281,6 +5157,7 @@ watch([activeTab, selectedId], async () => {
 .selector{
   display: grid;
   gap: 6px;
+  position: relative;
 }
 
 .selector label{
@@ -4290,13 +5167,138 @@ watch([activeTab, selectedId], async () => {
   color: rgba(15, 23, 42, 0.55);
 }
 
-.selector select{
+.transformer-picker-trigger{
   min-width: 340px;
   height: 38px;
   border-radius: 12px;
   border: 1px solid rgba(15, 23, 42, 0.12);
   background: #fff;
   padding: 0 12px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  color: rgba(15, 23, 42, 0.82);
+  cursor: pointer;
+}
+
+.transformer-picker-trigger-label{
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.transformer-picker-menu{
+  position: absolute;
+  top: calc(100% + 6px);
+  left: 0;
+  z-index: 48;
+  width: min(420px, 92vw);
+  border-radius: 12px;
+  border: 1px solid rgba(15, 23, 42, 0.12);
+  background: #fff;
+  box-shadow: 0 12px 28px rgba(15, 23, 42, 0.14);
+  padding: 8px;
+  display: grid;
+  gap: 8px;
+}
+
+.transformer-picker-search-wrap{
+  padding: 2px;
+}
+
+.transformer-picker-search{
+  width: 100%;
+  height: 36px;
+  border-radius: 10px;
+  border: 1px solid rgba(15, 23, 42, 0.12);
+  padding: 0 10px;
+  font-size: 12px;
+  color: rgba(15, 23, 42, 0.82);
+  outline: none;
+}
+
+.transformer-picker-search:focus{
+  border-color: #1e4e8b;
+  box-shadow: 0 0 0 2px rgba(30, 78, 139, 0.14);
+}
+
+.transformer-picker-list{
+  max-height: 320px;
+  overflow: auto;
+  display: grid;
+  gap: 4px;
+  padding-right: 2px;
+}
+
+.transformer-picker-group,
+.transformer-picker-item{
+  width: 100%;
+  border: 1px solid rgba(15, 23, 42, 0.08);
+  background: #fff;
+  border-radius: 10px;
+  padding: 8px 10px;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  text-align: left;
+  cursor: pointer;
+  color: rgba(15, 23, 42, 0.8);
+}
+
+.transformer-picker-group-main{
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 12px;
+  font-weight: 700;
+}
+
+.transformer-picker-caret{
+  width: 16px;
+  height: 16px;
+  border-radius: 999px;
+  border: 1px solid rgba(15, 23, 42, 0.2);
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  font-style: normal;
+  font-size: 12px;
+  line-height: 1;
+}
+
+.transformer-picker-group small,
+.transformer-picker-item small{
+  font-size: 11px;
+  color: rgba(15, 23, 42, 0.55);
+}
+
+.transformer-picker-item{
+  padding-left: 34px;
+}
+
+.transformer-picker-item.active{
+  border-color: rgba(30, 78, 139, 0.45);
+  background: rgba(30, 78, 139, 0.08);
+}
+
+.transformer-picker-group:hover,
+.transformer-picker-item:hover{
+  background: rgba(15, 23, 42, 0.04);
+}
+
+.transformer-picker-group:focus-visible,
+.transformer-picker-item:focus-visible{
+  outline: 2px solid rgba(30, 78, 139, 0.4);
+  outline-offset: 1px;
+}
+
+.transformer-picker-empty{
+  padding: 10px;
+  font-size: 12px;
+  color: rgba(15, 23, 42, 0.55);
+  text-align: center;
 }
 
 .locate-btn{
@@ -4514,18 +5516,18 @@ watch([activeTab, selectedId], async () => {
 }
 
 .tone-normal{
-  background: rgba(22, 163, 74, 0.2);
-  color: #15803d;
+  background: rgba(0, 255, 0, 0.18);
+  color: #0b5f0b;
 }
 
 .tone-warning{
-  background: rgba(245, 158, 11, 0.22);
-  color: #b45309;
+  background: rgba(255, 255, 0, 0.22);
+  color: #666300;
 }
 
 .tone-danger{
-  background: rgba(220, 38, 38, 0.2);
-  color: #b91c1c;
+  background: rgba(255, 0, 0, 0.18);
+  color: #8f0000;
 }
 
 .tone-neutral{
@@ -4872,27 +5874,65 @@ watch([activeTab, selectedId], async () => {
   margin: 10px 0 14px;
 }
 
+.risk-grid-shell{
+  --risk-label-col: 140px;
+  --risk-col-width: 124px;
+  --risk-col-gap: 10px;
+  width: 100%;
+  overflow-x: auto;
+}
+
+.risk-pies-aligned{
+  grid-template-columns: var(--risk-label-col) repeat(5, minmax(0, 1fr));
+  column-gap: var(--risk-col-gap);
+  width: 100%;
+  min-width: 0;
+  margin-bottom: 0;
+}
+
+.risk-pies-tab{
+  align-self: end;
+  justify-self: start;
+  width: var(--risk-label-col);
+  box-sizing: border-box;
+  padding: 6px 12px 7px;
+  border: 1px solid rgba(15, 23, 42, 0.1);
+  border-bottom: none;
+  border-top-left-radius: 12px;
+  border-top-right-radius: 10px;
+  background: rgba(15, 23, 42, 0.05);
+  font-size: 12px;
+  font-weight: 700;
+  color: rgba(15, 23, 42, 0.78);
+  text-align: center;
+  transform: translateY(1px);
+}
+
 .risk-pie-card{
   border: 1px solid rgba(15, 23, 42, 0.08);
-  border-radius: 10px;
+  border-radius: 10px 10px 0 0;
   padding: 10px;
   text-align: center;
   background: rgba(248, 250, 252, 0.65);
 }
 
-.risk-pie-card h5,
-.risk-bar-card h5{
+.risk-pie-card h5{
   text-align: center;
   font-weight: 700;
 }
 
+.risk-pie-card h5{
+  color: color-mix(in srgb, var(--risk-color-solid, #1e4e8b) 75%, #1f2937 25%);
+}
+
 .risk-pie{
   --pct: 0%;
+  --risk-color: #1e4e8b;
   width: 88px;
   height: 88px;
   margin: 6px auto 8px;
   border-radius: 999px;
-  background: conic-gradient(#1e4e8b var(--pct), rgba(148, 163, 184, 0.25) 0);
+  background: conic-gradient(var(--risk-color) var(--pct), rgba(148, 163, 184, 0.25) 0);
   position: relative;
 }
 
@@ -4916,59 +5956,101 @@ watch([activeTab, selectedId], async () => {
   color: #123a6d;
 }
 
-.risk-bars-grid{
-  display: grid;
-  grid-template-columns: repeat(5, minmax(0, 1fr));
-  gap: 10px;
-  margin-top: 10px;
+.risk-heatmap-wrap{
+  border: 1px solid rgba(15, 23, 42, 0.1);
+  border-top: none;
+  border-radius: 0 0 12px 12px;
+  background: rgba(248, 250, 252, 0.75);
+  overflow: hidden;
+  width: 100%;
+  min-width: 0;
 }
 
-.risk-bar-card{
+.risk-heatmap-grid{
+  display: grid;
+  grid-template-columns: var(--risk-label-col) repeat(5, minmax(0, 1fr));
+  column-gap: var(--risk-col-gap);
+  width: 100%;
+  min-width: 0;
+}
+
+.risk-heatmap-grid > div{
   border: 1px solid rgba(15, 23, 42, 0.08);
-  border-radius: 10px;
-  padding: 10px;
-  background: rgba(248, 250, 252, 0.65);
+  padding: 8px;
+  text-align: center;
+  box-sizing: border-box;
 }
 
-.risk-bars{
-  display: grid;
-  gap: 6px;
+.risk-heatmap-grid > :nth-child(-n + 6){
+  border-top: none;
 }
 
-.risk-bar-item{
-  display: grid;
-  grid-template-columns: 54px 1fr auto;
+.risk-heatmap-label{
+  position: relative;
+  text-align: left;
+  font-size: 11px;
+  font-weight: 700;
+  color: rgba(15, 23, 42, 0.78);
+  background: rgba(255, 255, 255, 0.88);
+  cursor: help;
+}
+
+.risk-heatmap-label::after{
+  content: attr(data-tooltip);
+  position: absolute;
+  left: 100%;
+  top: 50%;
+  transform: translate(8px, -50%);
+  background: rgba(15, 23, 42, 0.92);
+  color: #fff;
+  border-radius: 8px;
+  padding: 6px 8px;
+  font-size: 11px;
+  font-weight: 500;
+  line-height: 1.25;
+  white-space: nowrap;
+  opacity: 0;
+  pointer-events: none;
+  transition: opacity 0.15s ease;
+  z-index: 20;
+}
+
+.risk-heatmap-label:hover::after{
+  opacity: 1;
+}
+
+.risk-heatmap-cell{
+  min-width: 0;
+  font-size: 11px;
+  font-weight: 700;
+  line-height: 1.2;
+}
+
+.risk-heatmap-legend{
+  margin-top: 10px;
+  display: flex;
+  flex-wrap: wrap;
   align-items: center;
   gap: 8px;
+  font-size: 11px;
+  color: rgba(15, 23, 42, 0.72);
 }
 
-.risk-bar-label{
-  font-size: 10px;
-  font-weight: 600;
-  color: rgba(15, 23, 42, 0.75);
-  text-align: left;
+.risk-legend-title{
+  font-weight: 700;
+  color: rgba(15, 23, 42, 0.78);
 }
 
-.risk-bar-track{
-  width: 100%;
-  height: 7px;
+.risk-legend-scale{
+  width: 180px;
+  height: 10px;
   border-radius: 999px;
-  background: rgba(148, 163, 184, 0.25);
-  overflow: hidden;
+  border: 1px solid rgba(15, 23, 42, 0.12);
+  background: linear-gradient(90deg, rgba(226, 232, 240, 0.95) 0%, rgba(255, 0, 0, 0.12) 35%, rgba(255, 0, 0, 1) 100%);
 }
 
-.risk-bar-fill{
-  height: 100%;
-  border-radius: inherit;
-  background: #1e4e8b;
-}
-
-.risk-bar-value{
-  font-size: 10px;
-  font-weight: 600;
-  color: rgba(15, 23, 42, 0.62);
-  min-width: 34px;
-  text-align: right;
+.risk-legend-stop{
+  white-space: nowrap;
 }
 
 .panel-eval .tile p b{
@@ -5065,6 +6147,73 @@ watch([activeTab, selectedId], async () => {
   width: min(980px, 100%);
   max-height: min(90vh, 920px);
   overflow: auto;
+}
+
+.advanced-filter-modal-card{
+  width: min(980px, 100%);
+}
+
+.advanced-filter-rules{
+  display: grid;
+  gap: 10px;
+  max-height: min(56vh, 460px);
+  overflow: auto;
+  padding-right: 4px;
+}
+
+.advanced-filter-row{
+  display: grid;
+  grid-template-columns: 92px minmax(170px, 1fr) 90px minmax(180px, 1fr) auto;
+  gap: 8px;
+  align-items: center;
+}
+
+.advanced-filter-row select,
+.advanced-filter-row input{
+  height: 34px;
+  border-radius: 10px;
+  border: 1px solid rgba(15, 23, 42, 0.14);
+  background: #fff;
+  color: rgba(15, 23, 42, 0.82);
+  padding: 0 10px;
+  font-size: 12px;
+}
+
+.advanced-filter-first{
+  height: 34px;
+  border-radius: 10px;
+  border: 1px dashed rgba(15, 23, 42, 0.22);
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 11px;
+  font-weight: 700;
+  color: rgba(15, 23, 42, 0.65);
+}
+
+.advanced-filter-remove-btn{
+  height: 34px;
+  border-radius: 10px;
+  border: 1px solid rgba(220, 38, 38, 0.35);
+  background: rgba(220, 38, 38, 0.08);
+  color: #b91c1c;
+  padding: 0 10px;
+  font-size: 12px;
+  font-weight: 700;
+  cursor: pointer;
+}
+
+.advanced-filter-footer{
+  margin-top: 14px;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+}
+
+.advanced-filter-footer-actions{
+  display: inline-flex;
+  gap: 8px;
 }
 
 .modal-card h4{
@@ -5622,6 +6771,11 @@ watch([activeTab, selectedId], async () => {
   font-size: 12px;
 }
 
+.history-action-btn.small.neutral{
+  background: rgba(15, 23, 42, 0.06);
+  color: rgba(15, 23, 42, 0.8);
+}
+
 .history-action-icon{
   font-size: 12px;
 }
@@ -5751,6 +6905,73 @@ watch([activeTab, selectedId], async () => {
   cursor: pointer;
 }
 
+.advanced-filter-pill{
+  padding-inline: 12px;
+  border-radius: 999px;
+}
+
+.advanced-filter-pill-icon{
+  width: 16px;
+  height: 16px;
+  border-radius: 999px;
+  border: 1px solid rgba(15, 23, 42, 0.26);
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 10px;
+  font-weight: 700;
+  line-height: 1;
+}
+
+.advanced-filter-pill.applied{
+  border-color: rgba(22, 163, 74, 0.45);
+  color: #166534;
+}
+
+.advanced-filter-clear-btn{
+  width: 18px;
+  height: 18px;
+  border-radius: 999px;
+  border: 1px solid #16a34a;
+  background: #16a34a;
+  color: #fff;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  position: relative;
+  cursor: pointer;
+}
+
+.advanced-filter-icon-check,
+.advanced-filter-icon-remove{
+  position: absolute;
+  font-size: 11px;
+  font-weight: 800;
+  line-height: 1;
+  transition: opacity 0.15s ease;
+}
+
+.advanced-filter-icon-check{
+  opacity: 1;
+}
+
+.advanced-filter-icon-remove{
+  opacity: 0;
+}
+
+.advanced-filter-clear-btn:hover{
+  background: #dc2626;
+  border-color: #dc2626;
+}
+
+.advanced-filter-clear-btn:hover .advanced-filter-icon-check{
+  opacity: 0;
+}
+
+.advanced-filter-clear-btn:hover .advanced-filter-icon-remove{
+  opacity: 1;
+}
+
 .history-columns-trigger i{
   font-style: normal;
   font-size: 12px;
@@ -5872,12 +7093,21 @@ watch([activeTab, selectedId], async () => {
   .report-view{
     padding: 90px 16px 40px;
   }
-  .selector select{
+  .transformer-picker-trigger{
     min-width: 100%;
   }
+  .transformer-picker-menu{
+    min-width: 100%;
+    width: 100%;
+  }
   .report-toolbar{
-    flex-direction: column;
+    grid-template-columns: 1fr;
     align-items: stretch;
+  }
+  .macro-tabs{
+    justify-content: flex-start;
+    overflow-x: auto;
+    padding-bottom: 2px;
   }
   .locate-btn{
     width: 100%;
@@ -5912,9 +7142,14 @@ watch([activeTab, selectedId], async () => {
     grid-column: auto;
     grid-row: auto;
   }
-  .risk-pies,
-  .risk-bars-grid{
+  .risk-pies:not(.risk-pies-aligned){
     grid-template-columns: 1fr 1fr;
+  }
+  .risk-pies-aligned{
+    min-width: 760px;
+  }
+  .risk-heatmap-wrap{
+    min-width: 760px;
   }
   .duval-grid{
     grid-template-columns: 1fr;
@@ -6046,6 +7281,9 @@ watch([activeTab, selectedId], async () => {
     justify-content: flex-start;
   }
   .analysis-form-grid{
+    grid-template-columns: 1fr;
+  }
+  .advanced-filter-row{
     grid-template-columns: 1fr;
   }
   .modal-grid{

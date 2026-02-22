@@ -388,9 +388,9 @@ const worstStatusTone = computed(() => {
 
 const statusChart = computed(() => ({
   segments: [
-    { label: 'Normal', value: statusPercents.value.Normal, color: 'var(--status-normal, #2f7f6c)' },
-    { label: 'Alerta', value: statusPercents.value.Alerta, color: 'var(--status-alert, #f7cf29)' },
-    { label: 'Crítico', value: statusPercents.value.Critico, color: 'var(--status-critical, #c85c5c)' },
+    { label: 'Normal', value: statusPercents.value.Normal, color: '#22c55e' },
+    { label: 'Alerta', value: statusPercents.value.Alerta, color: 'var(--status-alert, #ffff00)' },
+    { label: 'Crítico', value: statusPercents.value.Critico, color: 'var(--status-critical, #ff0000)' },
   ],
 }))
 
@@ -2195,7 +2195,7 @@ watch(
 <style scoped>
 .prototype{
   min-height: 100vh;
-  background: radial-gradient(1200px 800px at 20% 0%, #ffffff 0%, #f4f5f7 48%, #f2f3f5 100%);
+  background: var(--app-bg-gradient);
   color: var(--color-text, #0f172a);
 }
 
@@ -2214,6 +2214,7 @@ watch(
   z-index: 3;
   margin-top: -20px;
   transition: opacity 0.35s ease, transform 0.35s ease;
+  pointer-events: none;
 }
 .brand-logo{
   width: 150px;
@@ -2246,6 +2247,7 @@ watch(
   display: grid;
   justify-items: end;
   gap: 6px;
+  pointer-events: auto;
 }
 
 body.menu-open{
@@ -2277,6 +2279,7 @@ body.menu-open{
   position: relative;
   z-index: 6;
   margin-top: -10px;
+  pointer-events: none;
 }
 
 .search-bar input{
@@ -2604,7 +2607,7 @@ body.menu-open{
   grid-template-columns: repeat(2, 250px);
   justify-content: space-between;
   gap: 16px;
-  z-index: 3;
+  z-index: 12;
   align-items: start;
   pointer-events: none;
 }
@@ -2621,7 +2624,7 @@ body.menu-open{
   pointer-events: auto;
 }
 .kpi:has(.card.open){
-  min-height: 320px;
+  min-height: 0;
 }
 
 @media (min-width: 901px){
@@ -2640,12 +2643,24 @@ body.menu-open{
     height: 100%;
   }
   .kpi-stack{
-    top: 220px;
+    top: 128px;
     left: 140px;
     right: 140px;
   }
   .map-hover{
     position: fixed;
+  }
+}
+
+@media (min-width: 901px) and (max-height: 860px){
+  .kpi-stack{
+    top: 104px;
+  }
+  .kpi-col{
+    gap: 12px;
+    max-height: calc(100vh - 120px);
+    overflow-y: auto;
+    padding-right: 4px;
   }
 }
 

@@ -217,6 +217,27 @@ type TableTransformer = {
 
 const levelKeys = ['N1', 'N2', 'N3', 'N4', 'N5'] as const
 type LevelKey = (typeof levelKeys)[number]
+const levelColorRgb: Record<LevelKey, [number, number, number]> = {
+  N1: [0, 255, 0],
+  N2: [128, 255, 0],
+  N3: [255, 255, 0],
+  N4: [255, 128, 0],
+  N5: [255, 0, 0],
+}
+const levelBaseFillAlpha: Record<LevelKey, number> = {
+  N1: 0.22,
+  N2: 0.22,
+  N3: 0.26,
+  N4: 0.24,
+  N5: 0.22,
+}
+const levelBaseBorderAlpha: Record<LevelKey, number> = {
+  N1: 0.55,
+  N2: 0.6,
+  N3: 0.62,
+  N4: 0.62,
+  N5: 0.58,
+}
 
 function hashString(value: string) {
   let hash = 0
@@ -259,12 +280,21 @@ function levelText(item: TableTransformer, key: LevelKey) {
 
 function levelClass(item: TableTransformer, key: LevelKey) {
   const value = item.levels?.[key]
-  if (value === null || value === undefined || Number.isNaN(value) || value === 0) return 'level-empty'
-  if (value >= 80) return 'level-critical'
-  if (value >= 60) return 'level-high'
-  if (value >= 40) return 'level-medium'
-  if (value >= 20) return 'level-low'
-  return 'level-very-low'
+  if (value === null || value === undefined || Number.isNaN(value)) return 'level-empty'
+  return `level-${key.toLowerCase()}`
+}
+
+function levelStyle(item: TableTransformer, key: LevelKey) {
+  const value = Number(item.levels?.[key])
+  if (!Number.isFinite(value)) return undefined
+  const pct = Math.max(0, Math.min(100, value))
+  const fillAlpha = levelBaseFillAlpha[key] + (1 - levelBaseFillAlpha[key]) * (pct / 100)
+  const borderAlpha = levelBaseBorderAlpha[key] + (1 - levelBaseBorderAlpha[key]) * (pct / 100)
+  const [r, g, b] = levelColorRgb[key]
+  return {
+    backgroundColor: `rgba(${r}, ${g}, ${b}, ${fillAlpha.toFixed(3)})`,
+    borderColor: `rgba(${r}, ${g}, ${b}, ${borderAlpha.toFixed(3)})`,
+  }
 }
 
 const transformers = computed<TableTransformer[]>(() => {
@@ -319,11 +349,13 @@ const searchQuery = ref('')
 
 const filteredTransformers = computed(() => {
   const query = searchQuery.value.trim().toLowerCase()
-  if (!query) return transformers.value
-  return transformers.value.filter((item) => {
+  const queryFiltered = !query
+    ? transformers.value
+    : transformers.value.filter((item) => {
     const values = Object.values(item)
     return values.some((value) => String(value ?? '').toLowerCase().includes(query))
   })
+  return queryFiltered.filter(advancedFilterMatch)
 })
 
 const orderedTransformers = computed(() => {
@@ -384,6 +416,16 @@ type ColumnConfig = {
   defaultVisible: boolean
 }
 
+type AdvancedOperator = '=' | '!=' | '>' | '<' | '>=' | '<='
+type AdvancedConnector = 'AND' | 'OR'
+type AdvancedFilterRule = {
+  id: number
+  field: string
+  operator: AdvancedOperator
+  value: string
+  connector: AdvancedConnector
+}
+
 const columns: ColumnConfig[] = [
   { id: 'serial', label: 'No. Série', align: 'center', defaultVisible: true },
   { id: 'substation', label: 'Subestacao', align: 'center', defaultVisible: true },
@@ -415,11 +457,128 @@ const columns: ColumnConfig[] = [
   { id: 'actions', label: 'Ações', align: 'center', defaultVisible: true },
 ]
 
+function getColumnsStorageUserKey() {
+  if (typeof window === 'undefined') return 'anon'
+  return (
+    window.localStorage.getItem('axol.user.id')
+    || window.localStorage.getItem('axol.user.email')
+    || window.localStorage.getItem('axol.user')
+    || 'anon'
+  )
+}
+
+function buildColumnsStorageKey(scope: string) {
+  return `${scope}.${getColumnsStorageUserKey()}`
+}
+
+function loadStoredColumnIds(scope: string, defaults: string[], allowed: string[]) {
+  if (typeof window === 'undefined') return defaults
+  try {
+    const raw = window.localStorage.getItem(buildColumnsStorageKey(scope))
+    if (!raw) return defaults
+    const parsed = JSON.parse(raw)
+    if (!Array.isArray(parsed)) return defaults
+    const filtered = parsed.filter((value): value is string => typeof value === 'string' && allowed.includes(value))
+    return filtered.length ? filtered : defaults
+  } catch {
+    return defaults
+  }
+}
+
+function persistColumnIds(scope: string, value: string[]) {
+  if (typeof window === 'undefined') return
+  window.localStorage.setItem(buildColumnsStorageKey(scope), JSON.stringify(value))
+}
+
+const transformerColumnsScope = 'axol.columns.transformers'
+const transformerColumnDefaults = columns.filter((col) => col.defaultVisible).map((col) => col.id)
+const transformerColumnAllowed = columns.map((col) => col.id)
 const visibleColumnIds = ref<string[]>(
-  columns.filter((col) => col.defaultVisible).map((col) => col.id)
+  loadStoredColumnIds(transformerColumnsScope, transformerColumnDefaults, transformerColumnAllowed)
 )
 
 const visibleColumns = computed(() => columns.filter((col) => visibleColumnIds.value.includes(col.id)))
+
+const advancedFilterModalOpen = ref(false)
+const advancedFilterApplied = ref(false)
+const advancedRuleId = ref(1)
+const advancedRulesDraft = ref<AdvancedFilterRule[]>([])
+const advancedRulesApplied = ref<AdvancedFilterRule[]>([])
+const advancedFieldOptions = columns
+  .filter((column) => column.id !== 'actions')
+  .map((column) => ({ value: column.id, label: column.label }))
+const advancedFieldEnumOptions: Record<string, string[]> = {
+  status: ['Normal', 'Alerta', 'Crítico', 'Pendente'],
+  statusTr: ['Normal', 'Alerta', 'Crítico', 'Pendente'],
+  analystStatus: ['Normal', 'Alerta', 'Crítico', 'Pendente'],
+  commutator: ['SIM', 'NÃO', 'CST'],
+  oilFluid: ['MINERAL', 'NAO IDENTIFICADO'],
+  operating: ['SIM', 'NÃO', '-'],
+  sealed: ['SIM', 'NÃO', '-'],
+}
+
+function getAdvancedFieldValueOptions(field: string) {
+  return advancedFieldEnumOptions[field] || []
+}
+
+function createDefaultAdvancedRule(): AdvancedFilterRule {
+  return {
+    id: advancedRuleId.value++,
+    field: advancedFieldOptions[0]?.value || 'serial',
+    operator: '=',
+    value: '',
+    connector: 'AND',
+  }
+}
+
+function normalizeComparable(value: unknown) {
+  return String(value ?? '').trim().toLowerCase()
+}
+
+function tryNumeric(value: unknown) {
+  const raw = String(value ?? '').trim().replace(',', '.')
+  if (!raw) return null
+  const parsed = Number(raw)
+  return Number.isFinite(parsed) ? parsed : null
+}
+
+function advancedRuleMatch(item: TableTransformer, rule: AdvancedFilterRule) {
+  const fieldValue = (item as unknown as Record<string, unknown>)[rule.field]
+  const leftNum = tryNumeric(fieldValue)
+  const rightNum = tryNumeric(rule.value)
+
+  if (leftNum !== null && rightNum !== null) {
+    if (rule.operator === '=') return leftNum === rightNum
+    if (rule.operator === '!=') return leftNum !== rightNum
+    if (rule.operator === '>') return leftNum > rightNum
+    if (rule.operator === '<') return leftNum < rightNum
+    if (rule.operator === '>=') return leftNum >= rightNum
+    return leftNum <= rightNum
+  }
+
+  const left = normalizeComparable(fieldValue)
+  const right = normalizeComparable(rule.value)
+  if (!right) return true
+  if (rule.operator === '=') return left.includes(right)
+  if (rule.operator === '!=') return !left.includes(right)
+  if (rule.operator === '>') return left > right
+  if (rule.operator === '<') return left < right
+  if (rule.operator === '>=') return left >= right
+  return left <= right
+}
+
+function advancedFilterMatch(item: TableTransformer) {
+  if (!advancedFilterApplied.value || !advancedRulesApplied.value.length) return true
+  const validRules = advancedRulesApplied.value.filter((rule) => rule.field && rule.value.trim())
+  if (!validRules.length) return true
+  let result = advancedRuleMatch(item, validRules[0]!)
+  for (let index = 1; index < validRules.length; index += 1) {
+    const rule = validRules[index]!
+    const current = advancedRuleMatch(item, rule)
+    result = rule.connector === 'OR' ? result || current : result && current
+  }
+  return result
+}
 
 function toggleActions(id: string) {
   openActionId.value = openActionId.value === id ? null : id
@@ -460,6 +619,52 @@ function toggleNewMenu() {
 
 function toggleColumnsMenu() {
   columnsMenuOpen.value = !columnsMenuOpen.value
+}
+
+function openAdvancedFilterModal() {
+  advancedRulesDraft.value = advancedRulesApplied.value.length
+    ? advancedRulesApplied.value.map((rule) => ({ ...rule }))
+    : [createDefaultAdvancedRule()]
+  advancedFilterModalOpen.value = true
+}
+
+function addAdvancedRule() {
+  advancedRulesDraft.value = [...advancedRulesDraft.value, createDefaultAdvancedRule()]
+}
+
+function removeAdvancedRule(ruleId: number) {
+  if (advancedRulesDraft.value.length === 1) {
+    advancedRulesDraft.value = [createDefaultAdvancedRule()]
+    return
+  }
+  advancedRulesDraft.value = advancedRulesDraft.value.filter((rule) => rule.id !== ruleId)
+}
+
+function closeAdvancedFilterModal() {
+  advancedFilterModalOpen.value = false
+}
+
+function applyAdvancedFilter() {
+  const validRules = advancedRulesDraft.value.filter((rule) => rule.field && rule.value.trim())
+  advancedRulesApplied.value = validRules.map((rule) => ({ ...rule }))
+  advancedFilterApplied.value = advancedRulesApplied.value.length > 0
+  advancedFilterModalOpen.value = false
+  page.value = 1
+}
+
+function clearAdvancedFilter() {
+  advancedFilterApplied.value = false
+  advancedRulesApplied.value = []
+  advancedRulesDraft.value = []
+  page.value = 1
+}
+
+function handleAdvancedFilterPillClick() {
+  openAdvancedFilterModal()
+}
+
+function clearAdvancedFilterDraft() {
+  advancedRulesDraft.value = [createDefaultAdvancedRule()]
 }
 
 function toggleColumn(id: string) {
@@ -553,6 +758,14 @@ watch(searchQuery, () => {
 watch(rowsPerPage, () => {
   page.value = 1
 })
+
+watch(
+  visibleColumnIds,
+  (value) => {
+    persistColumnIds(transformerColumnsScope, value)
+  },
+  { deep: true }
+)
 </script>
 
 <template>
@@ -577,6 +790,27 @@ watch(rowsPerPage, () => {
               aria-label="Pesquisar transformador"
             />
           </div>
+          <button
+            type="button"
+            class="ghost-btn advanced-filter-pill"
+            @click="handleAdvancedFilterPillClick"
+          >
+            <span
+              v-if="advancedFilterApplied"
+              class="advanced-filter-clear-btn"
+              role="button"
+              tabindex="0"
+              aria-label="Remover filtro avançado"
+              @click.stop="clearAdvancedFilter"
+              @keydown.enter.stop.prevent="clearAdvancedFilter"
+              @keydown.space.stop.prevent="clearAdvancedFilter"
+            >
+              <span class="advanced-filter-icon-check" aria-hidden="true">✓</span>
+              <span class="advanced-filter-icon-remove" aria-hidden="true">✕</span>
+            </span>
+            <span v-else class="advanced-filter-icon" aria-hidden="true">⚙</span>
+            Filtro avançado
+          </button>
           <div class="columns-wrap" ref="columnsWrapRef">
             <button type="button" class="ghost-btn columns-btn" @click="toggleColumnsMenu">
               Colunas
@@ -688,27 +922,27 @@ watch(rowsPerPage, () => {
                   <span class="status-pill" :class="statusTone(item.analystStatus)">{{ item.analystStatus || '-' }}</span>
                 </template>
                 <template v-else-if="col.id === 'n1'">
-                  <span class="level-pill" :class="levelClass(item, 'N1')">
+                  <span class="level-pill" :class="levelClass(item, 'N1')" :style="levelStyle(item, 'N1')">
                     {{ levelText(item, 'N1') }}
                   </span>
                 </template>
                 <template v-else-if="col.id === 'n2'">
-                  <span class="level-pill" :class="levelClass(item, 'N2')">
+                  <span class="level-pill" :class="levelClass(item, 'N2')" :style="levelStyle(item, 'N2')">
                     {{ levelText(item, 'N2') }}
                   </span>
                 </template>
                 <template v-else-if="col.id === 'n3'">
-                  <span class="level-pill" :class="levelClass(item, 'N3')">
+                  <span class="level-pill" :class="levelClass(item, 'N3')" :style="levelStyle(item, 'N3')">
                     {{ levelText(item, 'N3') }}
                   </span>
                 </template>
                 <template v-else-if="col.id === 'n4'">
-                  <span class="level-pill" :class="levelClass(item, 'N4')">
+                  <span class="level-pill" :class="levelClass(item, 'N4')" :style="levelStyle(item, 'N4')">
                     {{ levelText(item, 'N4') }}
                   </span>
                 </template>
                 <template v-else-if="col.id === 'n5'">
-                  <span class="level-pill" :class="levelClass(item, 'N5')">
+                  <span class="level-pill" :class="levelClass(item, 'N5')" :style="levelStyle(item, 'N5')">
                     {{ levelText(item, 'N5') }}
                   </span>
                 </template>
@@ -852,13 +1086,65 @@ watch(rowsPerPage, () => {
         </div>
       </div>
     </div>
+
+    <div v-if="advancedFilterModalOpen" class="modal-overlay" @click="closeAdvancedFilterModal">
+      <div class="modal-card advanced-filter-modal" @click.stop>
+        <h4>Filtro Avançado</h4>
+        <div class="advanced-filter-rules">
+          <div v-for="(rule, index) in advancedRulesDraft" :key="`advanced-rule-${rule.id}`" class="advanced-filter-row">
+            <select v-if="index > 0" v-model="rule.connector" aria-label="Operador lógico">
+              <option value="AND">E</option>
+              <option value="OR">OU</option>
+            </select>
+            <span v-else class="advanced-filter-first">SE</span>
+            <select v-model="rule.field" aria-label="Campo">
+              <option v-for="option in advancedFieldOptions" :key="`advanced-field-${option.value}`" :value="option.value">
+                {{ option.label }}
+              </option>
+            </select>
+            <select v-model="rule.operator" aria-label="Operador">
+              <option value="=">==</option>
+              <option value="!=">!=</option>
+              <option value=">">&gt;</option>
+              <option value="<">&lt;</option>
+              <option value=">=">&gt;=</option>
+              <option value="<=">&lt;=</option>
+            </select>
+            <select
+              v-if="getAdvancedFieldValueOptions(rule.field).length"
+              v-model="rule.value"
+              aria-label="Valor da expressão"
+            >
+              <option value="">Selecione</option>
+              <option
+                v-for="option in getAdvancedFieldValueOptions(rule.field)"
+                :key="`advanced-value-${rule.id}-${option}`"
+                :value="option"
+              >
+                {{ option }}
+              </option>
+            </select>
+            <input v-else v-model="rule.value" type="text" placeholder="Valor" aria-label="Valor da expressão" />
+            <button type="button" class="advanced-filter-remove" @click="removeAdvancedRule(rule.id)">Remover</button>
+          </div>
+        </div>
+        <div class="advanced-filter-footer">
+          <button type="button" class="modal-btn secondary" @click="addAdvancedRule">+ Condição</button>
+          <div class="advanced-filter-footer-right">
+            <button type="button" class="modal-btn secondary" @click="clearAdvancedFilterDraft">Limpar</button>
+            <button type="button" class="modal-btn secondary" @click="closeAdvancedFilterModal">Cancelar</button>
+            <button type="button" class="modal-btn primary" @click="applyAdvancedFilter">Aplicar</button>
+          </div>
+        </div>
+      </div>
+    </div>
   </div>
 </template>
 
 <style scoped>
 .transformer-list{
   min-height: 100vh;
-  background: radial-gradient(circle at 20% 20%, #f5f7ff 0%, #f8fafc 45%, #ffffff 100%);
+  background: var(--app-bg-gradient);
   padding: 32px 32px 60px 96px;
   color: #0f172a;
   overflow-x: hidden;
@@ -918,6 +1204,83 @@ watch(rowsPerPage, () => {
   color: rgba(15, 23, 42, 0.8);
   cursor: pointer;
   background: rgba(255,255,255,0.7);
+}
+
+.advanced-filter-pill{
+  padding: 8px 14px;
+  font-size: 13px;
+  box-shadow: 0 6px 14px rgba(15, 23, 42, 0.08);
+  border: 1px solid rgba(15, 23, 42, 0.12);
+  border-radius: 999px;
+  color: rgba(15, 23, 42, 0.8);
+  cursor: pointer;
+  background: rgba(255, 255, 255, 0.7);
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.advanced-filter-pill .advanced-filter-icon{
+  width: 16px;
+  height: 16px;
+  border-radius: 999px;
+  border: 1px solid rgba(15, 23, 42, 0.25);
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 10px;
+  font-weight: 700;
+  line-height: 1;
+}
+
+.advanced-filter-pill.applied{
+  border-color: rgba(22, 163, 74, 0.5);
+  color: #166534;
+}
+
+.advanced-filter-clear-btn{
+  width: 18px;
+  height: 18px;
+  border-radius: 999px;
+  border: 1px solid #16a34a;
+  background: #16a34a;
+  color: #fff;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  padding: 0;
+  position: relative;
+  cursor: pointer;
+}
+
+.advanced-filter-icon-check,
+.advanced-filter-icon-remove{
+  position: absolute;
+  font-size: 11px;
+  font-weight: 800;
+  line-height: 1;
+  transition: opacity 0.15s ease;
+}
+
+.advanced-filter-icon-check{
+  opacity: 1;
+}
+
+.advanced-filter-icon-remove{
+  opacity: 0;
+}
+
+.advanced-filter-clear-btn:hover{
+  border-color: #dc2626;
+  background: #dc2626;
+}
+
+.advanced-filter-clear-btn:hover .advanced-filter-icon-check{
+  opacity: 0;
+}
+
+.advanced-filter-clear-btn:hover .advanced-filter-icon-remove{
+  opacity: 1;
 }
 
 .columns-menu{
@@ -1094,7 +1457,7 @@ watch(rowsPerPage, () => {
   border-radius: 999px;
   font-size: 11px;
   font-weight: 700;
-  color: rgba(15, 23, 42, 0.7);
+  color: rgba(15, 23, 42, 0.78);
 }
 
 .level-empty{
@@ -1102,49 +1465,54 @@ watch(rowsPerPage, () => {
   color: rgba(15, 23, 42, 0.55);
 }
 
-.level-very-low{
-  background: #22c55e;
-  color: #ffffff;
+.level-n1{
+  background: rgba(0, 255, 0, 0.22);
+  border: 1px solid rgba(0, 255, 0, 0.55);
+  color: #0b5f0b;
 }
 
-.level-low{
-  background: #84cc16;
-  color: #365314;
+.level-n2{
+  background: rgba(128, 255, 0, 0.22);
+  border: 1px solid rgba(128, 255, 0, 0.6);
+  color: #3f5f00;
 }
 
-.level-medium{
-  background: #eab308;
-  color: #78350f;
+.level-n3{
+  background: rgba(255, 255, 0, 0.26);
+  border: 1px solid rgba(255, 255, 0, 0.62);
+  color: #666300;
 }
 
-.level-high{
-  background: #f97316;
-  color: #ffffff;
+.level-n4{
+  background: rgba(255, 128, 0, 0.24);
+  border: 1px solid rgba(255, 128, 0, 0.62);
+  color: #8a4300;
 }
 
-.level-critical{
-  background: #ef4444;
-  color: #ffffff;
+.level-n5{
+  background: rgba(255, 0, 0, 0.22);
+  border: 1px solid rgba(255, 0, 0, 0.58);
+  color: #8f0000;
 }
 
 .tone-normal{
-  background: rgba(34, 197, 94, 0.12);
-  color: #166534;
+  background: rgba(0, 255, 0, 0.16);
+  color: #0b5f0b;
 }
 
 .status-pill.tone-normal{
-  background: #22c55e;
-  color: #ffffff;
+  background: var(--level-n1);
+  color: #064e06;
 }
 
 .tone-warning{
-  background: rgba(234, 179, 8, 0.16);
-  color: #854d0e;
+  background: rgba(255, 255, 0, 0.2);
+  color: #666300;
 }
 
 .tone-danger{
-  background: rgba(239, 68, 68, 0.12);
-  color: #991b1b;
+  background: rgba(255, 0, 0, 0.16);
+  color: #8f0000;
 }
 
 .tone-neutral{
@@ -1153,12 +1521,12 @@ watch(rowsPerPage, () => {
 }
 
 .status-pill.tone-warning{
-  background: #eab308;
-  color: #422006;
+  background: var(--level-n3);
+  color: #5c5900;
 }
 
 .status-pill.tone-danger{
-  background: #ef4444;
+  background: var(--level-n5);
   color: #ffffff;
 }
 
@@ -1187,9 +1555,9 @@ watch(rowsPerPage, () => {
   border-radius: 999px;
 }
 
-.transformer-table tr.tone-normal td:first-child::before{ background: #22c55e; }
-.transformer-table tr.tone-warning td:first-child::before{ background: #f59f00; }
-.transformer-table tr.tone-danger td:first-child::before{ background: #dc2626; }
+.transformer-table tr.tone-normal td:first-child::before{ background: var(--level-n1); }
+.transformer-table tr.tone-warning td:first-child::before{ background: var(--level-n3); }
+.transformer-table tr.tone-danger td:first-child::before{ background: var(--level-n5); }
 .transformer-table tr.tone-neutral td:first-child::before{ background: #94a3b8; }
 
 .actions-cell{
@@ -1402,6 +1770,73 @@ watch(rowsPerPage, () => {
   color: #fff;
 }
 
+.advanced-filter-modal{
+  width: min(980px, 100%);
+}
+
+.advanced-filter-rules{
+  display: grid;
+  gap: 10px;
+  max-height: min(52vh, 440px);
+  overflow: auto;
+  padding-right: 4px;
+}
+
+.advanced-filter-row{
+  display: grid;
+  grid-template-columns: 92px minmax(170px, 1fr) 90px minmax(180px, 1fr) auto;
+  gap: 8px;
+  align-items: center;
+}
+
+.advanced-filter-row select,
+.advanced-filter-row input{
+  height: 36px;
+  border-radius: 10px;
+  border: 1px solid rgba(15, 23, 42, 0.14);
+  padding: 0 10px;
+  font-size: 13px;
+  color: rgba(15, 23, 42, 0.84);
+  background: #fff;
+}
+
+.advanced-filter-first{
+  height: 36px;
+  border-radius: 10px;
+  border: 1px dashed rgba(15, 23, 42, 0.2);
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 12px;
+  font-weight: 700;
+  color: rgba(15, 23, 42, 0.65);
+}
+
+.advanced-filter-remove{
+  height: 36px;
+  border-radius: 10px;
+  border: 1px solid rgba(220, 38, 38, 0.35);
+  background: rgba(220, 38, 38, 0.08);
+  color: #b91c1c;
+  font-size: 12px;
+  font-weight: 700;
+  padding: 0 10px;
+  cursor: pointer;
+}
+
+.advanced-filter-footer{
+  margin-top: 14px;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+}
+
+.advanced-filter-footer-right{
+  display: inline-flex;
+  gap: 8px;
+}
+
 @media (max-width: 900px){
   .transformer-list{
     padding: 90px 16px 40px;
@@ -1414,6 +1849,9 @@ watch(rowsPerPage, () => {
     gap: 14px;
   }
   .modal-grid{
+    grid-template-columns: 1fr;
+  }
+  .advanced-filter-row{
     grid-template-columns: 1fr;
   }
   .modal-grid .full{
