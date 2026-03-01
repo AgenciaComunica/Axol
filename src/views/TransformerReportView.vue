@@ -163,7 +163,7 @@ function toValidTab(value: unknown): ReportTab {
 
 function toValidMacro(value: unknown): MacroTab {
   const text = String(value || '')
-  return (macroTabs.find((tab) => tab === text) as MacroTab) || 'TR Rota'
+  return (macroTabs.find((tab) => tab === text) as MacroTab) || 'TR Óleo'
 }
 
 const activeMacroTab = ref<MacroTab>(toValidMacro(route.query.macro))
