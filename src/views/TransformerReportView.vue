@@ -135,6 +135,12 @@ function parseBrDate(value: unknown) {
   return new Date(year, month - 1, day).getTime()
 }
 
+function getAnalysisDataSerialAliases(): Record<string, string[]> {
+  return {
+    '9701-A01': ['3792', 'OLTC-0001'],
+  }
+}
+
 const macroTabs = ['TR Óleo', 'TR Rota', 'OLTC'] as const
 type MacroTab = (typeof macroTabs)[number]
 
@@ -1202,6 +1208,7 @@ type HistoryChartSeries = { name: string; data: number[] }
 type HistoryChartData = { max: number; categories: string[]; series: HistoryChartSeries[]; colors: string[] }
 type HistoryChartTab = 'cromatografia' | 'fisicoquimica' | 'ensaiosespeciais'
 type HistoryDisplayMode = 'base' | 'historico'
+type DuvalViewTab = 'triangulos' | 'pentagonos'
 type AnalysisColumnGroup = 'Geral' | 'Cromatografia' | 'Físico Químico' | 'Ensaios Especiais'
 type AnalysisRecentTab = 'padrao' | 'oltc'
 type OltcAnalysisColumnGroup = 'Geral' | 'OLTC' | 'Físico Químico'
@@ -1222,6 +1229,175 @@ type UnifiedAnalysisRow = Record<string, string | number> & { id: string; sortTi
 const historyActiveTab = ref<HistoryChartTab>('cromatografia')
 const historyCromDisplayMode = ref<HistoryDisplayMode>('base')
 const historyFisicoDisplayMode = ref<HistoryDisplayMode>('base')
+const duvalViewTab = ref<DuvalViewTab>('triangulos')
+const duvalManualSelectedAnalyses = ref<string[]>([])
+
+type DuvalRefItem = [string, string]
+const duvalReferences: Record<'D1' | 'D4' | 'D5' | 'P1' | 'P2', DuvalRefItem[]> = {
+  D1: [
+    ['rgb(63, 164, 91)', 'PD - Descargas parciais (corona)'],
+    ['rgb(164, 101, 10)', 'T1 - Faltas térmicas abaixo de 300°'],
+    ['rgb(249, 148, 148)', 'T2 - Faltas térmicas entre 300°C e 700°C'],
+    ['rgb(185, 12, 13)', 'T3 - Faltas térmicas acima de 700°C'],
+    ['rgb(113, 201, 137)', 'D1 - Descarga de baixa energia (centelhamento)'],
+    ['rgb(245, 176, 77)', 'D2 - Descarga de alta energia (arco elétrico)'],
+    ['rgb(246, 99, 100)', 'DT - Ocorrência simultânea de falta térmica e arco elétrico'],
+  ],
+  D4: [
+    ['rgb(63, 164, 91)', 'PD - Descargas parciais do tipo corona'],
+    ['rgb(248, 204, 140)', 'S - Gases dispersos em temperaturas < 200 °C'],
+    ['rgb(147, 10, 10)', 'C - Possível carbonização do papel'],
+    ['rgb(198, 122, 12)', 'O - Superaquecimento < 250 °C sem carbonização do papel'],
+  ],
+  D5: [
+    ['rgb(63, 164, 91)', 'PD - Descargas parciais do tipo corona'],
+    ['rgb(248, 204, 140)', 'S - Gases dispersos em temperaturas < 200 °C'],
+    ['rgb(147, 10, 10)', 'C - Possível carbonização do papel'],
+    ['rgb(198, 122, 12)', 'O - Superaquecimento < 250 °C sem carbonização do papel'],
+    ['rgb(246, 99, 100)', 'T2 - Falha térmica, 300 ºC < t < 700 ºC'],
+    ['rgb(185, 12, 13)', 'T3 - Falha térmica, t > 700 ºC'],
+  ],
+  P1: [
+    ['rgb(248, 204, 140)', 'S - Gases dispersos em temperaturas < 200 °C'],
+    ['rgb(164, 101, 10)', 'T1 - Falha térmica, t < 300 ºC'],
+    ['rgb(249, 148, 148)', 'T2 - Falha térmica, 300 ºC < t < 700 ºC'],
+    ['rgb(185, 12, 13)', 'T3 - Falha térmica, t > 700 ºC'],
+    ['rgb(113, 201, 137)', 'D1 - Descargas de baixa energia ou descargas parciais do tipo faísca'],
+    ['rgb(245, 176, 77)', 'D2 - Descargas de alta energia'],
+    ['rgb(63, 164, 91)', 'PD - Descargas parciais do tipo corona'],
+  ],
+  P2: [
+    ['rgb(248, 204, 140)', 'S - Gases dispersos em temperaturas < 200 °C'],
+    ['rgb(198, 122, 12)', 'O - Superaquecimento < 250 °C sem carbonização do papel'],
+    ['rgb(147, 10, 10)', 'C - Possível carbonização do papel'],
+    ['rgb(222, 137, 13)', 'T3-H - Falha térmica T3 somente em óleo mineral'],
+    ['rgb(113, 201, 137)', 'D1 - Descargas de baixa energia ou descargas parciais do tipo faísca'],
+    ['rgb(245, 176, 77)', 'D2 - Descargas de alta energia'],
+    ['rgb(63, 164, 91)', 'PD - Descargas parciais do tipo corona'],
+  ],
+}
+
+const duvalAreaByIndex = {
+  d1: ['T3', 'T3', 'T3', 'T3', 'T3'],
+  d4: ['S', 'S', 'ND', 'ND', 'S'],
+  d5: ['T3', 'T3', 'C', 'T3', 'C'],
+  p1: ['T2', 'T3', 'D2', 'T3', 'D2'],
+  p2: ['C', 'T3-H', 'D2', 'T3-H', 'D2'],
+}
+
+type DuvalAnalysisRow = {
+  id: string
+  date: string
+  C2H2: string
+  C2H4: string
+  CH4: string
+  C2H6: string
+  H2: string
+  AREA_D1: string
+  AREA_D4: string
+  AREA_D5: string
+  AREA_P1: string
+  AREA_P2: string
+}
+
+const duvalAnalysesRows = computed<DuvalAnalysisRow[]>(() => {
+  const data = parseLooseJson<BaseRow[]>(cromatografiasRaw)
+  return [...data]
+    .filter(rowMatchesSelectedTransformer)
+    .sort((a, b) => parseBrDate(b.DATA_COLETA) - parseBrDate(a.DATA_COLETA))
+    .slice(0, 5)
+    .map((row, index) => ({
+      id: `${normalizeCell(row.DATA_COLETA)}-${index}`,
+      date: normalizeCell(row.DATA_COLETA),
+      C2H2: normalizeCell(row.ACETILENO),
+      C2H4: normalizeCell(row.ETILENO),
+      CH4: normalizeCell(row.METANO),
+      C2H6: normalizeCell(row.ETANO),
+      H2: normalizeCell(row.HIDROGENIO),
+      AREA_D1: duvalAreaByIndex.d1[index] || '-',
+      AREA_D4: duvalAreaByIndex.d4[index] || '-',
+      AREA_D5: duvalAreaByIndex.d5[index] || '-',
+      AREA_P1: duvalAreaByIndex.p1[index] || '-',
+      AREA_P2: duvalAreaByIndex.p2[index] || '-',
+    }))
+})
+
+watch(
+  duvalAnalysesRows,
+  (rows) => {
+    const validIds = new Set(rows.map((row) => row.id))
+    duvalManualSelectedAnalyses.value = duvalManualSelectedAnalyses.value.filter((id) => validIds.has(id))
+    if (!duvalManualSelectedAnalyses.value.length && rows.length) {
+      duvalManualSelectedAnalyses.value = [rows[0].id]
+    }
+  },
+  { immediate: true }
+)
+
+const duvalFullSelectedAnalyses = computed(() => {
+  const rows = duvalAnalysesRows.value
+  if (!duvalManualSelectedAnalyses.value.length) return []
+  const analysisMap = new Map(rows.map((row, index) => [row.id, index]))
+  const manualIndices = duvalManualSelectedAnalyses.value
+    .map((id) => analysisMap.get(id))
+    .filter((index): index is number => Number.isInteger(index))
+  if (!manualIndices.length) return []
+  const minIndex = Math.min(...manualIndices)
+  const maxIndex = Math.max(...manualIndices)
+  return rows.slice(minIndex, maxIndex + 1).map((row) => row.id)
+})
+
+function buildDuvalLayers(baseImage: string, pointPrefix: string, arrowPrefix: string) {
+  const rows = duvalAnalysesRows.value
+  const layers = [baseImage]
+  if (!rows.length || !duvalFullSelectedAnalyses.value.length) return layers
+
+  const indexMap = new Map(rows.map((row, index) => [row.id, index]))
+  const selectedIndices = duvalFullSelectedAnalyses.value
+    .map((id) => indexMap.get(id))
+    .filter((index): index is number => Number.isInteger(index))
+
+  if (!selectedIndices.length) return layers
+
+  const minIndex = Math.min(...selectedIndices)
+  const maxIndex = Math.max(...selectedIndices)
+
+  for (let i = minIndex; i <= maxIndex; i += 1) {
+    if (i > minIndex) {
+      layers.push(`/duval-assets/A01/${arrowPrefix}${i}.svg`)
+    }
+  }
+
+  for (let i = minIndex; i <= maxIndex; i += 1) {
+    layers.push(`/duval-assets/A01/${pointPrefix}${i + 1}.svg`)
+  }
+
+  return layers
+}
+
+const duvalLayersD1 = computed(() => buildDuvalLayers('/duval-assets/A01/T1.svg', 'T1_P', 'T1_S'))
+const duvalLayersD4 = computed(() => buildDuvalLayers('/duval-assets/A01/T4.svg', 'T4_P', 'T4_S'))
+const duvalLayersD5 = computed(() => buildDuvalLayers('/duval-assets/A01/T5.svg', 'T5_P', 'T5_S'))
+const duvalLayersP1 = computed(() => buildDuvalLayers('/duval-assets/A01/P1.svg', 'P1_P', 'P1_S'))
+const duvalLayersP2 = computed(() => buildDuvalLayers('/duval-assets/A01/P2.svg', 'P2_P', 'P2_S'))
+
+function isDuvalManualSelected(id: string) {
+  return duvalManualSelectedAnalyses.value.includes(id)
+}
+
+function handleDuvalSelection(id: string, checked: boolean) {
+  let updated = [...duvalManualSelectedAnalyses.value]
+  if (checked) {
+    if (!updated.includes(id)) updated.push(id)
+  } else {
+    updated = updated.filter((item) => item !== id)
+  }
+  duvalManualSelectedAnalyses.value = updated
+}
+
+function clearDuvalSelection() {
+  duvalManualSelectedAnalyses.value = []
+}
 
 const cromatografiaSeriesDefs: HistorySeriesDef[] = [
   { key: 'MONOX_CARBONO', label: 'CO', color: '#008ffb' },
@@ -1491,13 +1667,12 @@ const manualTreatmentRows = ref<TreatmentRow[]>([])
 const treatmentLimitsOpen = ref(false)
 const historyConditionsOpen = ref(true)
 const historyAnalysesOpen = ref(true)
-const evalCardOpen = ref<Record<'1' | '2' | '3' | '4' | '5' | '6', boolean>>({
+const evalCardOpen = ref<Record<'1' | '2' | '3' | '4' | '5', boolean>>({
   '1': true,
   '2': true,
   '3': true,
   '4': true,
   '5': true,
-  '6': true,
 })
 const treatmentForm = ref({
   statusTratamento: 'Concluído',
@@ -1535,7 +1710,7 @@ const coletasQuarterOptions = [
   { value: 'Q4', label: 'Q4 (Out-Dez)' },
 ]
 
-function toggleEvalCard(card: '1' | '2' | '3' | '4' | '5' | '6') {
+function toggleEvalCard(card: '1' | '2' | '3' | '4' | '5') {
   evalCardOpen.value[card] = !evalCardOpen.value[card]
 }
 
@@ -2007,15 +2182,11 @@ function normalizedToken(value: unknown) {
     .toUpperCase()
 }
 
-const analysisDataSerialAliases: Record<string, string[]> = {
-  '9701-A01': ['3792', 'OLTC-0001'],
-}
-
 const selectedOltcMeta = computed<BaseRow | null>(() => {
   const selected = selectedTransformer.value
   if (!selected) return null
   const selectedSerial = normalizedToken(selected.serial)
-  const serialAliases = (analysisDataSerialAliases[selected.id] || []).map((value) => normalizedToken(value))
+  const serialAliases = (getAnalysisDataSerialAliases()[selected.id] || []).map((value) => normalizedToken(value))
   const serialCandidates = new Set([selectedSerial, ...serialAliases].filter(Boolean))
   const selectedTag = normalizedToken(selected.tag)
   const rows = ((oltcData as any)?.oltc || []) as BaseRow[]
@@ -2035,7 +2206,7 @@ function rowMatchesSelectedTransformer(row: BaseRow) {
   if (!selected) return true
 
   const selectedSerial = normalizedToken(selected.serial)
-  const serialAliases = (analysisDataSerialAliases[selected.id] || []).map((value) => normalizedToken(value))
+  const serialAliases = (getAnalysisDataSerialAliases()[selected.id] || []).map((value) => normalizedToken(value))
   const serialCandidates = new Set([selectedSerial, ...serialAliases].filter(Boolean))
   const selectedTag = normalizedToken(selected.tag)
   const selectedUnit = normalizedToken(selected.unit)
@@ -3781,7 +3952,7 @@ watch([activeTab, selectedId], async () => {
         </article>
         <article class="tile eval-card-4" :class="{ 'eval-collapsed': !evalCardOpen['4'] }">
           <div class="eval-card-head">
-            <h4>4 - Avaliação do risco operacional do transformador</h4>
+            <h4>5 - Avaliação do risco operacional do transformador</h4>
             <button type="button" class="eval-collapse-btn" @click="toggleEvalCard('4')">
               {{ evalCardOpen['4'] ? '−' : '+' }}
             </button>
@@ -3842,70 +4013,12 @@ watch([activeTab, selectedId], async () => {
         </article>
         <article class="tile eval-card-5" :class="{ 'eval-collapsed': !evalCardOpen['5'] }">
           <div class="eval-card-head">
-            <h4>5 - Métodos de identificação de falhas: Triângulos e Pentágonos de Duval.</h4>
+            <h4>4 - Tratamentos no óleo isolante</h4>
             <button type="button" class="eval-collapse-btn" @click="toggleEvalCard('5')">
               {{ evalCardOpen['5'] ? '−' : '+' }}
             </button>
           </div>
           <template v-if="evalCardOpen['5']">
-          <div class="duval-grid">
-            <article class="duval-table-card">
-              <table class="table compact mini-table">
-                <thead>
-                  <tr>
-                    <th colspan="2" class="text-center">Resultado da última amostra - 25-03-2024</th>
-                  </tr>
-                  <tr>
-                    <th class="text-left">Gás</th>
-                    <th class="text-left">Valores</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  <tr><td>Hidrogênio (H2)</td><td class="text-center">10.000</td></tr>
-                  <tr><td>Metano (CH4)</td><td class="text-center">7.000</td></tr>
-                  <tr><td>Etano (C2H6)</td><td class="text-center">1.000</td></tr>
-                  <tr><td>Etileno (C2H4)</td><td class="text-center">10.000</td></tr>
-                  <tr><td>Aceliteno (C2H2)</td><td class="text-center">3.000</td></tr>
-                  <tr><td>Mon. Carbono (CO)</td><td class="text-center">81.000</td></tr>
-                  <tr><td>Dióx. Carbono (CO2)</td><td class="text-center">908.000</td></tr>
-                </tbody>
-              </table>
-            </article>
-
-            <article class="duval-table-card">
-              <table class="table compact mini-table">
-                <thead>
-                  <tr>
-                    <th colspan="3" class="text-center">Tabela 1 IEEE C57.104-2019 (ppm)</th>
-                  </tr>
-                  <tr>
-                    <th class="text-left">Gás</th>
-                    <th class="text-left">O2/N2 razão ≤ 0.2</th>
-                    <th class="text-left">O2/N2 razão ≥ 0.2</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  <tr><td>Hidrogênio (H2)</td><td class="text-center">80</td><td class="text-center">40</td></tr>
-                  <tr><td>Metano (CH4)</td><td class="text-center">90</td><td class="text-center">20</td></tr>
-                  <tr><td>Etano (C2H6)</td><td class="text-center">90</td><td class="text-center">15</td></tr>
-                  <tr><td>Etileno (C2H4)</td><td class="text-center">50</td><td class="text-center">50</td></tr>
-                  <tr><td>Aceliteno (C2H2)</td><td class="text-center">20</td><td class="text-center">20</td></tr>
-                  <tr><td>Mon. Carbono (CO)</td><td class="text-center">900</td><td class="text-center">500</td></tr>
-                  <tr><td>Dióx. Carbono (CO2)</td><td class="text-center">9000</td><td class="text-center">5000</td></tr>
-                </tbody>
-              </table>
-            </article>
-          </div>
-          </template>
-        </article>
-        <article class="tile eval-card-6" :class="{ 'eval-collapsed': !evalCardOpen['6'] }">
-          <div class="eval-card-head">
-            <h4>6 - Tratamentos no óleo isolante</h4>
-            <button type="button" class="eval-collapse-btn" @click="toggleEvalCard('6')">
-              {{ evalCardOpen['6'] ? '−' : '+' }}
-            </button>
-          </div>
-          <template v-if="evalCardOpen['6']">
           <p>
             Devem ser realizados de acordo com os resultados dos ensaios físico-químicos do óleo isolante, observando
             os limites mínimos e máximos estabelecidos para cada variável de interesse, conforme orientações da norma
@@ -4443,9 +4556,175 @@ watch([activeTab, selectedId], async () => {
       </section>
 
       <section v-else-if="activeTab === 'Duval'" class="panel table-panel">
-        <article class="tile tile-wide">
-          <h4>Duval</h4>
-          <p>Módulo em preparação para próxima entrega.</p>
+        <article class="tile tile-wide duval-screen">
+          <nav class="duval-tabs">
+            <button
+              type="button"
+              class="duval-tab-btn"
+              :class="{ active: duvalViewTab === 'triangulos' }"
+              @click="duvalViewTab = 'triangulos'"
+            >
+              Triângulos Duval
+            </button>
+            <button
+              type="button"
+              class="duval-tab-btn"
+              :class="{ active: duvalViewTab === 'pentagonos' }"
+              @click="duvalViewTab = 'pentagonos'"
+            >
+              Pentágonos Duval
+            </button>
+          </nav>
+
+          <div v-if="duvalViewTab === 'triangulos'" class="duval-diagram-grid duval-diagram-grid-triangles">
+            <article class="duval-diagram-card">
+              <div class="duval-image-frame">
+                <img
+                  v-for="(layer, index) in duvalLayersD1"
+                  :key="`duval-d1-${index}`"
+                  :src="layer"
+                  class="duval-layer-image"
+                  alt="Duval Triângulo 1"
+                />
+              </div>
+              <ul class="duval-reference-list">
+                <li v-for="(item, index) in duvalReferences.D1" :key="`duval-ref-d1-${index}`">
+                  <span class="duval-reference-dot" :style="{ backgroundColor: item[0] }" aria-hidden="true"></span>
+                  <span>{{ item[1] }}</span>
+                </li>
+              </ul>
+            </article>
+
+            <article class="duval-diagram-card">
+              <div class="duval-image-frame">
+                <img
+                  v-for="(layer, index) in duvalLayersD4"
+                  :key="`duval-d4-${index}`"
+                  :src="layer"
+                  class="duval-layer-image"
+                  alt="Duval Triângulo 4"
+                />
+              </div>
+              <ul class="duval-reference-list">
+                <li v-for="(item, index) in duvalReferences.D4" :key="`duval-ref-d4-${index}`">
+                  <span class="duval-reference-dot" :style="{ backgroundColor: item[0] }" aria-hidden="true"></span>
+                  <span>{{ item[1] }}</span>
+                </li>
+              </ul>
+            </article>
+
+            <article class="duval-diagram-card">
+              <div class="duval-image-frame">
+                <img
+                  v-for="(layer, index) in duvalLayersD5"
+                  :key="`duval-d5-${index}`"
+                  :src="layer"
+                  class="duval-layer-image"
+                  alt="Duval Triângulo 5"
+                />
+              </div>
+              <ul class="duval-reference-list">
+                <li v-for="(item, index) in duvalReferences.D5" :key="`duval-ref-d5-${index}`">
+                  <span class="duval-reference-dot" :style="{ backgroundColor: item[0] }" aria-hidden="true"></span>
+                  <span>{{ item[1] }}</span>
+                </li>
+              </ul>
+            </article>
+          </div>
+
+          <div v-else class="duval-diagram-grid duval-diagram-grid-pentagons">
+            <article class="duval-diagram-card">
+              <div class="duval-image-frame">
+                <img
+                  v-for="(layer, index) in duvalLayersP1"
+                  :key="`duval-p1-${index}`"
+                  :src="layer"
+                  class="duval-layer-image"
+                  alt="Duval Pentágono 1"
+                />
+              </div>
+              <ul class="duval-reference-list">
+                <li v-for="(item, index) in duvalReferences.P1" :key="`duval-ref-p1-${index}`">
+                  <span class="duval-reference-dot" :style="{ backgroundColor: item[0] }" aria-hidden="true"></span>
+                  <span>{{ item[1] }}</span>
+                </li>
+              </ul>
+            </article>
+
+            <article class="duval-diagram-card">
+              <div class="duval-image-frame">
+                <img
+                  v-for="(layer, index) in duvalLayersP2"
+                  :key="`duval-p2-${index}`"
+                  :src="layer"
+                  class="duval-layer-image"
+                  alt="Duval Pentágono 2"
+                />
+              </div>
+              <ul class="duval-reference-list">
+                <li v-for="(item, index) in duvalReferences.P2" :key="`duval-ref-p2-${index}`">
+                  <span class="duval-reference-dot" :style="{ backgroundColor: item[0] }" aria-hidden="true"></span>
+                  <span>{{ item[1] }}</span>
+                </li>
+              </ul>
+            </article>
+          </div>
+
+          <article class="duval-data-card">
+            <div class="duval-data-head">
+              <h4>Concentração de Gases (ppm)</h4>
+              <button type="button" class="history-action-btn small" @click="clearDuvalSelection">
+                Limpar Seleção
+              </button>
+            </div>
+            <div class="mini-table-wrap">
+              <table class="table compact duval-data-table">
+                <thead>
+                  <tr>
+                    <th class="text-center">Selecionar</th>
+                    <th class="text-center">Análises</th>
+                    <th class="text-center">C2H2</th>
+                    <th class="text-center">C2H4</th>
+                    <th class="text-center">CH4</th>
+                    <th class="text-center">C2H6</th>
+                    <th class="text-center">H2</th>
+                    <th class="text-center">Duval 1</th>
+                    <th class="text-center">Duval 4</th>
+                    <th class="text-center">Duval 5</th>
+                    <th class="text-center">Pentágono 1</th>
+                    <th class="text-center">Pentágono 2</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  <tr v-for="row in duvalAnalysesRows" :key="row.id">
+                    <td class="text-center">
+                      <input
+                        type="checkbox"
+                        :checked="isDuvalManualSelected(row.id)"
+                        @change="handleDuvalSelection(row.id, ($event.target as HTMLInputElement).checked)"
+                      />
+                    </td>
+                    <td class="text-center">{{ row.date }}</td>
+                    <td class="text-center">{{ row.C2H2 }}</td>
+                    <td class="text-center">{{ row.C2H4 }}</td>
+                    <td class="text-center">{{ row.CH4 }}</td>
+                    <td class="text-center">{{ row.C2H6 }}</td>
+                    <td class="text-center">{{ row.H2 }}</td>
+                    <td class="text-center">{{ row.AREA_D1 }}</td>
+                    <td class="text-center">{{ row.AREA_D4 }}</td>
+                    <td class="text-center">{{ row.AREA_D5 }}</td>
+                    <td class="text-center">{{ row.AREA_P1 }}</td>
+                    <td class="text-center">{{ row.AREA_P2 }}</td>
+                  </tr>
+                  <tr v-if="!duvalAnalysesRows.length">
+                    <td class="text-center" colspan="12">
+                      Sem dados de cromatografia para compor a visualização Duval.
+                    </td>
+                  </tr>
+                </tbody>
+              </table>
+            </div>
+          </article>
         </article>
       </section>
 
@@ -5586,17 +5865,12 @@ watch([activeTab, selectedId], async () => {
 
 .panel-eval .eval-card-4{
   grid-column: 1 / -1;
-  grid-row: 3;
+  grid-row: 4;
 }
 
 .panel-eval .eval-card-5{
-  grid-column: 1;
-  grid-row: 4;
-}
-
-.panel-eval .eval-card-6{
-  grid-column: 2;
-  grid-row: 4;
+  grid-column: 1 / -1;
+  grid-row: 3;
 }
 
 .panel-eval{
@@ -5613,7 +5887,7 @@ watch([activeTab, selectedId], async () => {
   align-self: stretch;
 }
 
-.panel-eval .eval-card-6{
+.panel-eval .eval-card-5{
   height: auto;
   align-self: stretch;
 }
@@ -5818,6 +6092,125 @@ watch([activeTab, selectedId], async () => {
 .duval-table-card .table{
   border: 0;
   border-radius: 0;
+}
+
+.duval-screen{
+  display: grid;
+  gap: 14px;
+}
+
+.duval-tabs{
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.duval-tab-btn{
+  border: 1px solid rgba(30, 78, 139, 0.28);
+  border-radius: 999px;
+  padding: 8px 14px;
+  background: rgba(255, 255, 255, 0.92);
+  color: #1e4e8b;
+  font-size: 12px;
+  font-weight: 700;
+  cursor: pointer;
+  transition: all 0.15s ease;
+}
+
+.duval-tab-btn.active{
+  background: #1e4e8b;
+  border-color: #1e4e8b;
+  color: #ffffff;
+}
+
+.duval-diagram-grid{
+  display: grid;
+  gap: 12px;
+}
+
+.duval-diagram-grid-triangles{
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+}
+
+.duval-diagram-grid-pentagons{
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+}
+
+.duval-diagram-card{
+  border: 1px solid rgba(30, 78, 139, 0.16);
+  border-radius: 12px;
+  background: #ffffff;
+  padding: 10px;
+  display: grid;
+  gap: 10px;
+}
+
+.duval-image-frame{
+  position: relative;
+  width: 100%;
+  aspect-ratio: 1 / 1;
+  max-height: 370px;
+  border: 1px solid rgba(30, 78, 139, 0.2);
+  border-radius: 10px;
+  overflow: hidden;
+  background: #f8fafc;
+}
+
+.duval-layer-image{
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  object-fit: contain;
+}
+
+.duval-reference-list{
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: grid;
+  gap: 6px;
+}
+
+.duval-reference-list li{
+  display: flex;
+  align-items: flex-start;
+  gap: 8px;
+  font-size: 11px;
+  color: rgba(15, 23, 42, 0.85);
+}
+
+.duval-reference-dot{
+  width: 10px;
+  height: 10px;
+  border-radius: 999px;
+  flex: 0 0 auto;
+  margin-top: 2px;
+}
+
+.duval-data-card{
+  border: 1px solid rgba(30, 78, 139, 0.16);
+  border-radius: 12px;
+  background: #ffffff;
+  padding: 10px;
+}
+
+.duval-data-head{
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 10px;
+  margin-bottom: 8px;
+}
+
+.duval-data-head h4{
+  margin: 0;
+  font-size: 14px;
+  color: #123a6d;
+}
+
+.duval-data-table td{
+  white-space: nowrap;
 }
 
 .desktop-only{
@@ -7133,8 +7526,7 @@ watch([activeTab, selectedId], async () => {
   .panel-eval .eval-card-2,
   .panel-eval .eval-card-3,
   .panel-eval .eval-card-4,
-  .panel-eval .eval-card-5,
-  .panel-eval .eval-card-6{
+  .panel-eval .eval-card-5{
     grid-column: auto;
     grid-row: auto;
   }
@@ -7153,6 +7545,20 @@ watch([activeTab, selectedId], async () => {
   }
   .duval-grid{
     grid-template-columns: 1fr;
+  }
+  .duval-diagram-grid-triangles,
+  .duval-diagram-grid-pentagons{
+    grid-template-columns: 1fr;
+  }
+  .duval-image-frame{
+    max-height: 320px;
+  }
+  .duval-tabs{
+    width: 100%;
+  }
+  .duval-tab-btn{
+    flex: 1 1 calc(50% - 4px);
+    text-align: center;
   }
   .desktop-only{
     display: none !important;
