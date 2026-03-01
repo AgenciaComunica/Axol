@@ -1349,7 +1349,7 @@ const duvalFullSelectedAnalyses = computed(() => {
 
 function buildDuvalLayers(baseImage: string, pointPrefix: string, arrowPrefix: string) {
   const rows = duvalAnalysesRows.value
-  const layers = [baseImage]
+  const layers = [duvalAssetPath(baseImage)]
   if (!rows.length || !duvalFullSelectedAnalyses.value.length) return layers
 
   const indexMap = new Map(rows.map((row, index) => [row.id, index]))
@@ -1364,22 +1364,28 @@ function buildDuvalLayers(baseImage: string, pointPrefix: string, arrowPrefix: s
 
   for (let i = minIndex; i <= maxIndex; i += 1) {
     if (i > minIndex) {
-      layers.push(`/duval-assets/A01/${arrowPrefix}${i}.svg`)
+      layers.push(duvalAssetPath(`${arrowPrefix}${i}.svg`))
     }
   }
 
   for (let i = minIndex; i <= maxIndex; i += 1) {
-    layers.push(`/duval-assets/A01/${pointPrefix}${i + 1}.svg`)
+    layers.push(duvalAssetPath(`${pointPrefix}${i + 1}.svg`))
   }
 
   return layers
 }
 
-const duvalLayersD1 = computed(() => buildDuvalLayers('/duval-assets/A01/T1.svg', 'T1_P', 'T1_S'))
-const duvalLayersD4 = computed(() => buildDuvalLayers('/duval-assets/A01/T4.svg', 'T4_P', 'T4_S'))
-const duvalLayersD5 = computed(() => buildDuvalLayers('/duval-assets/A01/T5.svg', 'T5_P', 'T5_S'))
-const duvalLayersP1 = computed(() => buildDuvalLayers('/duval-assets/A01/P1.svg', 'P1_P', 'P1_S'))
-const duvalLayersP2 = computed(() => buildDuvalLayers('/duval-assets/A01/P2.svg', 'P2_P', 'P2_S'))
+function duvalAssetPath(fileName: string) {
+  const base = import.meta.env.BASE_URL || '/'
+  const normalizedBase = base.endsWith('/') ? base : `${base}/`
+  return `${normalizedBase}duval-assets/A01/${fileName.replace(/^\/+/, '')}`
+}
+
+const duvalLayersD1 = computed(() => buildDuvalLayers('T1.svg', 'T1_P', 'T1_S'))
+const duvalLayersD4 = computed(() => buildDuvalLayers('T4.svg', 'T4_P', 'T4_S'))
+const duvalLayersD5 = computed(() => buildDuvalLayers('T5.svg', 'T5_P', 'T5_S'))
+const duvalLayersP1 = computed(() => buildDuvalLayers('P1.svg', 'P1_P', 'P1_S'))
+const duvalLayersP2 = computed(() => buildDuvalLayers('P2.svg', 'P2_P', 'P2_S'))
 
 function isDuvalManualSelected(id: string) {
   return duvalManualSelectedAnalyses.value.includes(id)
