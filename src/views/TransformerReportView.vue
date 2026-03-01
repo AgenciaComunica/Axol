@@ -1667,13 +1667,12 @@ const manualTreatmentRows = ref<TreatmentRow[]>([])
 const treatmentLimitsOpen = ref(false)
 const historyConditionsOpen = ref(true)
 const historyAnalysesOpen = ref(true)
-const evalCardOpen = ref<Record<'1' | '2' | '3' | '4' | '5' | '6', boolean>>({
+const evalCardOpen = ref<Record<'1' | '2' | '3' | '4' | '5', boolean>>({
   '1': true,
   '2': true,
   '3': true,
   '4': true,
   '5': true,
-  '6': true,
 })
 const treatmentForm = ref({
   statusTratamento: 'Concluído',
@@ -1711,7 +1710,7 @@ const coletasQuarterOptions = [
   { value: 'Q4', label: 'Q4 (Out-Dez)' },
 ]
 
-function toggleEvalCard(card: '1' | '2' | '3' | '4' | '5' | '6') {
+function toggleEvalCard(card: '1' | '2' | '3' | '4' | '5') {
   evalCardOpen.value[card] = !evalCardOpen.value[card]
 }
 
@@ -3953,7 +3952,7 @@ watch([activeTab, selectedId], async () => {
         </article>
         <article class="tile eval-card-4" :class="{ 'eval-collapsed': !evalCardOpen['4'] }">
           <div class="eval-card-head">
-            <h4>4 - Avaliação do risco operacional do transformador</h4>
+            <h4>5 - Avaliação do risco operacional do transformador</h4>
             <button type="button" class="eval-collapse-btn" @click="toggleEvalCard('4')">
               {{ evalCardOpen['4'] ? '−' : '+' }}
             </button>
@@ -4014,70 +4013,12 @@ watch([activeTab, selectedId], async () => {
         </article>
         <article class="tile eval-card-5" :class="{ 'eval-collapsed': !evalCardOpen['5'] }">
           <div class="eval-card-head">
-            <h4>5 - Métodos de identificação de falhas: Triângulos e Pentágonos de Duval.</h4>
+            <h4>4 - Tratamentos no óleo isolante</h4>
             <button type="button" class="eval-collapse-btn" @click="toggleEvalCard('5')">
               {{ evalCardOpen['5'] ? '−' : '+' }}
             </button>
           </div>
           <template v-if="evalCardOpen['5']">
-          <div class="duval-grid">
-            <article class="duval-table-card">
-              <table class="table compact mini-table">
-                <thead>
-                  <tr>
-                    <th colspan="2" class="text-center">Resultado da última amostra - 25-03-2024</th>
-                  </tr>
-                  <tr>
-                    <th class="text-left">Gás</th>
-                    <th class="text-left">Valores</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  <tr><td>Hidrogênio (H2)</td><td class="text-center">10.000</td></tr>
-                  <tr><td>Metano (CH4)</td><td class="text-center">7.000</td></tr>
-                  <tr><td>Etano (C2H6)</td><td class="text-center">1.000</td></tr>
-                  <tr><td>Etileno (C2H4)</td><td class="text-center">10.000</td></tr>
-                  <tr><td>Aceliteno (C2H2)</td><td class="text-center">3.000</td></tr>
-                  <tr><td>Mon. Carbono (CO)</td><td class="text-center">81.000</td></tr>
-                  <tr><td>Dióx. Carbono (CO2)</td><td class="text-center">908.000</td></tr>
-                </tbody>
-              </table>
-            </article>
-
-            <article class="duval-table-card">
-              <table class="table compact mini-table">
-                <thead>
-                  <tr>
-                    <th colspan="3" class="text-center">Tabela 1 IEEE C57.104-2019 (ppm)</th>
-                  </tr>
-                  <tr>
-                    <th class="text-left">Gás</th>
-                    <th class="text-left">O2/N2 razão ≤ 0.2</th>
-                    <th class="text-left">O2/N2 razão ≥ 0.2</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  <tr><td>Hidrogênio (H2)</td><td class="text-center">80</td><td class="text-center">40</td></tr>
-                  <tr><td>Metano (CH4)</td><td class="text-center">90</td><td class="text-center">20</td></tr>
-                  <tr><td>Etano (C2H6)</td><td class="text-center">90</td><td class="text-center">15</td></tr>
-                  <tr><td>Etileno (C2H4)</td><td class="text-center">50</td><td class="text-center">50</td></tr>
-                  <tr><td>Aceliteno (C2H2)</td><td class="text-center">20</td><td class="text-center">20</td></tr>
-                  <tr><td>Mon. Carbono (CO)</td><td class="text-center">900</td><td class="text-center">500</td></tr>
-                  <tr><td>Dióx. Carbono (CO2)</td><td class="text-center">9000</td><td class="text-center">5000</td></tr>
-                </tbody>
-              </table>
-            </article>
-          </div>
-          </template>
-        </article>
-        <article class="tile eval-card-6" :class="{ 'eval-collapsed': !evalCardOpen['6'] }">
-          <div class="eval-card-head">
-            <h4>6 - Tratamentos no óleo isolante</h4>
-            <button type="button" class="eval-collapse-btn" @click="toggleEvalCard('6')">
-              {{ evalCardOpen['6'] ? '−' : '+' }}
-            </button>
-          </div>
-          <template v-if="evalCardOpen['6']">
           <p>
             Devem ser realizados de acordo com os resultados dos ensaios físico-químicos do óleo isolante, observando
             os limites mínimos e máximos estabelecidos para cada variável de interesse, conforme orientações da norma
@@ -5924,17 +5865,12 @@ watch([activeTab, selectedId], async () => {
 
 .panel-eval .eval-card-4{
   grid-column: 1 / -1;
-  grid-row: 3;
+  grid-row: 4;
 }
 
 .panel-eval .eval-card-5{
-  grid-column: 1;
-  grid-row: 4;
-}
-
-.panel-eval .eval-card-6{
-  grid-column: 2;
-  grid-row: 4;
+  grid-column: 1 / -1;
+  grid-row: 3;
 }
 
 .panel-eval{
@@ -5951,7 +5887,7 @@ watch([activeTab, selectedId], async () => {
   align-self: stretch;
 }
 
-.panel-eval .eval-card-6{
+.panel-eval .eval-card-5{
   height: auto;
   align-self: stretch;
 }
@@ -7590,8 +7526,7 @@ watch([activeTab, selectedId], async () => {
   .panel-eval .eval-card-2,
   .panel-eval .eval-card-3,
   .panel-eval .eval-card-4,
-  .panel-eval .eval-card-5,
-  .panel-eval .eval-card-6{
+  .panel-eval .eval-card-5{
     grid-column: auto;
     grid-row: auto;
   }
