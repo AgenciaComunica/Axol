@@ -1,0 +1,58 @@
+<svg width="1000px" height="850px" xmlns="http://www.w3.org/2000/svg" version="1.1">
+	<polygon points="500.000000,57.179677 900.000000,750.000000 100.000000,750.000000" fill="rgb(255,255,255)" stroke-width="1" stroke="rgb(0,0,0)"/>
+	<polygon points="100.000000,750.000000 284.000000,750.000000 540.000000,306.594993 448.000000,147.246319" fill="rgb(113,201,137)" stroke-width="1" stroke="rgb(0,0,0)"/>
+	<polygon points="284.000000,750.000000 668.000000,750.000000 544.000000,535.225700 608.000000,424.374448 540.000000,306.594993" fill="rgb(245,176,77)" stroke-width="1" stroke="rgb(0,0,0)"/>
+	<polygon points="668.000000,750.000000 780.000000,750.000000 640.000000,507.512887 684.000000,431.302651 564.000000,223.456554 484.000000,84.892490 448.000000,147.246319 608.000000,424.374448 544.000000,535.225700" fill="rgb(246,99,100)" stroke-width="1" stroke="rgb(0,0,0)"/>
+	<polygon points="564.000000,223.456554 580.000000,195.743742 508.000000,71.036083 492.000000,71.036083 484.000000,84.892490" fill="rgb(164,101,10)" stroke-width="1" stroke="rgb(0,0,0)"/>
+	<polygon points="684.000000,431.302651 700.000000,403.589838 580.000000,195.743742 564.000000,223.456554" fill="rgb(249,148,148)" stroke-width="1" stroke="rgb(0,0,0)"/>
+	<polygon points="780.000000,750.000000 900.000000,750.000000 700.000000,403.589838 684.000000,431.302651 640.000000,507.512887" fill="rgb(185,12,13)" stroke-width="1" stroke="rgb(0,0,0)"/>
+	<polygon points="508.000000,71.036083 500.000000,57.179677 492.000000,71.036083" fill="rgb(63,164,91)" stroke-width="1" stroke="rgb(0,0,0)"/>
+	<text x="50.000000" y="755.000000" fill="rgb(0,0,0)" font-size="20" font-family="Verdana">0</text>
+	<text x="520.000000" y="62.179677" fill="rgb(0,0,0)" font-size="20" font-family="Verdana">0</text>
+	<text x="890.000000" y="780.000000" fill="rgb(0,0,0)" font-size="20" font-family="Verdana">0</text>
+	<polyline points="140.000000,680.717968 156.000000,680.717968" stroke-width="1" stroke="rgb(0,0,0)"/>
+	<polyline points="540.000000,126.461709 532.000000,140.318116" stroke-width="1" stroke="rgb(0,0,0)"/>
+	<polyline points="820.000000,750.000000 812.000000,736.143594" stroke-width="1" stroke="rgb(0,0,0)"/>
+	<text x="130.000000" y="616.435935" fill="rgb(0,0,0)" font-size="20" font-family="Verdana">20</text>
+	<text x="600.000000" y="200.743742" fill="rgb(0,0,0)" font-size="20" font-family="Verdana">20</text>
+	<text x="730.000000" y="780.000000" fill="rgb(0,0,0)" font-size="20" font-family="Verdana">20</text>
+	<polyline points="180.000000,611.435935 196.000000,611.435935" stroke-width="1" stroke="rgb(0,0,0)"/>
+	<polyline points="580.000000,195.743742 572.000000,209.600148" stroke-width="1" stroke="rgb(0,0,0)"/>
+	<polyline points="740.000000,750.000000 732.000000,736.143594" stroke-width="1" stroke="rgb(0,0,0)"/>
+	<polyline points="220.000000,542.153903 236.000000,542.153903" stroke-width="1" stroke="rgb(0,0,0)"/>
+	<polyline points="620.000000,265.025774 612.000000,278.882180" stroke-width="1" stroke="rgb(0,0,0)"/>
+	<polyline points="660.000000,750.000000 652.000000,736.143594" stroke-width="1" stroke="rgb(0,0,0)"/>
+	<text x="210.000000" y="477.871871" fill="rgb(0,0,0)" font-size="20" font-family="Verdana">40</text>
+	<text x="680.000000" y="339.307806" fill="rgb(0,0,0)" font-size="20" font-family="Verdana">40</text>
+	<text x="570.000000" y="780.000000" fill="rgb(0,0,0)" font-size="20" font-family="Verdana">40</text>
+	<polyline points="260.000000,472.871871 276.000000,472.871871" stroke-width="1" stroke="rgb(0,0,0)"/>
+	<polyline points="660.000000,334.307806 652.000000,348.164213" stroke-width="1" stroke="rgb(0,0,0)"/>
+	<polyline points="580.000000,750.000000 572.000000,736.143594" stroke-width="1" stroke="rgb(0,0,0)"/>
+	<text x="200.000000" y="408.589838" fill="rgb(0,0,0)" font-size="20" font-family="Verdana">%CH4</text>
+	<text x="750.000000" y="408.589838" fill="rgb(0,0,0)" font-size="20" font-family="Verdana">%C2H4</text>
+	<text x="500.000000" y="800.000000" fill="rgb(0,0,0)" font-size="20" font-family="Verdana">%C2H2</text>
+	<polyline points="300.000000,403.589838 316.000000,403.589838" stroke-width="1" stroke="rgb(0,0,0)"/>
+	<polyline points="700.000000,403.589838 692.000000,417.446245" stroke-width="1" stroke="rgb(0,0,0)"/>
+	<polyline points="500.000000,750.000000 492.000000,736.143594" stroke-width="1" stroke="rgb(0,0,0)"/>
+	<text x="290.000000" y="339.307806" fill="rgb(0,0,0)" font-size="20" font-family="Verdana">60</text>
+	<text x="760.000000" y="477.871871" fill="rgb(0,0,0)" font-size="20" font-family="Verdana">60</text>
+	<text x="410.000000" y="780.000000" fill="rgb(0,0,0)" font-size="20" font-family="Verdana">60</text>
+	<polyline points="340.000000,334.307806 356.000000,334.307806" stroke-width="1" stroke="rgb(0,0,0)"/>
+	<polyline points="740.000000,472.871871 732.000000,486.728277" stroke-width="1" stroke="rgb(0,0,0)"/>
+	<polyline points="420.000000,750.000000 412.000000,736.143594" stroke-width="1" stroke="rgb(0,0,0)"/>
+	<polyline points="380.000000,265.025774 396.000000,265.025774" stroke-width="1" stroke="rgb(0,0,0)"/>
+	<polyline points="780.000000,542.153903 772.000000,556.010310" stroke-width="1" stroke="rgb(0,0,0)"/>
+	<polyline points="340.000000,750.000000 332.000000,736.143594" stroke-width="1" stroke="rgb(0,0,0)"/>
+	<text x="370.000000" y="200.743742" fill="rgb(0,0,0)" font-size="20" font-family="Verdana">80</text>
+	<text x="840.000000" y="616.435935" fill="rgb(0,0,0)" font-size="20" font-family="Verdana">80</text>
+	<text x="250.000000" y="780.000000" fill="rgb(0,0,0)" font-size="20" font-family="Verdana">80</text>
+	<polyline points="420.000000,195.743742 436.000000,195.743742" stroke-width="1" stroke="rgb(0,0,0)"/>
+	<polyline points="820.000000,611.435935 812.000000,625.292342" stroke-width="1" stroke="rgb(0,0,0)"/>
+	<polyline points="260.000000,750.000000 252.000000,736.143594" stroke-width="1" stroke="rgb(0,0,0)"/>
+	<polyline points="460.000000,126.461709 476.000000,126.461709" stroke-width="1" stroke="rgb(0,0,0)"/>
+	<polyline points="860.000000,680.717968 852.000000,694.574374" stroke-width="1" stroke="rgb(0,0,0)"/>
+	<polyline points="180.000000,750.000000 172.000000,736.143594" stroke-width="1" stroke="rgb(0,0,0)"/>
+	<text x="450.000000" y="62.179677" fill="rgb(0,0,0)" font-size="20" font-family="Verdana">100</text>
+	<text x="920.000000" y="755.000000" fill="rgb(0,0,0)" font-size="20" font-family="Verdana">100</text>
+	<text x="90.000000" y="780.000000" fill="rgb(0,0,0)" font-size="20" font-family="Verdana">100</text>
+</svg>
