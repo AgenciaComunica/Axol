@@ -147,10 +147,9 @@ type MacroTab = (typeof macroTabs)[number]
 const tabs = [
   'Avaliação Completa',
   'Histórico de Análises',
-  'Avaliação IEEE',
+  'IEEE Std C57.104™',
   'Coletas',
   'Tratamento de Óleo',
-  'Duval',
 ] as const
 
 type ReportTab = (typeof tabs)[number]
@@ -158,6 +157,8 @@ type ReportTab = (typeof tabs)[number]
 function toValidTab(value: unknown): ReportTab {
   const text = String(value || '')
   if (text === 'Próximas Coletas') return 'Coletas'
+  if (text === 'Avaliação IEEE') return 'IEEE Std C57.104™'
+  if (text === 'Duval') return 'IEEE Std C57.104™'
   return (tabs.find((tab) => tab === text) as ReportTab) || 'Avaliação Completa'
 }
 
@@ -204,19 +205,17 @@ const isTrRotaMacro = computed(() => activeMacroTab.value === 'TR Rota')
 const trOleoSubTabs: ReportTab[] = [
   'Avaliação Completa',
   'Histórico de Análises',
-  'Avaliação IEEE',
+  'IEEE Std C57.104™',
   'Coletas',
   'Tratamento de Óleo',
-  'Duval',
 ]
 const trRotaSubTabs: ReportTab[] = ['Avaliação Completa', 'Histórico de Análises']
 const oltcSubTabs: ReportTab[] = [
   'Avaliação Completa',
   'Histórico de Análises',
-  'Avaliação IEEE',
+  'IEEE Std C57.104™',
   'Coletas',
   'Tratamento de Óleo',
-  'Duval',
 ]
 
 const activeSubTabs = computed(() => {
@@ -237,10 +236,9 @@ const generateReportWrapRef = ref<HTMLElement | null>(null)
 const generateReportItems = [
   'Avaliação Completa',
   'Histórico de Análises',
-  'Avaliação IEEE',
+  'IEEE Std C57.104™',
   'Coletas',
   'Tratamento de Óleo',
-  'Duval',
   'TR Óleo',
 ]
 const generateReportSelected = ref<string[]>([...generateReportItems])
@@ -1688,6 +1686,10 @@ const evalCardOpen = ref<Record<'1' | '2' | '3' | '4' | '5', boolean>>({
   '4': true,
   '5': true,
 })
+const ieeeCardOpen = ref<Record<'2008' | '2019', boolean>>({
+  '2008': true,
+  '2019': true,
+})
 const treatmentForm = ref({
   statusTratamento: 'Concluído',
   dataColeta: '',
@@ -1726,6 +1728,10 @@ const coletasQuarterOptions = [
 
 function toggleEvalCard(card: '1' | '2' | '3' | '4' | '5') {
   evalCardOpen.value[card] = !evalCardOpen.value[card]
+}
+
+function toggleIeeeCard(card: '2008' | '2019') {
+  ieeeCardOpen.value[card] = !ieeeCardOpen.value[card]
 }
 
 const analysisColumns: AnalysisColumn[] = [
@@ -4176,8 +4182,18 @@ watch([activeTab, selectedId], async () => {
         </article>
       </section>
 
-      <section v-else-if="activeTab === 'Avaliação IEEE'" class="panel table-panel">
-        <article class="tile tile-wide">
+      <section v-else-if="activeTab === 'IEEE Std C57.104™'" class="panel table-panel history-panel">
+        <article class="history-block-card">
+          <button
+            type="button"
+            class="expandable-head-btn"
+            :class="{ open: ieeeCardOpen['2008'] }"
+            @click="toggleIeeeCard('2008')"
+          >
+            <span>IEEE Std C57.104™ - 2008</span>
+            <i class="expandable-toggle-icon" aria-hidden="true">{{ ieeeCardOpen['2008'] ? '−' : '+' }}</i>
+          </button>
+          <div v-if="ieeeCardOpen['2008']" class="tile tile-wide">
           <h4>Guia IEEE Std C57.104™- 2008 para a Interpretação de gases dissolvidos no óleo isolante dos transformadores</h4>
           <p>
             Foi desenvolvido um critério de quatro níveis para classificar os riscos aos transformadores, quando não há histórico de gás dissolvido,
@@ -4311,6 +4327,189 @@ watch([activeTab, selectedId], async () => {
             diferentes concentrações de gás dissolvido para os gases individuais (particularmente acetileno) e o TGC (total de gases combustíveis)
             é baseado em julgamento de engenharia de manutenção e experiência com outros transformadores similares.
           </p>
+          </div>
+        </article>
+
+        <article class="history-block-card">
+          <button
+            type="button"
+            class="expandable-head-btn"
+            :class="{ open: ieeeCardOpen['2019'] }"
+            @click="toggleIeeeCard('2019')"
+          >
+            <span>IEEE Std C57.104™ - 2019</span>
+            <i class="expandable-toggle-icon" aria-hidden="true">{{ ieeeCardOpen['2019'] ? '−' : '+' }}</i>
+          </button>
+          <div v-if="ieeeCardOpen['2019']" class="tile tile-wide duval-screen">
+            <article class="duval-data-card">
+              <div class="duval-data-head">
+                <h4>Concentração de Gases (ppm)</h4>
+                <button type="button" class="history-action-btn small" @click="clearDuvalSelection">
+                  Limpar Seleção
+                </button>
+              </div>
+              <div class="mini-table-wrap">
+                <table class="table compact duval-data-table">
+                  <thead>
+                    <tr>
+                      <th class="text-center">Selecionar</th>
+                      <th class="text-center">Análises</th>
+                      <th class="text-center">C2H2</th>
+                      <th class="text-center">C2H4</th>
+                      <th class="text-center">CH4</th>
+                      <th class="text-center">C2H6</th>
+                      <th class="text-center">H2</th>
+                      <th class="text-center">Duval 1</th>
+                      <th class="text-center">Duval 4</th>
+                      <th class="text-center">Duval 5</th>
+                      <th class="text-center">Pentágono 1</th>
+                      <th class="text-center">Pentágono 2</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    <tr v-for="row in duvalAnalysesRows" :key="row.id">
+                      <td class="text-center">
+                        <input
+                          type="checkbox"
+                          :checked="isDuvalManualSelected(row.id)"
+                          @change="handleDuvalSelection(row.id, ($event.target as HTMLInputElement).checked)"
+                        />
+                      </td>
+                      <td class="text-center">{{ row.date }}</td>
+                      <td class="text-center">{{ row.C2H2 }}</td>
+                      <td class="text-center">{{ row.C2H4 }}</td>
+                      <td class="text-center">{{ row.CH4 }}</td>
+                      <td class="text-center">{{ row.C2H6 }}</td>
+                      <td class="text-center">{{ row.H2 }}</td>
+                      <td class="text-center">{{ row.AREA_D1 }}</td>
+                      <td class="text-center">{{ row.AREA_D4 }}</td>
+                      <td class="text-center">{{ row.AREA_D5 }}</td>
+                      <td class="text-center">{{ row.AREA_P1 }}</td>
+                      <td class="text-center">{{ row.AREA_P2 }}</td>
+                    </tr>
+                    <tr v-if="!duvalAnalysesRows.length">
+                      <td class="text-center" colspan="12">
+                        Sem dados de cromatografia para compor a visualização Duval.
+                      </td>
+                    </tr>
+                  </tbody>
+                </table>
+              </div>
+            </article>
+
+            <nav class="duval-tabs">
+              <button
+                type="button"
+                class="duval-tab-btn"
+                :class="{ active: duvalViewTab === 'triangulos' }"
+                @click="duvalViewTab = 'triangulos'"
+              >
+                Triângulos Duval
+              </button>
+              <button
+                type="button"
+                class="duval-tab-btn"
+                :class="{ active: duvalViewTab === 'pentagonos' }"
+                @click="duvalViewTab = 'pentagonos'"
+              >
+                Pentágonos Duval
+              </button>
+            </nav>
+
+            <div v-if="duvalViewTab === 'triangulos'" class="duval-diagram-grid duval-diagram-grid-triangles">
+              <article class="duval-diagram-card">
+                <div class="duval-image-frame">
+                  <img
+                    v-for="(layer, index) in duvalLayersD1"
+                    :key="`duval-d1-${index}`"
+                    :src="layer"
+                    class="duval-layer-image"
+                    alt="Duval Triângulo 1"
+                  />
+                </div>
+                <ul class="duval-reference-list">
+                  <li v-for="(item, index) in duvalReferences.D1" :key="`duval-ref-d1-${index}`">
+                    <span class="duval-reference-dot" :style="{ backgroundColor: item[0] }" aria-hidden="true"></span>
+                    <span>{{ item[1] }}</span>
+                  </li>
+                </ul>
+              </article>
+
+              <article class="duval-diagram-card">
+                <div class="duval-image-frame">
+                  <img
+                    v-for="(layer, index) in duvalLayersD4"
+                    :key="`duval-d4-${index}`"
+                    :src="layer"
+                    class="duval-layer-image"
+                    alt="Duval Triângulo 4"
+                  />
+                </div>
+                <ul class="duval-reference-list">
+                  <li v-for="(item, index) in duvalReferences.D4" :key="`duval-ref-d4-${index}`">
+                    <span class="duval-reference-dot" :style="{ backgroundColor: item[0] }" aria-hidden="true"></span>
+                    <span>{{ item[1] }}</span>
+                  </li>
+                </ul>
+              </article>
+
+              <article class="duval-diagram-card">
+                <div class="duval-image-frame">
+                  <img
+                    v-for="(layer, index) in duvalLayersD5"
+                    :key="`duval-d5-${index}`"
+                    :src="layer"
+                    class="duval-layer-image"
+                    alt="Duval Triângulo 5"
+                  />
+                </div>
+                <ul class="duval-reference-list">
+                  <li v-for="(item, index) in duvalReferences.D5" :key="`duval-ref-d5-${index}`">
+                    <span class="duval-reference-dot" :style="{ backgroundColor: item[0] }" aria-hidden="true"></span>
+                    <span>{{ item[1] }}</span>
+                  </li>
+                </ul>
+              </article>
+            </div>
+
+            <div v-else class="duval-diagram-grid duval-diagram-grid-pentagons">
+              <article class="duval-diagram-card">
+                <div class="duval-image-frame">
+                  <img
+                    v-for="(layer, index) in duvalLayersP1"
+                    :key="`duval-p1-${index}`"
+                    :src="layer"
+                    class="duval-layer-image"
+                    alt="Duval Pentágono 1"
+                  />
+                </div>
+                <ul class="duval-reference-list">
+                  <li v-for="(item, index) in duvalReferences.P1" :key="`duval-ref-p1-${index}`">
+                    <span class="duval-reference-dot" :style="{ backgroundColor: item[0] }" aria-hidden="true"></span>
+                    <span>{{ item[1] }}</span>
+                  </li>
+                </ul>
+              </article>
+
+              <article class="duval-diagram-card">
+                <div class="duval-image-frame">
+                  <img
+                    v-for="(layer, index) in duvalLayersP2"
+                    :key="`duval-p2-${index}`"
+                    :src="layer"
+                    class="duval-layer-image"
+                    alt="Duval Pentágono 2"
+                  />
+                </div>
+                <ul class="duval-reference-list">
+                  <li v-for="(item, index) in duvalReferences.P2" :key="`duval-ref-p2-${index}`">
+                    <span class="duval-reference-dot" :style="{ backgroundColor: item[0] }" aria-hidden="true"></span>
+                    <span>{{ item[1] }}</span>
+                  </li>
+                </ul>
+              </article>
+            </div>
+          </div>
         </article>
       </section>
 
@@ -4660,179 +4859,6 @@ watch([activeTab, selectedId], async () => {
               </tbody>
             </table>
           </div>
-        </article>
-      </section>
-
-      <section v-else-if="activeTab === 'Duval'" class="panel table-panel">
-        <article class="tile tile-wide duval-screen">
-          <nav class="duval-tabs">
-            <button
-              type="button"
-              class="duval-tab-btn"
-              :class="{ active: duvalViewTab === 'triangulos' }"
-              @click="duvalViewTab = 'triangulos'"
-            >
-              Triângulos Duval
-            </button>
-            <button
-              type="button"
-              class="duval-tab-btn"
-              :class="{ active: duvalViewTab === 'pentagonos' }"
-              @click="duvalViewTab = 'pentagonos'"
-            >
-              Pentágonos Duval
-            </button>
-          </nav>
-
-          <div v-if="duvalViewTab === 'triangulos'" class="duval-diagram-grid duval-diagram-grid-triangles">
-            <article class="duval-diagram-card">
-              <div class="duval-image-frame">
-                <img
-                  v-for="(layer, index) in duvalLayersD1"
-                  :key="`duval-d1-${index}`"
-                  :src="layer"
-                  class="duval-layer-image"
-                  alt="Duval Triângulo 1"
-                />
-              </div>
-              <ul class="duval-reference-list">
-                <li v-for="(item, index) in duvalReferences.D1" :key="`duval-ref-d1-${index}`">
-                  <span class="duval-reference-dot" :style="{ backgroundColor: item[0] }" aria-hidden="true"></span>
-                  <span>{{ item[1] }}</span>
-                </li>
-              </ul>
-            </article>
-
-            <article class="duval-diagram-card">
-              <div class="duval-image-frame">
-                <img
-                  v-for="(layer, index) in duvalLayersD4"
-                  :key="`duval-d4-${index}`"
-                  :src="layer"
-                  class="duval-layer-image"
-                  alt="Duval Triângulo 4"
-                />
-              </div>
-              <ul class="duval-reference-list">
-                <li v-for="(item, index) in duvalReferences.D4" :key="`duval-ref-d4-${index}`">
-                  <span class="duval-reference-dot" :style="{ backgroundColor: item[0] }" aria-hidden="true"></span>
-                  <span>{{ item[1] }}</span>
-                </li>
-              </ul>
-            </article>
-
-            <article class="duval-diagram-card">
-              <div class="duval-image-frame">
-                <img
-                  v-for="(layer, index) in duvalLayersD5"
-                  :key="`duval-d5-${index}`"
-                  :src="layer"
-                  class="duval-layer-image"
-                  alt="Duval Triângulo 5"
-                />
-              </div>
-              <ul class="duval-reference-list">
-                <li v-for="(item, index) in duvalReferences.D5" :key="`duval-ref-d5-${index}`">
-                  <span class="duval-reference-dot" :style="{ backgroundColor: item[0] }" aria-hidden="true"></span>
-                  <span>{{ item[1] }}</span>
-                </li>
-              </ul>
-            </article>
-          </div>
-
-          <div v-else class="duval-diagram-grid duval-diagram-grid-pentagons">
-            <article class="duval-diagram-card">
-              <div class="duval-image-frame">
-                <img
-                  v-for="(layer, index) in duvalLayersP1"
-                  :key="`duval-p1-${index}`"
-                  :src="layer"
-                  class="duval-layer-image"
-                  alt="Duval Pentágono 1"
-                />
-              </div>
-              <ul class="duval-reference-list">
-                <li v-for="(item, index) in duvalReferences.P1" :key="`duval-ref-p1-${index}`">
-                  <span class="duval-reference-dot" :style="{ backgroundColor: item[0] }" aria-hidden="true"></span>
-                  <span>{{ item[1] }}</span>
-                </li>
-              </ul>
-            </article>
-
-            <article class="duval-diagram-card">
-              <div class="duval-image-frame">
-                <img
-                  v-for="(layer, index) in duvalLayersP2"
-                  :key="`duval-p2-${index}`"
-                  :src="layer"
-                  class="duval-layer-image"
-                  alt="Duval Pentágono 2"
-                />
-              </div>
-              <ul class="duval-reference-list">
-                <li v-for="(item, index) in duvalReferences.P2" :key="`duval-ref-p2-${index}`">
-                  <span class="duval-reference-dot" :style="{ backgroundColor: item[0] }" aria-hidden="true"></span>
-                  <span>{{ item[1] }}</span>
-                </li>
-              </ul>
-            </article>
-          </div>
-
-          <article class="duval-data-card">
-            <div class="duval-data-head">
-              <h4>Concentração de Gases (ppm)</h4>
-              <button type="button" class="history-action-btn small" @click="clearDuvalSelection">
-                Limpar Seleção
-              </button>
-            </div>
-            <div class="mini-table-wrap">
-              <table class="table compact duval-data-table">
-                <thead>
-                  <tr>
-                    <th class="text-center">Selecionar</th>
-                    <th class="text-center">Análises</th>
-                    <th class="text-center">C2H2</th>
-                    <th class="text-center">C2H4</th>
-                    <th class="text-center">CH4</th>
-                    <th class="text-center">C2H6</th>
-                    <th class="text-center">H2</th>
-                    <th class="text-center">Duval 1</th>
-                    <th class="text-center">Duval 4</th>
-                    <th class="text-center">Duval 5</th>
-                    <th class="text-center">Pentágono 1</th>
-                    <th class="text-center">Pentágono 2</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  <tr v-for="row in duvalAnalysesRows" :key="row.id">
-                    <td class="text-center">
-                      <input
-                        type="checkbox"
-                        :checked="isDuvalManualSelected(row.id)"
-                        @change="handleDuvalSelection(row.id, ($event.target as HTMLInputElement).checked)"
-                      />
-                    </td>
-                    <td class="text-center">{{ row.date }}</td>
-                    <td class="text-center">{{ row.C2H2 }}</td>
-                    <td class="text-center">{{ row.C2H4 }}</td>
-                    <td class="text-center">{{ row.CH4 }}</td>
-                    <td class="text-center">{{ row.C2H6 }}</td>
-                    <td class="text-center">{{ row.H2 }}</td>
-                    <td class="text-center">{{ row.AREA_D1 }}</td>
-                    <td class="text-center">{{ row.AREA_D4 }}</td>
-                    <td class="text-center">{{ row.AREA_D5 }}</td>
-                    <td class="text-center">{{ row.AREA_P1 }}</td>
-                    <td class="text-center">{{ row.AREA_P2 }}</td>
-                  </tr>
-                  <tr v-if="!duvalAnalysesRows.length">
-                    <td class="text-center" colspan="12">
-                      Sem dados de cromatografia para compor a visualização Duval.
-                    </td>
-                  </tr>
-                </tbody>
-              </table>
-            </div>
-          </article>
         </article>
       </section>
 
