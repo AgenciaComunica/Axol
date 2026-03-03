@@ -3972,7 +3972,7 @@ watch([activeTab, selectedId], async () => {
 
           <div class="risk-grid-shell">
           <div class="risk-pies risk-pies-aligned">
-            <div class="risk-pies-tab" aria-label="Parâmetros">Parâmetros</div>
+            <div class="risk-pies-tab risk-pies-tab-spacer" aria-hidden="true"></div>
             <article
               v-for="(probability, index) in riskProbabilities"
               :key="`risk-${index}`"
@@ -3986,6 +3986,10 @@ watch([activeTab, selectedId], async () => {
             </article>
           </div>
 
+          <div class="risk-heatmap-head">
+            <div class="risk-pies-tab risk-heatmap-head-label" aria-label="Parâmetros">Parâmetros</div>
+            <div class="risk-heatmap-title">Estado de Risco</div>
+          </div>
           <div class="risk-heatmap-wrap">
             <div class="risk-heatmap-grid">
               <template v-for="row in riskHeatmapRows" :key="`risk-row-${row.key}`">
@@ -6307,6 +6311,10 @@ watch([activeTab, selectedId], async () => {
   transform: translateY(1px);
 }
 
+.risk-pies-tab-spacer{
+  visibility: hidden;
+}
+
 .risk-pie-card{
   border: 1px solid rgba(15, 23, 42, 0.08);
   border-radius: 10px 10px 0 0;
@@ -6353,6 +6361,38 @@ watch([activeTab, selectedId], async () => {
   font-size: 12px;
   font-weight: 700;
   color: #123a6d;
+}
+
+.risk-heatmap-title{
+  box-sizing: border-box;
+  padding: 6px 12px 7px;
+  border: 1px solid rgba(15, 23, 42, 0.1);
+  border-bottom: none;
+  border-top-left-radius: 10px;
+  border-top-right-radius: 10px;
+  background: rgba(15, 23, 42, 0.05);
+  font-size: 12px;
+  font-weight: 700;
+  color: rgba(15, 23, 42, 0.78);
+  text-align: center;
+  transform: translateY(1px);
+}
+
+.risk-heatmap-head{
+  display: grid;
+  grid-template-columns: var(--risk-label-col) repeat(5, minmax(0, 1fr));
+  column-gap: var(--risk-col-gap);
+  width: 100%;
+  min-width: 0;
+}
+
+.risk-heatmap-head-label{
+  margin: 0;
+}
+
+.risk-heatmap-head .risk-heatmap-title{
+  grid-column: 2 / span 5;
+  width: 100%;
 }
 
 .risk-heatmap-wrap{
@@ -7544,6 +7584,9 @@ watch([activeTab, selectedId], async () => {
     grid-template-columns: 1fr 1fr;
   }
   .risk-pies-aligned{
+    min-width: 760px;
+  }
+  .risk-heatmap-head{
     min-width: 760px;
   }
   .risk-heatmap-wrap{
