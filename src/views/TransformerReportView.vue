@@ -1208,6 +1208,75 @@ const historyRows = computed(() => {
 type HistorySeriesDef = { key: string; label: string; color: string }
 type HistoryChartSeries = { name: string; data: number[] }
 type HistoryChartData = { max: number; categories: string[]; series: HistoryChartSeries[]; colors: string[] }
+const chemicalTokenMeta = {
+  H2O: { display: 'H₂O', html: 'H<sub class="chem-sub">2</sub>O', name: 'Água' },
+  C2H2: { display: 'C₂H₂', html: 'C<sub class="chem-sub">2</sub>H<sub class="chem-sub">2</sub>', name: 'Acetileno' },
+  C2H4: { display: 'C₂H₄', html: 'C<sub class="chem-sub">2</sub>H<sub class="chem-sub">4</sub>', name: 'Etileno' },
+  C2H6: { display: 'C₂H₆', html: 'C<sub class="chem-sub">2</sub>H<sub class="chem-sub">6</sub>', name: 'Etano' },
+  CH4: { display: 'CH₄', html: 'CH<sub class="chem-sub">4</sub>', name: 'Metano' },
+  CO2: { display: 'CO₂', html: 'CO<sub class="chem-sub">2</sub>', name: 'Dióxido de Carbono' },
+  H2: { display: 'H₂', html: 'H<sub class="chem-sub">2</sub>', name: 'Hidrogênio' },
+  O2: { display: 'O₂', html: 'O<sub class="chem-sub">2</sub>', name: 'Oxigênio' },
+  N2: { display: 'N₂', html: 'N<sub class="chem-sub">2</sub>', name: 'Nitrogênio' },
+  CO: { display: 'CO', html: 'CO', name: 'Monóxido de Carbono' },
+  TGC: { display: 'TGC', html: 'TGC', name: 'Total de Gases Combustíveis' },
+  TGCB: { display: 'TGCB', html: 'TGCB', name: 'Total de Gases Combustíveis' },
+  DBDS: { display: 'DBDS', html: 'DBDS', name: 'Dibenzil Dissulfeto' },
+} as const
+const chemicalTokensByLength = Object.keys(chemicalTokenMeta).sort((a, b) => b.length - a.length)
+const escapedChemicalTokens = chemicalTokensByLength.map((token) => token.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'))
+const chemicalTokenRegex = new RegExp(`\\b(${escapedChemicalTokens.join('|')})\\b`, 'g')
+const subscriptToAsciiMap: Record<string, string> = {
+  '₀': '0',
+  '₁': '1',
+  '₂': '2',
+  '₃': '3',
+  '₄': '4',
+  '₅': '5',
+  '₆': '6',
+  '₇': '7',
+  '₈': '8',
+  '₉': '9',
+}
+
+function normalizeChemicalText(text: string) {
+  return text.replace(/[₀₁₂₃₄₅₆₇₈₉]/g, (digit) => subscriptToAsciiMap[digit] || digit)
+}
+
+function formatChemicalText(text: string) {
+  if (!text) return text
+  return normalizeChemicalText(text).replace(
+    chemicalTokenRegex,
+    (token) => chemicalTokenMeta[token as keyof typeof chemicalTokenMeta]?.display || token,
+  )
+}
+
+function formatChemicalHtml(text: string) {
+  if (!text) return text
+  return normalizeChemicalText(text).replace(
+    chemicalTokenRegex,
+    (token) => chemicalTokenMeta[token as keyof typeof chemicalTokenMeta]?.html || token,
+  )
+}
+
+function chemicalTooltipFromText(text: string) {
+  if (!text) return ''
+  const matches = new Set<string>()
+  const regex = new RegExp(chemicalTokenRegex.source, 'g')
+  const normalizedText = normalizeChemicalText(text)
+  let match: RegExpExecArray | null
+  while ((match = regex.exec(normalizedText)) !== null) {
+    const token = match[1] as keyof typeof chemicalTokenMeta
+    const meta = chemicalTokenMeta[token]
+    if (meta) matches.add(`${meta.display} - ${meta.name}`)
+  }
+  return Array.from(matches).join(' • ')
+}
+
+function toTitleAttr(value: string) {
+  return value.replace(/"/g, '&quot;')
+}
+
 type HistoryChartTab = 'cromatografia' | 'fisicoquimica' | 'ensaiosespeciais'
 type HistoryDisplayMode = 'base' | 'historico'
 type DuvalViewTab = 'triangulos' | 'pentagonos'
@@ -1536,6 +1605,11 @@ const historyChartOptions = computed<ApexOptions>(() => ({
     position: 'bottom',
     horizontalAlign: 'center',
     fontSize: '12px',
+    formatter: (seriesName: string) => {
+      const formatted = formatChemicalHtml(seriesName)
+      const tooltip = chemicalTooltipFromText(seriesName)
+      return tooltip ? `<span title="${toTitleAttr(tooltip)}">${formatted}</span>` : formatted
+    },
   },
   dataLabels: { enabled: false },
   markers: { size: 0, hover: { sizeOffset: 3 } },
@@ -1556,6 +1630,15 @@ const historyChartOptions = computed<ApexOptions>(() => ({
   tooltip: {
     shared: true,
     intersect: false,
+    y: {
+      title: {
+        formatter: (seriesName: string) => {
+          const formatted = formatChemicalText(seriesName)
+          const tooltip = chemicalTooltipFromText(seriesName)
+          return tooltip ? `${formatted} (${tooltip.split(' - ')[1] || ''})` : formatted
+        },
+      },
+    },
   },
   responsive: [
     {
@@ -3545,14 +3628,14 @@ watch([activeTab, selectedId], async () => {
                       <th class="text-center" colspan="8">Condições: IEEE Std C57.104™-2008</th>
                     </tr>
                     <tr>
-                      <th class="text-center">H2</th>
-                      <th class="text-center">CH4</th>
-                      <th class="text-center">C2H2</th>
-                      <th class="text-center">C2H4</th>
-                      <th class="text-center">C2H6</th>
-                      <th class="text-center">CO</th>
-                      <th class="text-center">CO2</th>
-                      <th class="text-center">TGC</th>
+                      <th class="text-center" :title="chemicalTooltipFromText('H₂') || undefined">H₂</th>
+                      <th class="text-center" :title="chemicalTooltipFromText('CH₄') || undefined">CH₄</th>
+                      <th class="text-center" :title="chemicalTooltipFromText('C₂H₂') || undefined">C₂H₂</th>
+                      <th class="text-center" :title="chemicalTooltipFromText('C₂H₄') || undefined">C₂H₄</th>
+                      <th class="text-center" :title="chemicalTooltipFromText('C₂H₆') || undefined">C₂H₆</th>
+                      <th class="text-center" :title="chemicalTooltipFromText('CO') || undefined">CO</th>
+                      <th class="text-center" :title="chemicalTooltipFromText('CO₂') || undefined">CO₂</th>
+                      <th class="text-center" :title="chemicalTooltipFromText('TGC') || undefined">TGC</th>
                     </tr>
                   </thead>
                   <tbody>
@@ -3697,7 +3780,7 @@ watch([activeTab, selectedId], async () => {
                         :disabled="isActiveAnalysisColumnLocked(column.id)"
                         @change="toggleActiveAnalysisColumn(column.id)"
                       />
-                      <span>{{ column.label }}</span>
+                      <span :title="chemicalTooltipFromText(column.label) || undefined" v-html="formatChemicalHtml(column.label)"></span>
                     </label>
                   </section>
                 </div>
@@ -3815,7 +3898,7 @@ watch([activeTab, selectedId], async () => {
               <thead>
                 <tr>
                   <th v-for="column in activeAnalysisVisibleColumns" :key="column.id" class="text-center">
-                    {{ column.label }}
+                    <span :title="chemicalTooltipFromText(column.label) || undefined" v-html="formatChemicalHtml(column.label)"></span>
                   </th>
                 </tr>
               </thead>
@@ -3952,14 +4035,14 @@ watch([activeTab, selectedId], async () => {
               <thead>
                 <tr>
                   <th class="text-center">Status</th>
-                  <th class="text-center">H2</th>
-                  <th class="text-center">CH4</th>
-                  <th class="text-center">C2H2</th>
-                  <th class="text-center">C2H4</th>
-                  <th class="text-center">C2H6</th>
-                  <th class="text-center">CO</th>
-                  <th class="text-center">CO2</th>
-                  <th class="text-center">TGC</th>
+                  <th class="text-center" :title="chemicalTooltipFromText('H₂') || undefined">H₂</th>
+                  <th class="text-center" :title="chemicalTooltipFromText('CH₄') || undefined">CH₄</th>
+                  <th class="text-center" :title="chemicalTooltipFromText('C₂H₂') || undefined">C₂H₂</th>
+                  <th class="text-center" :title="chemicalTooltipFromText('C₂H₄') || undefined">C₂H₄</th>
+                  <th class="text-center" :title="chemicalTooltipFromText('C₂H₆') || undefined">C₂H₆</th>
+                  <th class="text-center" :title="chemicalTooltipFromText('CO') || undefined">CO</th>
+                  <th class="text-center" :title="chemicalTooltipFromText('CO₂') || undefined">CO₂</th>
+                  <th class="text-center" :title="chemicalTooltipFromText('TGC') || undefined">TGC</th>
                 </tr>
               </thead>
               <tbody>
@@ -4016,14 +4099,14 @@ watch([activeTab, selectedId], async () => {
               <thead>
                 <tr>
                   <th class="text-center">Data da coleta</th>
-                  <th class="text-center">H2</th>
-                  <th class="text-center">CH4</th>
-                  <th class="text-center">C2H2</th>
-                  <th class="text-center">C2H4</th>
-                  <th class="text-center">C2H6</th>
-                  <th class="text-center">CO</th>
-                  <th class="text-center">CO2</th>
-                  <th class="text-center">TGC</th>
+                  <th class="text-center" :title="chemicalTooltipFromText('H₂') || undefined">H₂</th>
+                  <th class="text-center" :title="chemicalTooltipFromText('CH₄') || undefined">CH₄</th>
+                  <th class="text-center" :title="chemicalTooltipFromText('C₂H₂') || undefined">C₂H₂</th>
+                  <th class="text-center" :title="chemicalTooltipFromText('C₂H₄') || undefined">C₂H₄</th>
+                  <th class="text-center" :title="chemicalTooltipFromText('C₂H₆') || undefined">C₂H₆</th>
+                  <th class="text-center" :title="chemicalTooltipFromText('CO') || undefined">CO</th>
+                  <th class="text-center" :title="chemicalTooltipFromText('CO₂') || undefined">CO₂</th>
+                  <th class="text-center" :title="chemicalTooltipFromText('TGC') || undefined">TGC</th>
                 </tr>
               </thead>
               <tbody>
@@ -4097,7 +4180,7 @@ watch([activeTab, selectedId], async () => {
           <div class="risk-heatmap-wrap">
             <div class="risk-heatmap-grid">
               <template v-for="row in riskHeatmapRows" :key="`risk-row-${row.key}`">
-                <div class="risk-heatmap-label" :title="row.tooltip" :data-tooltip="row.tooltip">{{ row.label }}</div>
+                <div class="risk-heatmap-label" :title="row.tooltip">{{ row.label }}</div>
                 <div
                   v-for="(value, idx) in row.values"
                   :key="`risk-cell-${row.key}-${idx}`"
@@ -4218,14 +4301,14 @@ watch([activeTab, selectedId], async () => {
               <thead>
                 <tr>
                   <th class="text-center">Status</th>
-                  <th class="text-center">H2</th>
-                  <th class="text-center">CH4</th>
-                  <th class="text-center">C2H2</th>
-                  <th class="text-center">C2H4</th>
-                  <th class="text-center">C2H6</th>
-                  <th class="text-center">CO</th>
-                  <th class="text-center">CO2</th>
-                  <th class="text-center">TGC</th>
+                  <th class="text-center" :title="chemicalTooltipFromText('H₂') || undefined">H₂</th>
+                  <th class="text-center" :title="chemicalTooltipFromText('CH₄') || undefined">CH₄</th>
+                  <th class="text-center" :title="chemicalTooltipFromText('C₂H₂') || undefined">C₂H₂</th>
+                  <th class="text-center" :title="chemicalTooltipFromText('C₂H₄') || undefined">C₂H₄</th>
+                  <th class="text-center" :title="chemicalTooltipFromText('C₂H₆') || undefined">C₂H₆</th>
+                  <th class="text-center" :title="chemicalTooltipFromText('CO') || undefined">CO</th>
+                  <th class="text-center" :title="chemicalTooltipFromText('CO₂') || undefined">CO₂</th>
+                  <th class="text-center" :title="chemicalTooltipFromText('TGC') || undefined">TGC</th>
                 </tr>
               </thead>
               <tbody>
@@ -4285,14 +4368,14 @@ watch([activeTab, selectedId], async () => {
                 </tr>
                 <tr>
                   <th class="text-center">Data Coleta</th>
-                  <th class="text-center">H2</th>
-                  <th class="text-center">CH4</th>
-                  <th class="text-center">C2H2</th>
-                  <th class="text-center">C2H4</th>
-                  <th class="text-center">C2H6</th>
-                  <th class="text-center">CO</th>
-                  <th class="text-center">CO2</th>
-                  <th class="text-center">TGC</th>
+                  <th class="text-center" :title="chemicalTooltipFromText('H₂') || undefined">H₂</th>
+                  <th class="text-center" :title="chemicalTooltipFromText('CH₄') || undefined">CH₄</th>
+                  <th class="text-center" :title="chemicalTooltipFromText('C₂H₂') || undefined">C₂H₂</th>
+                  <th class="text-center" :title="chemicalTooltipFromText('C₂H₄') || undefined">C₂H₄</th>
+                  <th class="text-center" :title="chemicalTooltipFromText('C₂H₆') || undefined">C₂H₆</th>
+                  <th class="text-center" :title="chemicalTooltipFromText('CO') || undefined">CO</th>
+                  <th class="text-center" :title="chemicalTooltipFromText('CO₂') || undefined">CO₂</th>
+                  <th class="text-center" :title="chemicalTooltipFromText('TGC') || undefined">TGC</th>
                 </tr>
               </thead>
               <tbody>
@@ -4354,11 +4437,11 @@ watch([activeTab, selectedId], async () => {
                     <tr>
                       <th class="text-center">Selecionar</th>
                       <th class="text-center">Análises</th>
-                      <th class="text-center">C2H2</th>
-                      <th class="text-center">C2H4</th>
-                      <th class="text-center">CH4</th>
-                      <th class="text-center">C2H6</th>
-                      <th class="text-center">H2</th>
+                      <th class="text-center" :title="chemicalTooltipFromText('C₂H₂') || undefined">C₂H₂</th>
+                      <th class="text-center" :title="chemicalTooltipFromText('C₂H₄') || undefined">C₂H₄</th>
+                      <th class="text-center" :title="chemicalTooltipFromText('CH₄') || undefined">CH₄</th>
+                      <th class="text-center" :title="chemicalTooltipFromText('C₂H₆') || undefined">C₂H₆</th>
+                      <th class="text-center" :title="chemicalTooltipFromText('H₂') || undefined">H₂</th>
                       <th class="text-center">Duval 1</th>
                       <th class="text-center">Duval 4</th>
                       <th class="text-center">Duval 5</th>
@@ -4820,7 +4903,7 @@ watch([activeTab, selectedId], async () => {
                       :disabled="treatmentVisibleColumnIds.length === 1 && treatmentVisibleColumnIds.includes(column.id)"
                       @change="toggleTreatmentColumn(column.id)"
                     />
-                    <span>{{ column.label }}</span>
+                    <span :title="chemicalTooltipFromText(column.label) || undefined" v-html="formatChemicalHtml(column.label)"></span>
                   </label>
                 </div>
               </div>
@@ -4832,7 +4915,7 @@ watch([activeTab, selectedId], async () => {
               <thead>
                 <tr>
                   <th v-for="column in treatmentVisibleColumns" :key="column.id" class="text-center">
-                    {{ column.label }}
+                    <span :title="chemicalTooltipFromText(column.label) || undefined" v-html="formatChemicalHtml(column.label)"></span>
                   </th>
                   <th class="text-center">Tratamento</th>
                 </tr>
@@ -4875,9 +4958,9 @@ watch([activeTab, selectedId], async () => {
             <tr>
               <th>Data</th>
               <th>Laboratório</th>
-              <th>H2</th>
-              <th>CH4</th>
-              <th>C2H4</th>
+              <th :title="chemicalTooltipFromText('H₂') || undefined">H₂</th>
+              <th :title="chemicalTooltipFromText('CH₄') || undefined">CH₄</th>
+              <th :title="chemicalTooltipFromText('C₂H₄') || undefined">C₂H₄</th>
               <th>Total Gases</th>
             </tr>
           </thead>
@@ -5014,7 +5097,7 @@ watch([activeTab, selectedId], async () => {
                   :key="`advanced-field-${advancedFilterContext}-${option.value}`"
                   :value="option.value"
                 >
-                  {{ option.label }}
+                  {{ formatChemicalText(option.label) }}
                 </option>
               </select>
               <select v-model="rule.operator" aria-label="Operador">
@@ -5125,7 +5208,7 @@ watch([activeTab, selectedId], async () => {
             </div>
             <div class="analysis-form-grid">
               <label v-for="field in analysisCromFields" :key="`crom-${field.key}`">
-                <span>{{ field.label }}</span>
+                <span :title="chemicalTooltipFromText(field.label) || undefined" v-html="formatChemicalHtml(field.label)"></span>
                 <input
                   v-if="field.key === 'transformador'"
                   v-model="analysisCromForm[field.key]"
@@ -5161,7 +5244,7 @@ watch([activeTab, selectedId], async () => {
             </div>
             <div class="analysis-form-grid">
               <label v-for="field in analysisFisicoFields" :key="`fis-${field.key}`">
-                <span>{{ field.label }}</span>
+                <span :title="chemicalTooltipFromText(field.label) || undefined" v-html="formatChemicalHtml(field.label)"></span>
                 <input
                   v-if="field.key === 'transformador'"
                   v-model="analysisFisicoForm[field.key]"
@@ -5197,7 +5280,7 @@ watch([activeTab, selectedId], async () => {
             </div>
             <div class="analysis-form-grid">
               <label v-for="field in analysisEnsaiosFields" :key="`ens-${field.key}`">
-                <span>{{ field.label }}</span>
+                <span :title="chemicalTooltipFromText(field.label) || undefined" v-html="formatChemicalHtml(field.label)"></span>
                 <input
                   v-if="field.key === 'transformador'"
                   v-model="analysisEnsaiosForm[field.key]"
@@ -5233,7 +5316,7 @@ watch([activeTab, selectedId], async () => {
             </div>
             <div class="analysis-form-grid">
               <label v-for="field in analysisOltcFields" :key="`oltc-${field.key}`">
-                <span>{{ field.label }}</span>
+                <span :title="chemicalTooltipFromText(field.label) || undefined" v-html="formatChemicalHtml(field.label)"></span>
                 <input
                   v-if="field.key === 'transformador'"
                   v-model="analysisOltcForm[field.key]"
@@ -5269,7 +5352,7 @@ watch([activeTab, selectedId], async () => {
             </div>
             <div class="analysis-form-grid">
               <label v-for="field in analysisFisicoOltcFields" :key="`fis-oltc-${field.key}`">
-                <span>{{ field.label }}</span>
+                <span :title="chemicalTooltipFromText(field.label) || undefined" v-html="formatChemicalHtml(field.label)"></span>
                 <input
                   v-if="field.key === 'transformador'"
                   v-model="analysisFisicoOltcForm[field.key]"
@@ -5298,7 +5381,7 @@ watch([activeTab, selectedId], async () => {
               :key="`analysis-transformer-${option.value}`"
               :value="option.value"
             >
-              {{ option.label }}
+              {{ formatChemicalText(option.label) }}
             </option>
           </datalist>
 
@@ -5352,7 +5435,7 @@ watch([activeTab, selectedId], async () => {
               :key="`coletas-transformer-${option.value}`"
               :value="option.value"
             >
-              {{ option.label }}
+              {{ formatChemicalText(option.label) }}
             </option>
           </datalist>
           <div class="modal-actions">
@@ -6156,6 +6239,11 @@ watch([activeTab, selectedId], async () => {
   font-size: 11px;
 }
 
+.table th[title]{
+  position: relative;
+  cursor: help;
+}
+
 .table thead th{
   background: #64748b !important;
 }
@@ -6560,30 +6648,6 @@ watch([activeTab, selectedId], async () => {
   color: rgba(15, 23, 42, 0.78);
   background: rgba(255, 255, 255, 0.88);
   cursor: help;
-}
-
-.risk-heatmap-label::after{
-  content: attr(data-tooltip);
-  position: absolute;
-  left: 100%;
-  top: 50%;
-  transform: translate(8px, -50%);
-  background: rgba(15, 23, 42, 0.92);
-  color: #fff;
-  border-radius: 8px;
-  padding: 6px 8px;
-  font-size: 11px;
-  font-weight: 500;
-  line-height: 1.25;
-  white-space: nowrap;
-  opacity: 0;
-  pointer-events: none;
-  transition: opacity 0.15s ease;
-  z-index: 20;
-}
-
-.risk-heatmap-label:hover::after{
-  opacity: 1;
 }
 
 .risk-heatmap-cell{
@@ -7380,6 +7444,15 @@ watch([activeTab, selectedId], async () => {
   display: inline-flex;
   align-items: center;
   gap: 6px;
+}
+
+.chem-sub{
+  font-size: 0.82em;
+  font-weight: 700;
+  line-height: 0;
+  vertical-align: baseline;
+  position: relative;
+  bottom: -0.22em;
 }
 
 .history-action-btn.small{
