@@ -1070,7 +1070,11 @@ function openAnalysisModal() {
     ensaioDbpc: '',
     laboratorio: '',
   }
-  analysisModalTab.value = analysisRecentTab.value === 'oltc' ? 'oltc' : 'cromatografia'
+  if (analysisRecentTab.value === 'oltc') {
+    analysisModalTab.value = oltcAnalysisTypeTab.value === 'fisicoquimico' ? 'fisicoquimicooltc' : 'oltc'
+  } else {
+    analysisModalTab.value = analysisTypeTab.value
+  }
   analysisModalOpen.value = true
 }
 
@@ -1209,6 +1213,8 @@ type HistoryChartData = { max: number; categories: string[]; series: HistoryChar
 type HistoryChartTab = 'cromatografia' | 'fisicoquimica' | 'ensaiosespeciais'
 type HistoryDisplayMode = 'base' | 'historico'
 type DuvalViewTab = 'triangulos' | 'pentagonos'
+type AnalysisTypeTab = 'cromatografia' | 'fisicoquimico' | 'ensaiosespeciais'
+type OltcAnalysisTypeTab = 'oltc' | 'fisicoquimico'
 type AnalysisColumnGroup = 'Geral' | 'Cromatografia' | 'Físico Químico' | 'Ensaios Especiais'
 type AnalysisRecentTab = 'padrao' | 'oltc'
 type OltcAnalysisColumnGroup = 'Geral' | 'OLTC' | 'Físico Químico'
@@ -1612,6 +1618,8 @@ const historySwitchEnabled = computed({
 
 const analysisSearchQuery = ref('')
 const analysisRecentTab = ref<AnalysisRecentTab>('padrao')
+const analysisTypeTab = ref<AnalysisTypeTab>('cromatografia')
+const oltcAnalysisTypeTab = ref<OltcAnalysisTypeTab>('oltc')
 const showAnalysisRecentSubtabs = computed(() => isGlobalAnalisesView.value)
 const advancedFilterModalOpen = ref(false)
 const advancedFilterContext = ref<AdvancedFilterContext>('analises')
@@ -1845,9 +1853,20 @@ const analysisVisibleColumns = computed(() =>
   analysisColumns.filter((column) => analysisVisibleColumnIds.value.includes(column.id))
 )
 
+const analysisTypeConfig = {
+  cromatografia: { label: 'Cromatografia', rowTipo: 'Cromatografia', group: 'Cromatografia' as AnalysisColumnGroup },
+  fisicoquimico: { label: 'Físico Químico', rowTipo: 'Físico Químico', group: 'Físico Químico' as AnalysisColumnGroup },
+  ensaiosespeciais: { label: 'Ensaios Especiais', rowTipo: 'Ensaios Especiais', group: 'Ensaios Especiais' as AnalysisColumnGroup },
+} as const
+
+const currentDefaultAnalysisType = computed(() => analysisTypeConfig[analysisTypeTab.value])
+const activeDefaultAnalysisGroups = computed<AnalysisColumnGroup[]>(() => ['Geral', currentDefaultAnalysisType.value.group])
+
 const analysisColumnsByGroup = computed(() => {
   const grouped = new Map<AnalysisColumnGroup, AnalysisColumn[]>()
   analysisColumns.forEach((column) => {
+    if (!activeDefaultAnalysisGroups.value.includes(column.group)) return
+    if (column.id === 'tipo') return
     if (!grouped.has(column.group)) grouped.set(column.group, [])
     grouped.get(column.group)!.push(column)
   })
@@ -1856,16 +1875,26 @@ const analysisColumnsByGroup = computed(() => {
 const oltcAnalysisVisibleColumns = computed(() =>
   oltcAnalysisColumns.filter((column) => oltcAnalysisVisibleColumnIds.value.includes(column.id))
 )
+const activeOltcAnalysisGroups = computed<OltcAnalysisColumnGroup[]>(() =>
+  oltcAnalysisTypeTab.value === 'oltc'
+    ? ['Geral', 'OLTC']
+    : ['Geral', 'Físico Químico']
+)
 const oltcAnalysisColumnsByGroup = computed(() => {
   const grouped = new Map<OltcAnalysisColumnGroup, OltcAnalysisColumn[]>()
   oltcAnalysisColumns.forEach((column) => {
+    if (!activeOltcAnalysisGroups.value.includes(column.group)) return
     if (!grouped.has(column.group)) grouped.set(column.group, [])
     grouped.get(column.group)!.push(column)
   })
   return grouped
 })
 const activeAnalysisVisibleColumns = computed(() =>
-  analysisRecentTab.value === 'oltc' ? oltcAnalysisVisibleColumns.value : analysisVisibleColumns.value
+  analysisRecentTab.value === 'oltc'
+    ? oltcAnalysisVisibleColumns.value.filter((column) => activeOltcAnalysisGroups.value.includes(column.group))
+    : analysisVisibleColumns.value.filter((column) =>
+      activeDefaultAnalysisGroups.value.includes(column.group) && column.id !== 'tipo'
+    )
 )
 const activeAnalysisColumnsByGroup = computed(() =>
   analysisRecentTab.value === 'oltc' ? oltcAnalysisColumnsByGroup.value : analysisColumnsByGroup.value
@@ -1884,12 +1913,15 @@ function isActiveAnalysisColumnChecked(columnId: string) {
 
 function isActiveAnalysisColumnLocked(columnId: string) {
   if (analysisRecentTab.value === 'oltc') {
-    return (
-      oltcAnalysisVisibleColumnIds.value.length === 1
-      && oltcAnalysisVisibleColumnIds.value.includes(columnId)
+    const visibleInContext = oltcAnalysisVisibleColumns.value.filter((column) =>
+      activeOltcAnalysisGroups.value.includes(column.group)
     )
+    return visibleInContext.length === 1 && visibleInContext[0]?.id === columnId
   }
-  return analysisVisibleColumnIds.value.length === 1 && analysisVisibleColumnIds.value.includes(columnId)
+  const visibleInContext = analysisVisibleColumns.value.filter((column) =>
+    activeDefaultAnalysisGroups.value.includes(column.group)
+  )
+  return visibleInContext.length === 1 && visibleInContext[0]?.id === columnId
 }
 
 function toggleAnalysisColumnsMenu() {
@@ -2415,7 +2447,13 @@ const coletasAdvancedColumns = [
 ]
 
 const analysisAdvancedColumns = computed(() =>
-  (analysisRecentTab.value === 'oltc' ? oltcAnalysisColumns : analysisColumns).map((column) => ({
+  (
+    analysisRecentTab.value === 'oltc'
+      ? oltcAnalysisColumns.filter((column) => activeOltcAnalysisGroups.value.includes(column.group))
+      : analysisColumns.filter((column) =>
+        activeDefaultAnalysisGroups.value.includes(column.group) && column.id !== 'tipo'
+      )
+  ).map((column) => ({
     value: column.id,
     label: column.label,
   }))
@@ -2570,10 +2608,11 @@ function clearAdvancedFilterDraft() {
 }
 
 const filteredDefaultAnalysisRows = computed(() => {
+  const typeFiltered = unifiedAnalysisRows.value.filter((row) => row.tipo === currentDefaultAnalysisType.value.rowTipo)
   const query = analysisSearchQuery.value.trim().toLowerCase()
   const queryFiltered = !query
-    ? unifiedAnalysisRows.value
-    : unifiedAnalysisRows.value.filter((row) =>
+    ? typeFiltered
+    : typeFiltered.filter((row) =>
     Object.values(row).some((value) => String(value).toLowerCase().includes(query))
   )
   return queryFiltered.filter((row) => matchesAdvancedFilterContext('analises', row as Record<string, unknown>))
@@ -2624,6 +2663,16 @@ watch(analysisRecentTab, () => {
   analysisPage.value = 1
   analysisColumnsMenuOpen.value = false
   analysisExportSelected.value = [...analysisExportOptions.value]
+})
+
+watch(analysisTypeTab, () => {
+  analysisPage.value = 1
+  analysisColumnsMenuOpen.value = false
+})
+
+watch(oltcAnalysisTypeTab, () => {
+  analysisPage.value = 1
+  analysisColumnsMenuOpen.value = false
 })
 
 watch(
@@ -3647,10 +3696,14 @@ watch([activeTab, selectedId], async () => {
                   </section>
                 </div>
               </div>
-              <div v-if="showAnalysisRecentSubtabs" class="history-tabs-inline history-tabs-main history-analyses-subtabs">
+              <div
+                v-if="showAnalysisRecentSubtabs"
+                class="analysis-mode-switch"
+                :style="{ '--switch-index': analysisRecentTab === 'oltc' ? 1 : 0 }"
+              >
                 <button
                   type="button"
-                  class="history-tab-btn"
+                  class="analysis-mode-switch-btn"
                   :class="{ active: analysisRecentTab === 'padrao' }"
                   @click="analysisRecentTab = 'padrao'"
                 >
@@ -3658,11 +3711,55 @@ watch([activeTab, selectedId], async () => {
                 </button>
                 <button
                   type="button"
-                  class="history-tab-btn"
+                  class="analysis-mode-switch-btn"
                   :class="{ active: analysisRecentTab === 'oltc' }"
                   @click="analysisRecentTab = 'oltc'"
                 >
                   OLTC
+                </button>
+              </div>
+              <div v-if="analysisRecentTab === 'padrao'" class="history-tabs-inline history-tabs-main history-analyses-subtabs">
+                <button
+                  type="button"
+                  class="history-tab-btn"
+                  :class="{ active: analysisTypeTab === 'cromatografia' }"
+                  @click="analysisTypeTab = 'cromatografia'"
+                >
+                  Cromatografia
+                </button>
+                <button
+                  type="button"
+                  class="history-tab-btn"
+                  :class="{ active: analysisTypeTab === 'fisicoquimico' }"
+                  @click="analysisTypeTab = 'fisicoquimico'"
+                >
+                  Físico Químico
+                </button>
+                <button
+                  type="button"
+                  class="history-tab-btn"
+                  :class="{ active: analysisTypeTab === 'ensaiosespeciais' }"
+                  @click="analysisTypeTab = 'ensaiosespeciais'"
+                >
+                  Ensaios Especiais
+                </button>
+              </div>
+              <div v-if="analysisRecentTab === 'oltc'" class="history-tabs-inline history-tabs-main history-analyses-subtabs">
+                <button
+                  type="button"
+                  class="history-tab-btn"
+                  :class="{ active: oltcAnalysisTypeTab === 'oltc' }"
+                  @click="oltcAnalysisTypeTab = 'oltc'"
+                >
+                  OLTC
+                </button>
+                <button
+                  type="button"
+                  class="history-tab-btn"
+                  :class="{ active: oltcAnalysisTypeTab === 'fisicoquimico' }"
+                  @click="oltcAnalysisTypeTab = 'fisicoquimico'"
+                >
+                  Físico Químico
                 </button>
               </div>
             </div>
@@ -7167,6 +7264,7 @@ watch([activeTab, selectedId], async () => {
   justify-content: space-between;
   gap: 10px;
   flex-wrap: wrap;
+  padding: 6px 8px;
 }
 
 .history-analyses-controls{
@@ -7179,6 +7277,55 @@ watch([activeTab, selectedId], async () => {
 
 .history-analyses-subtabs{
   margin-right: 2px;
+}
+
+.history-analyses-subtabs .history-tab-btn{
+  height: 30px;
+  min-height: 30px;
+}
+
+.analysis-mode-switch{
+  --switch-index: 0;
+  position: relative;
+  display: inline-grid;
+  grid-template-columns: repeat(2, minmax(86px, auto));
+  align-items: center;
+  padding: 2px;
+  border-radius: 999px;
+  background: rgba(255, 255, 255, 0.7);
+  border: 1px solid rgba(15, 23, 42, 0.12);
+  overflow: hidden;
+}
+
+.analysis-mode-switch::before{
+  content: '';
+  position: absolute;
+  top: 2px;
+  bottom: 2px;
+  left: 2px;
+  width: calc((100% - 4px) / 2);
+  border-radius: 999px;
+  background: #1e4e8b;
+  transform: translateX(calc(var(--switch-index) * 100%));
+  transition: transform 0.2s ease;
+  box-shadow: 0 4px 10px rgba(30, 78, 139, 0.28);
+}
+
+.analysis-mode-switch-btn{
+  position: relative;
+  z-index: 1;
+  height: 30px;
+  padding: 0 12px;
+  border: 0;
+  background: transparent;
+  font-size: 12px;
+  font-weight: 700;
+  color: rgba(15, 23, 42, 0.62);
+  cursor: pointer;
+}
+
+.analysis-mode-switch-btn.active{
+  color: #ffffff;
 }
 
 .history-analyses-controls-left{
