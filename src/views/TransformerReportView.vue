@@ -147,10 +147,9 @@ type MacroTab = (typeof macroTabs)[number]
 const tabs = [
   'Avaliação Completa',
   'Histórico de Análises',
-  'Avaliação IEEE',
+  'IEEE Std C57.104™',
   'Coletas',
   'Tratamento de Óleo',
-  'Duval',
 ] as const
 
 type ReportTab = (typeof tabs)[number]
@@ -158,6 +157,8 @@ type ReportTab = (typeof tabs)[number]
 function toValidTab(value: unknown): ReportTab {
   const text = String(value || '')
   if (text === 'Próximas Coletas') return 'Coletas'
+  if (text === 'Avaliação IEEE') return 'IEEE Std C57.104™'
+  if (text === 'Duval') return 'IEEE Std C57.104™'
   return (tabs.find((tab) => tab === text) as ReportTab) || 'Avaliação Completa'
 }
 
@@ -204,19 +205,17 @@ const isTrRotaMacro = computed(() => activeMacroTab.value === 'TR Rota')
 const trOleoSubTabs: ReportTab[] = [
   'Avaliação Completa',
   'Histórico de Análises',
-  'Avaliação IEEE',
+  'IEEE Std C57.104™',
   'Coletas',
   'Tratamento de Óleo',
-  'Duval',
 ]
 const trRotaSubTabs: ReportTab[] = ['Avaliação Completa', 'Histórico de Análises']
 const oltcSubTabs: ReportTab[] = [
   'Avaliação Completa',
   'Histórico de Análises',
-  'Avaliação IEEE',
+  'IEEE Std C57.104™',
   'Coletas',
   'Tratamento de Óleo',
-  'Duval',
 ]
 
 const activeSubTabs = computed(() => {
@@ -237,10 +236,9 @@ const generateReportWrapRef = ref<HTMLElement | null>(null)
 const generateReportItems = [
   'Avaliação Completa',
   'Histórico de Análises',
-  'Avaliação IEEE',
+  'IEEE Std C57.104™',
   'Coletas',
   'Tratamento de Óleo',
-  'Duval',
   'TR Óleo',
 ]
 const generateReportSelected = ref<string[]>([...generateReportItems])
@@ -1070,7 +1068,11 @@ function openAnalysisModal() {
     ensaioDbpc: '',
     laboratorio: '',
   }
-  analysisModalTab.value = analysisRecentTab.value === 'oltc' ? 'oltc' : 'cromatografia'
+  if (analysisRecentTab.value === 'oltc') {
+    analysisModalTab.value = oltcAnalysisTypeTab.value === 'fisicoquimico' ? 'fisicoquimicooltc' : 'oltc'
+  } else {
+    analysisModalTab.value = analysisTypeTab.value
+  }
   analysisModalOpen.value = true
 }
 
@@ -1206,9 +1208,80 @@ const historyRows = computed(() => {
 type HistorySeriesDef = { key: string; label: string; color: string }
 type HistoryChartSeries = { name: string; data: number[] }
 type HistoryChartData = { max: number; categories: string[]; series: HistoryChartSeries[]; colors: string[] }
+const chemicalTokenMeta = {
+  H2O: { display: 'H₂O', html: 'H<sub class="chem-sub">2</sub>O', name: 'Água' },
+  C2H2: { display: 'C₂H₂', html: 'C<sub class="chem-sub">2</sub>H<sub class="chem-sub">2</sub>', name: 'Acetileno' },
+  C2H4: { display: 'C₂H₄', html: 'C<sub class="chem-sub">2</sub>H<sub class="chem-sub">4</sub>', name: 'Etileno' },
+  C2H6: { display: 'C₂H₆', html: 'C<sub class="chem-sub">2</sub>H<sub class="chem-sub">6</sub>', name: 'Etano' },
+  CH4: { display: 'CH₄', html: 'CH<sub class="chem-sub">4</sub>', name: 'Metano' },
+  CO2: { display: 'CO₂', html: 'CO<sub class="chem-sub">2</sub>', name: 'Dióxido de Carbono' },
+  H2: { display: 'H₂', html: 'H<sub class="chem-sub">2</sub>', name: 'Hidrogênio' },
+  O2: { display: 'O₂', html: 'O<sub class="chem-sub">2</sub>', name: 'Oxigênio' },
+  N2: { display: 'N₂', html: 'N<sub class="chem-sub">2</sub>', name: 'Nitrogênio' },
+  CO: { display: 'CO', html: 'CO', name: 'Monóxido de Carbono' },
+  TGC: { display: 'TGC', html: 'TGC', name: 'Total de Gases Combustíveis' },
+  TGCB: { display: 'TGCB', html: 'TGCB', name: 'Total de Gases Combustíveis' },
+  DBDS: { display: 'DBDS', html: 'DBDS', name: 'Dibenzil Dissulfeto' },
+} as const
+const chemicalTokensByLength = Object.keys(chemicalTokenMeta).sort((a, b) => b.length - a.length)
+const escapedChemicalTokens = chemicalTokensByLength.map((token) => token.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'))
+const chemicalTokenRegex = new RegExp(`\\b(${escapedChemicalTokens.join('|')})\\b`, 'g')
+const subscriptToAsciiMap: Record<string, string> = {
+  '₀': '0',
+  '₁': '1',
+  '₂': '2',
+  '₃': '3',
+  '₄': '4',
+  '₅': '5',
+  '₆': '6',
+  '₇': '7',
+  '₈': '8',
+  '₉': '9',
+}
+
+function normalizeChemicalText(text: string) {
+  return text.replace(/[₀₁₂₃₄₅₆₇₈₉]/g, (digit) => subscriptToAsciiMap[digit] || digit)
+}
+
+function formatChemicalText(text: string) {
+  if (!text) return text
+  return normalizeChemicalText(text).replace(
+    chemicalTokenRegex,
+    (token) => chemicalTokenMeta[token as keyof typeof chemicalTokenMeta]?.display || token,
+  )
+}
+
+function formatChemicalHtml(text: string) {
+  if (!text) return text
+  return normalizeChemicalText(text).replace(
+    chemicalTokenRegex,
+    (token) => chemicalTokenMeta[token as keyof typeof chemicalTokenMeta]?.html || token,
+  )
+}
+
+function chemicalTooltipFromText(text: string) {
+  if (!text) return ''
+  const matches = new Set<string>()
+  const regex = new RegExp(chemicalTokenRegex.source, 'g')
+  const normalizedText = normalizeChemicalText(text)
+  let match: RegExpExecArray | null
+  while ((match = regex.exec(normalizedText)) !== null) {
+    const token = match[1] as keyof typeof chemicalTokenMeta
+    const meta = chemicalTokenMeta[token]
+    if (meta) matches.add(`${meta.display} - ${meta.name}`)
+  }
+  return Array.from(matches).join(' • ')
+}
+
+function toTitleAttr(value: string) {
+  return value.replace(/"/g, '&quot;')
+}
+
 type HistoryChartTab = 'cromatografia' | 'fisicoquimica' | 'ensaiosespeciais'
 type HistoryDisplayMode = 'base' | 'historico'
 type DuvalViewTab = 'triangulos' | 'pentagonos'
+type AnalysisTypeTab = 'cromatografia' | 'fisicoquimico' | 'ensaiosespeciais'
+type OltcAnalysisTypeTab = 'oltc' | 'fisicoquimico'
 type AnalysisColumnGroup = 'Geral' | 'Cromatografia' | 'Físico Químico' | 'Ensaios Especiais'
 type AnalysisRecentTab = 'padrao' | 'oltc'
 type OltcAnalysisColumnGroup = 'Geral' | 'OLTC' | 'Físico Químico'
@@ -1532,6 +1605,11 @@ const historyChartOptions = computed<ApexOptions>(() => ({
     position: 'bottom',
     horizontalAlign: 'center',
     fontSize: '12px',
+    formatter: (seriesName: string) => {
+      const formatted = formatChemicalHtml(seriesName)
+      const tooltip = chemicalTooltipFromText(seriesName)
+      return tooltip ? `<span title="${toTitleAttr(tooltip)}">${formatted}</span>` : formatted
+    },
   },
   dataLabels: { enabled: false },
   markers: { size: 0, hover: { sizeOffset: 3 } },
@@ -1552,6 +1630,15 @@ const historyChartOptions = computed<ApexOptions>(() => ({
   tooltip: {
     shared: true,
     intersect: false,
+    y: {
+      title: {
+        formatter: (seriesName: string) => {
+          const formatted = formatChemicalText(seriesName)
+          const tooltip = chemicalTooltipFromText(seriesName)
+          return tooltip ? `${formatted} (${tooltip.split(' - ')[1] || ''})` : formatted
+        },
+      },
+    },
   },
   responsive: [
     {
@@ -1612,6 +1699,8 @@ const historySwitchEnabled = computed({
 
 const analysisSearchQuery = ref('')
 const analysisRecentTab = ref<AnalysisRecentTab>('padrao')
+const analysisTypeTab = ref<AnalysisTypeTab>('cromatografia')
+const oltcAnalysisTypeTab = ref<OltcAnalysisTypeTab>('oltc')
 const showAnalysisRecentSubtabs = computed(() => isGlobalAnalisesView.value)
 const advancedFilterModalOpen = ref(false)
 const advancedFilterContext = ref<AdvancedFilterContext>('analises')
@@ -1680,6 +1769,10 @@ const evalCardOpen = ref<Record<'1' | '2' | '3' | '4' | '5', boolean>>({
   '4': true,
   '5': true,
 })
+const ieeeCardOpen = ref<Record<'2008' | '2019', boolean>>({
+  '2008': true,
+  '2019': true,
+})
 const treatmentForm = ref({
   statusTratamento: 'Concluído',
   dataColeta: '',
@@ -1718,6 +1811,10 @@ const coletasQuarterOptions = [
 
 function toggleEvalCard(card: '1' | '2' | '3' | '4' | '5') {
   evalCardOpen.value[card] = !evalCardOpen.value[card]
+}
+
+function toggleIeeeCard(card: '2008' | '2019') {
+  ieeeCardOpen.value[card] = !ieeeCardOpen.value[card]
 }
 
 const analysisColumns: AnalysisColumn[] = [
@@ -1845,9 +1942,20 @@ const analysisVisibleColumns = computed(() =>
   analysisColumns.filter((column) => analysisVisibleColumnIds.value.includes(column.id))
 )
 
+const analysisTypeConfig = {
+  cromatografia: { label: 'Cromatografia', rowTipo: 'Cromatografia', group: 'Cromatografia' as AnalysisColumnGroup },
+  fisicoquimico: { label: 'Físico Químico', rowTipo: 'Físico Químico', group: 'Físico Químico' as AnalysisColumnGroup },
+  ensaiosespeciais: { label: 'Ensaios Especiais', rowTipo: 'Ensaios Especiais', group: 'Ensaios Especiais' as AnalysisColumnGroup },
+} as const
+
+const currentDefaultAnalysisType = computed(() => analysisTypeConfig[analysisTypeTab.value])
+const activeDefaultAnalysisGroups = computed<AnalysisColumnGroup[]>(() => ['Geral', currentDefaultAnalysisType.value.group])
+
 const analysisColumnsByGroup = computed(() => {
   const grouped = new Map<AnalysisColumnGroup, AnalysisColumn[]>()
   analysisColumns.forEach((column) => {
+    if (!activeDefaultAnalysisGroups.value.includes(column.group)) return
+    if (column.id === 'tipo') return
     if (!grouped.has(column.group)) grouped.set(column.group, [])
     grouped.get(column.group)!.push(column)
   })
@@ -1856,16 +1964,26 @@ const analysisColumnsByGroup = computed(() => {
 const oltcAnalysisVisibleColumns = computed(() =>
   oltcAnalysisColumns.filter((column) => oltcAnalysisVisibleColumnIds.value.includes(column.id))
 )
+const activeOltcAnalysisGroups = computed<OltcAnalysisColumnGroup[]>(() =>
+  oltcAnalysisTypeTab.value === 'oltc'
+    ? ['Geral', 'OLTC']
+    : ['Geral', 'Físico Químico']
+)
 const oltcAnalysisColumnsByGroup = computed(() => {
   const grouped = new Map<OltcAnalysisColumnGroup, OltcAnalysisColumn[]>()
   oltcAnalysisColumns.forEach((column) => {
+    if (!activeOltcAnalysisGroups.value.includes(column.group)) return
     if (!grouped.has(column.group)) grouped.set(column.group, [])
     grouped.get(column.group)!.push(column)
   })
   return grouped
 })
 const activeAnalysisVisibleColumns = computed(() =>
-  analysisRecentTab.value === 'oltc' ? oltcAnalysisVisibleColumns.value : analysisVisibleColumns.value
+  analysisRecentTab.value === 'oltc'
+    ? oltcAnalysisVisibleColumns.value.filter((column) => activeOltcAnalysisGroups.value.includes(column.group))
+    : analysisVisibleColumns.value.filter((column) =>
+      activeDefaultAnalysisGroups.value.includes(column.group) && column.id !== 'tipo'
+    )
 )
 const activeAnalysisColumnsByGroup = computed(() =>
   analysisRecentTab.value === 'oltc' ? oltcAnalysisColumnsByGroup.value : analysisColumnsByGroup.value
@@ -1884,12 +2002,15 @@ function isActiveAnalysisColumnChecked(columnId: string) {
 
 function isActiveAnalysisColumnLocked(columnId: string) {
   if (analysisRecentTab.value === 'oltc') {
-    return (
-      oltcAnalysisVisibleColumnIds.value.length === 1
-      && oltcAnalysisVisibleColumnIds.value.includes(columnId)
+    const visibleInContext = oltcAnalysisVisibleColumns.value.filter((column) =>
+      activeOltcAnalysisGroups.value.includes(column.group)
     )
+    return visibleInContext.length === 1 && visibleInContext[0]?.id === columnId
   }
-  return analysisVisibleColumnIds.value.length === 1 && analysisVisibleColumnIds.value.includes(columnId)
+  const visibleInContext = analysisVisibleColumns.value.filter((column) =>
+    activeDefaultAnalysisGroups.value.includes(column.group)
+  )
+  return visibleInContext.length === 1 && visibleInContext[0]?.id === columnId
 }
 
 function toggleAnalysisColumnsMenu() {
@@ -2415,7 +2536,13 @@ const coletasAdvancedColumns = [
 ]
 
 const analysisAdvancedColumns = computed(() =>
-  (analysisRecentTab.value === 'oltc' ? oltcAnalysisColumns : analysisColumns).map((column) => ({
+  (
+    analysisRecentTab.value === 'oltc'
+      ? oltcAnalysisColumns.filter((column) => activeOltcAnalysisGroups.value.includes(column.group))
+      : analysisColumns.filter((column) =>
+        activeDefaultAnalysisGroups.value.includes(column.group) && column.id !== 'tipo'
+      )
+  ).map((column) => ({
     value: column.id,
     label: column.label,
   }))
@@ -2570,10 +2697,11 @@ function clearAdvancedFilterDraft() {
 }
 
 const filteredDefaultAnalysisRows = computed(() => {
+  const typeFiltered = unifiedAnalysisRows.value.filter((row) => row.tipo === currentDefaultAnalysisType.value.rowTipo)
   const query = analysisSearchQuery.value.trim().toLowerCase()
   const queryFiltered = !query
-    ? unifiedAnalysisRows.value
-    : unifiedAnalysisRows.value.filter((row) =>
+    ? typeFiltered
+    : typeFiltered.filter((row) =>
     Object.values(row).some((value) => String(value).toLowerCase().includes(query))
   )
   return queryFiltered.filter((row) => matchesAdvancedFilterContext('analises', row as Record<string, unknown>))
@@ -2624,6 +2752,16 @@ watch(analysisRecentTab, () => {
   analysisPage.value = 1
   analysisColumnsMenuOpen.value = false
   analysisExportSelected.value = [...analysisExportOptions.value]
+})
+
+watch(analysisTypeTab, () => {
+  analysisPage.value = 1
+  analysisColumnsMenuOpen.value = false
+})
+
+watch(oltcAnalysisTypeTab, () => {
+  analysisPage.value = 1
+  analysisColumnsMenuOpen.value = false
 })
 
 watch(
@@ -3412,7 +3550,8 @@ watch([activeTab, selectedId], async () => {
               aria-label="Expandir visualização do transformador"
               @click="openReportViewerModal"
             >
-              ⛶
+              <span aria-hidden="true">⛶</span>
+              <span>Ver em 3D</span>
             </button>
             <iframe
               v-if="reportViewerCardSrc"
@@ -3489,14 +3628,14 @@ watch([activeTab, selectedId], async () => {
                       <th class="text-center" colspan="8">Condições: IEEE Std C57.104™-2008</th>
                     </tr>
                     <tr>
-                      <th class="text-center">H2</th>
-                      <th class="text-center">CH4</th>
-                      <th class="text-center">C2H2</th>
-                      <th class="text-center">C2H4</th>
-                      <th class="text-center">C2H6</th>
-                      <th class="text-center">CO</th>
-                      <th class="text-center">CO2</th>
-                      <th class="text-center">TGC</th>
+                      <th class="text-center" :title="chemicalTooltipFromText('H₂') || undefined">H₂</th>
+                      <th class="text-center" :title="chemicalTooltipFromText('CH₄') || undefined">CH₄</th>
+                      <th class="text-center" :title="chemicalTooltipFromText('C₂H₂') || undefined">C₂H₂</th>
+                      <th class="text-center" :title="chemicalTooltipFromText('C₂H₄') || undefined">C₂H₄</th>
+                      <th class="text-center" :title="chemicalTooltipFromText('C₂H₆') || undefined">C₂H₆</th>
+                      <th class="text-center" :title="chemicalTooltipFromText('CO') || undefined">CO</th>
+                      <th class="text-center" :title="chemicalTooltipFromText('CO₂') || undefined">CO₂</th>
+                      <th class="text-center" :title="chemicalTooltipFromText('TGC') || undefined">TGC</th>
                     </tr>
                   </thead>
                   <tbody>
@@ -3641,15 +3780,19 @@ watch([activeTab, selectedId], async () => {
                         :disabled="isActiveAnalysisColumnLocked(column.id)"
                         @change="toggleActiveAnalysisColumn(column.id)"
                       />
-                      <span>{{ column.label }}</span>
+                      <span :title="chemicalTooltipFromText(column.label) || undefined" v-html="formatChemicalHtml(column.label)"></span>
                     </label>
                   </section>
                 </div>
               </div>
-              <div v-if="showAnalysisRecentSubtabs" class="history-tabs-inline history-tabs-main history-analyses-subtabs">
+              <div
+                v-if="showAnalysisRecentSubtabs"
+                class="analysis-mode-switch"
+                :style="{ '--switch-index': analysisRecentTab === 'oltc' ? 1 : 0 }"
+              >
                 <button
                   type="button"
-                  class="history-tab-btn"
+                  class="analysis-mode-switch-btn"
                   :class="{ active: analysisRecentTab === 'padrao' }"
                   @click="analysisRecentTab = 'padrao'"
                 >
@@ -3657,11 +3800,55 @@ watch([activeTab, selectedId], async () => {
                 </button>
                 <button
                   type="button"
-                  class="history-tab-btn"
+                  class="analysis-mode-switch-btn"
                   :class="{ active: analysisRecentTab === 'oltc' }"
                   @click="analysisRecentTab = 'oltc'"
                 >
                   OLTC
+                </button>
+              </div>
+              <div v-if="analysisRecentTab === 'padrao'" class="history-tabs-inline history-tabs-main history-analyses-subtabs">
+                <button
+                  type="button"
+                  class="history-tab-btn"
+                  :class="{ active: analysisTypeTab === 'cromatografia' }"
+                  @click="analysisTypeTab = 'cromatografia'"
+                >
+                  Cromatografia
+                </button>
+                <button
+                  type="button"
+                  class="history-tab-btn"
+                  :class="{ active: analysisTypeTab === 'fisicoquimico' }"
+                  @click="analysisTypeTab = 'fisicoquimico'"
+                >
+                  Físico Químico
+                </button>
+                <button
+                  type="button"
+                  class="history-tab-btn"
+                  :class="{ active: analysisTypeTab === 'ensaiosespeciais' }"
+                  @click="analysisTypeTab = 'ensaiosespeciais'"
+                >
+                  Ensaios Especiais
+                </button>
+              </div>
+              <div v-if="analysisRecentTab === 'oltc'" class="history-tabs-inline history-tabs-main history-analyses-subtabs">
+                <button
+                  type="button"
+                  class="history-tab-btn"
+                  :class="{ active: oltcAnalysisTypeTab === 'oltc' }"
+                  @click="oltcAnalysisTypeTab = 'oltc'"
+                >
+                  OLTC
+                </button>
+                <button
+                  type="button"
+                  class="history-tab-btn"
+                  :class="{ active: oltcAnalysisTypeTab === 'fisicoquimico' }"
+                  @click="oltcAnalysisTypeTab = 'fisicoquimico'"
+                >
+                  Físico Químico
                 </button>
               </div>
             </div>
@@ -3711,7 +3898,7 @@ watch([activeTab, selectedId], async () => {
               <thead>
                 <tr>
                   <th v-for="column in activeAnalysisVisibleColumns" :key="column.id" class="text-center">
-                    {{ column.label }}
+                    <span :title="chemicalTooltipFromText(column.label) || undefined" v-html="formatChemicalHtml(column.label)"></span>
                   </th>
                 </tr>
               </thead>
@@ -3848,14 +4035,14 @@ watch([activeTab, selectedId], async () => {
               <thead>
                 <tr>
                   <th class="text-center">Status</th>
-                  <th class="text-center">H2</th>
-                  <th class="text-center">CH4</th>
-                  <th class="text-center">C2H2</th>
-                  <th class="text-center">C2H4</th>
-                  <th class="text-center">C2H6</th>
-                  <th class="text-center">CO</th>
-                  <th class="text-center">CO2</th>
-                  <th class="text-center">TGC</th>
+                  <th class="text-center" :title="chemicalTooltipFromText('H₂') || undefined">H₂</th>
+                  <th class="text-center" :title="chemicalTooltipFromText('CH₄') || undefined">CH₄</th>
+                  <th class="text-center" :title="chemicalTooltipFromText('C₂H₂') || undefined">C₂H₂</th>
+                  <th class="text-center" :title="chemicalTooltipFromText('C₂H₄') || undefined">C₂H₄</th>
+                  <th class="text-center" :title="chemicalTooltipFromText('C₂H₆') || undefined">C₂H₆</th>
+                  <th class="text-center" :title="chemicalTooltipFromText('CO') || undefined">CO</th>
+                  <th class="text-center" :title="chemicalTooltipFromText('CO₂') || undefined">CO₂</th>
+                  <th class="text-center" :title="chemicalTooltipFromText('TGC') || undefined">TGC</th>
                 </tr>
               </thead>
               <tbody>
@@ -3912,14 +4099,14 @@ watch([activeTab, selectedId], async () => {
               <thead>
                 <tr>
                   <th class="text-center">Data da coleta</th>
-                  <th class="text-center">H2</th>
-                  <th class="text-center">CH4</th>
-                  <th class="text-center">C2H2</th>
-                  <th class="text-center">C2H4</th>
-                  <th class="text-center">C2H6</th>
-                  <th class="text-center">CO</th>
-                  <th class="text-center">CO2</th>
-                  <th class="text-center">TGC</th>
+                  <th class="text-center" :title="chemicalTooltipFromText('H₂') || undefined">H₂</th>
+                  <th class="text-center" :title="chemicalTooltipFromText('CH₄') || undefined">CH₄</th>
+                  <th class="text-center" :title="chemicalTooltipFromText('C₂H₂') || undefined">C₂H₂</th>
+                  <th class="text-center" :title="chemicalTooltipFromText('C₂H₄') || undefined">C₂H₄</th>
+                  <th class="text-center" :title="chemicalTooltipFromText('C₂H₆') || undefined">C₂H₆</th>
+                  <th class="text-center" :title="chemicalTooltipFromText('CO') || undefined">CO</th>
+                  <th class="text-center" :title="chemicalTooltipFromText('CO₂') || undefined">CO₂</th>
+                  <th class="text-center" :title="chemicalTooltipFromText('TGC') || undefined">TGC</th>
                 </tr>
               </thead>
               <tbody>
@@ -3972,7 +4159,7 @@ watch([activeTab, selectedId], async () => {
 
           <div class="risk-grid-shell">
           <div class="risk-pies risk-pies-aligned">
-            <div class="risk-pies-tab" aria-label="Parâmetros">Parâmetros</div>
+            <div class="risk-pies-tab risk-pies-tab-spacer" aria-hidden="true"></div>
             <article
               v-for="(probability, index) in riskProbabilities"
               :key="`risk-${index}`"
@@ -3986,10 +4173,14 @@ watch([activeTab, selectedId], async () => {
             </article>
           </div>
 
+          <div class="risk-heatmap-head">
+            <div class="risk-pies-tab risk-heatmap-head-label" aria-label="Parâmetros">Parâmetros</div>
+            <div class="risk-heatmap-title">Estado de Risco</div>
+          </div>
           <div class="risk-heatmap-wrap">
             <div class="risk-heatmap-grid">
               <template v-for="row in riskHeatmapRows" :key="`risk-row-${row.key}`">
-                <div class="risk-heatmap-label" :title="row.tooltip" :data-tooltip="row.tooltip">{{ row.label }}</div>
+                <div class="risk-heatmap-label" :title="row.tooltip">{{ row.label }}</div>
                 <div
                   v-for="(value, idx) in row.values"
                   :key="`risk-cell-${row.key}-${idx}`"
@@ -4074,8 +4265,18 @@ watch([activeTab, selectedId], async () => {
         </article>
       </section>
 
-      <section v-else-if="activeTab === 'Avaliação IEEE'" class="panel table-panel">
-        <article class="tile tile-wide">
+      <section v-else-if="activeTab === 'IEEE Std C57.104™'" class="panel table-panel history-panel">
+        <article class="history-block-card">
+          <button
+            type="button"
+            class="expandable-head-btn"
+            :class="{ open: ieeeCardOpen['2008'] }"
+            @click="toggleIeeeCard('2008')"
+          >
+            <span>IEEE Std C57.104™ - 2008</span>
+            <i class="expandable-toggle-icon" aria-hidden="true">{{ ieeeCardOpen['2008'] ? '−' : '+' }}</i>
+          </button>
+          <div v-if="ieeeCardOpen['2008']" class="tile tile-wide">
           <h4>Guia IEEE Std C57.104™- 2008 para a Interpretação de gases dissolvidos no óleo isolante dos transformadores</h4>
           <p>
             Foi desenvolvido um critério de quatro níveis para classificar os riscos aos transformadores, quando não há histórico de gás dissolvido,
@@ -4100,14 +4301,14 @@ watch([activeTab, selectedId], async () => {
               <thead>
                 <tr>
                   <th class="text-center">Status</th>
-                  <th class="text-center">H2</th>
-                  <th class="text-center">CH4</th>
-                  <th class="text-center">C2H2</th>
-                  <th class="text-center">C2H4</th>
-                  <th class="text-center">C2H6</th>
-                  <th class="text-center">CO</th>
-                  <th class="text-center">CO2</th>
-                  <th class="text-center">TGC</th>
+                  <th class="text-center" :title="chemicalTooltipFromText('H₂') || undefined">H₂</th>
+                  <th class="text-center" :title="chemicalTooltipFromText('CH₄') || undefined">CH₄</th>
+                  <th class="text-center" :title="chemicalTooltipFromText('C₂H₂') || undefined">C₂H₂</th>
+                  <th class="text-center" :title="chemicalTooltipFromText('C₂H₄') || undefined">C₂H₄</th>
+                  <th class="text-center" :title="chemicalTooltipFromText('C₂H₆') || undefined">C₂H₆</th>
+                  <th class="text-center" :title="chemicalTooltipFromText('CO') || undefined">CO</th>
+                  <th class="text-center" :title="chemicalTooltipFromText('CO₂') || undefined">CO₂</th>
+                  <th class="text-center" :title="chemicalTooltipFromText('TGC') || undefined">TGC</th>
                 </tr>
               </thead>
               <tbody>
@@ -4167,14 +4368,14 @@ watch([activeTab, selectedId], async () => {
                 </tr>
                 <tr>
                   <th class="text-center">Data Coleta</th>
-                  <th class="text-center">H2</th>
-                  <th class="text-center">CH4</th>
-                  <th class="text-center">C2H2</th>
-                  <th class="text-center">C2H4</th>
-                  <th class="text-center">C2H6</th>
-                  <th class="text-center">CO</th>
-                  <th class="text-center">CO2</th>
-                  <th class="text-center">TGC</th>
+                  <th class="text-center" :title="chemicalTooltipFromText('H₂') || undefined">H₂</th>
+                  <th class="text-center" :title="chemicalTooltipFromText('CH₄') || undefined">CH₄</th>
+                  <th class="text-center" :title="chemicalTooltipFromText('C₂H₂') || undefined">C₂H₂</th>
+                  <th class="text-center" :title="chemicalTooltipFromText('C₂H₄') || undefined">C₂H₄</th>
+                  <th class="text-center" :title="chemicalTooltipFromText('C₂H₆') || undefined">C₂H₆</th>
+                  <th class="text-center" :title="chemicalTooltipFromText('CO') || undefined">CO</th>
+                  <th class="text-center" :title="chemicalTooltipFromText('CO₂') || undefined">CO₂</th>
+                  <th class="text-center" :title="chemicalTooltipFromText('TGC') || undefined">TGC</th>
                 </tr>
               </thead>
               <tbody>
@@ -4209,6 +4410,189 @@ watch([activeTab, selectedId], async () => {
             diferentes concentrações de gás dissolvido para os gases individuais (particularmente acetileno) e o TGC (total de gases combustíveis)
             é baseado em julgamento de engenharia de manutenção e experiência com outros transformadores similares.
           </p>
+          </div>
+        </article>
+
+        <article class="history-block-card">
+          <button
+            type="button"
+            class="expandable-head-btn"
+            :class="{ open: ieeeCardOpen['2019'] }"
+            @click="toggleIeeeCard('2019')"
+          >
+            <span>IEEE Std C57.104™ - 2019</span>
+            <i class="expandable-toggle-icon" aria-hidden="true">{{ ieeeCardOpen['2019'] ? '−' : '+' }}</i>
+          </button>
+          <div v-if="ieeeCardOpen['2019']" class="tile tile-wide duval-screen">
+            <article class="duval-data-card">
+              <div class="duval-data-head">
+                <h4>Concentração de Gases (ppm)</h4>
+                <button type="button" class="history-action-btn small" @click="clearDuvalSelection">
+                  Limpar Seleção
+                </button>
+              </div>
+              <div class="mini-table-wrap">
+                <table class="table compact duval-data-table">
+                  <thead>
+                    <tr>
+                      <th class="text-center">Selecionar</th>
+                      <th class="text-center">Análises</th>
+                      <th class="text-center" :title="chemicalTooltipFromText('C₂H₂') || undefined">C₂H₂</th>
+                      <th class="text-center" :title="chemicalTooltipFromText('C₂H₄') || undefined">C₂H₄</th>
+                      <th class="text-center" :title="chemicalTooltipFromText('CH₄') || undefined">CH₄</th>
+                      <th class="text-center" :title="chemicalTooltipFromText('C₂H₆') || undefined">C₂H₆</th>
+                      <th class="text-center" :title="chemicalTooltipFromText('H₂') || undefined">H₂</th>
+                      <th class="text-center">Duval 1</th>
+                      <th class="text-center">Duval 4</th>
+                      <th class="text-center">Duval 5</th>
+                      <th class="text-center">Pentágono 1</th>
+                      <th class="text-center">Pentágono 2</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    <tr v-for="row in duvalAnalysesRows" :key="row.id">
+                      <td class="text-center">
+                        <input
+                          type="checkbox"
+                          :checked="isDuvalManualSelected(row.id)"
+                          @change="handleDuvalSelection(row.id, ($event.target as HTMLInputElement).checked)"
+                        />
+                      </td>
+                      <td class="text-center">{{ row.date }}</td>
+                      <td class="text-center">{{ row.C2H2 }}</td>
+                      <td class="text-center">{{ row.C2H4 }}</td>
+                      <td class="text-center">{{ row.CH4 }}</td>
+                      <td class="text-center">{{ row.C2H6 }}</td>
+                      <td class="text-center">{{ row.H2 }}</td>
+                      <td class="text-center">{{ row.AREA_D1 }}</td>
+                      <td class="text-center">{{ row.AREA_D4 }}</td>
+                      <td class="text-center">{{ row.AREA_D5 }}</td>
+                      <td class="text-center">{{ row.AREA_P1 }}</td>
+                      <td class="text-center">{{ row.AREA_P2 }}</td>
+                    </tr>
+                    <tr v-if="!duvalAnalysesRows.length">
+                      <td class="text-center" colspan="12">
+                        Sem dados de cromatografia para compor a visualização Duval.
+                      </td>
+                    </tr>
+                  </tbody>
+                </table>
+              </div>
+            </article>
+
+            <nav class="duval-tabs">
+              <button
+                type="button"
+                class="duval-tab-btn"
+                :class="{ active: duvalViewTab === 'triangulos' }"
+                @click="duvalViewTab = 'triangulos'"
+              >
+                Triângulos Duval
+              </button>
+              <button
+                type="button"
+                class="duval-tab-btn"
+                :class="{ active: duvalViewTab === 'pentagonos' }"
+                @click="duvalViewTab = 'pentagonos'"
+              >
+                Pentágonos Duval
+              </button>
+            </nav>
+
+            <div v-if="duvalViewTab === 'triangulos'" class="duval-diagram-grid duval-diagram-grid-triangles">
+              <article class="duval-diagram-card">
+                <div class="duval-image-frame">
+                  <img
+                    v-for="(layer, index) in duvalLayersD1"
+                    :key="`duval-d1-${index}`"
+                    :src="layer"
+                    class="duval-layer-image"
+                    alt="Duval Triângulo 1"
+                  />
+                </div>
+                <ul class="duval-reference-list">
+                  <li v-for="(item, index) in duvalReferences.D1" :key="`duval-ref-d1-${index}`">
+                    <span class="duval-reference-dot" :style="{ backgroundColor: item[0] }" aria-hidden="true"></span>
+                    <span>{{ item[1] }}</span>
+                  </li>
+                </ul>
+              </article>
+
+              <article class="duval-diagram-card">
+                <div class="duval-image-frame">
+                  <img
+                    v-for="(layer, index) in duvalLayersD4"
+                    :key="`duval-d4-${index}`"
+                    :src="layer"
+                    class="duval-layer-image"
+                    alt="Duval Triângulo 4"
+                  />
+                </div>
+                <ul class="duval-reference-list">
+                  <li v-for="(item, index) in duvalReferences.D4" :key="`duval-ref-d4-${index}`">
+                    <span class="duval-reference-dot" :style="{ backgroundColor: item[0] }" aria-hidden="true"></span>
+                    <span>{{ item[1] }}</span>
+                  </li>
+                </ul>
+              </article>
+
+              <article class="duval-diagram-card">
+                <div class="duval-image-frame">
+                  <img
+                    v-for="(layer, index) in duvalLayersD5"
+                    :key="`duval-d5-${index}`"
+                    :src="layer"
+                    class="duval-layer-image"
+                    alt="Duval Triângulo 5"
+                  />
+                </div>
+                <ul class="duval-reference-list">
+                  <li v-for="(item, index) in duvalReferences.D5" :key="`duval-ref-d5-${index}`">
+                    <span class="duval-reference-dot" :style="{ backgroundColor: item[0] }" aria-hidden="true"></span>
+                    <span>{{ item[1] }}</span>
+                  </li>
+                </ul>
+              </article>
+            </div>
+
+            <div v-else class="duval-diagram-grid duval-diagram-grid-pentagons">
+              <article class="duval-diagram-card">
+                <div class="duval-image-frame">
+                  <img
+                    v-for="(layer, index) in duvalLayersP1"
+                    :key="`duval-p1-${index}`"
+                    :src="layer"
+                    class="duval-layer-image"
+                    alt="Duval Pentágono 1"
+                  />
+                </div>
+                <ul class="duval-reference-list">
+                  <li v-for="(item, index) in duvalReferences.P1" :key="`duval-ref-p1-${index}`">
+                    <span class="duval-reference-dot" :style="{ backgroundColor: item[0] }" aria-hidden="true"></span>
+                    <span>{{ item[1] }}</span>
+                  </li>
+                </ul>
+              </article>
+
+              <article class="duval-diagram-card">
+                <div class="duval-image-frame">
+                  <img
+                    v-for="(layer, index) in duvalLayersP2"
+                    :key="`duval-p2-${index}`"
+                    :src="layer"
+                    class="duval-layer-image"
+                    alt="Duval Pentágono 2"
+                  />
+                </div>
+                <ul class="duval-reference-list">
+                  <li v-for="(item, index) in duvalReferences.P2" :key="`duval-ref-p2-${index}`">
+                    <span class="duval-reference-dot" :style="{ backgroundColor: item[0] }" aria-hidden="true"></span>
+                    <span>{{ item[1] }}</span>
+                  </li>
+                </ul>
+              </article>
+            </div>
+          </div>
         </article>
       </section>
 
@@ -4519,7 +4903,7 @@ watch([activeTab, selectedId], async () => {
                       :disabled="treatmentVisibleColumnIds.length === 1 && treatmentVisibleColumnIds.includes(column.id)"
                       @change="toggleTreatmentColumn(column.id)"
                     />
-                    <span>{{ column.label }}</span>
+                    <span :title="chemicalTooltipFromText(column.label) || undefined" v-html="formatChemicalHtml(column.label)"></span>
                   </label>
                 </div>
               </div>
@@ -4531,7 +4915,7 @@ watch([activeTab, selectedId], async () => {
               <thead>
                 <tr>
                   <th v-for="column in treatmentVisibleColumns" :key="column.id" class="text-center">
-                    {{ column.label }}
+                    <span :title="chemicalTooltipFromText(column.label) || undefined" v-html="formatChemicalHtml(column.label)"></span>
                   </th>
                   <th class="text-center">Tratamento</th>
                 </tr>
@@ -4561,179 +4945,6 @@ watch([activeTab, selectedId], async () => {
         </article>
       </section>
 
-      <section v-else-if="activeTab === 'Duval'" class="panel table-panel">
-        <article class="tile tile-wide duval-screen">
-          <nav class="duval-tabs">
-            <button
-              type="button"
-              class="duval-tab-btn"
-              :class="{ active: duvalViewTab === 'triangulos' }"
-              @click="duvalViewTab = 'triangulos'"
-            >
-              Triângulos Duval
-            </button>
-            <button
-              type="button"
-              class="duval-tab-btn"
-              :class="{ active: duvalViewTab === 'pentagonos' }"
-              @click="duvalViewTab = 'pentagonos'"
-            >
-              Pentágonos Duval
-            </button>
-          </nav>
-
-          <div v-if="duvalViewTab === 'triangulos'" class="duval-diagram-grid duval-diagram-grid-triangles">
-            <article class="duval-diagram-card">
-              <div class="duval-image-frame">
-                <img
-                  v-for="(layer, index) in duvalLayersD1"
-                  :key="`duval-d1-${index}`"
-                  :src="layer"
-                  class="duval-layer-image"
-                  alt="Duval Triângulo 1"
-                />
-              </div>
-              <ul class="duval-reference-list">
-                <li v-for="(item, index) in duvalReferences.D1" :key="`duval-ref-d1-${index}`">
-                  <span class="duval-reference-dot" :style="{ backgroundColor: item[0] }" aria-hidden="true"></span>
-                  <span>{{ item[1] }}</span>
-                </li>
-              </ul>
-            </article>
-
-            <article class="duval-diagram-card">
-              <div class="duval-image-frame">
-                <img
-                  v-for="(layer, index) in duvalLayersD4"
-                  :key="`duval-d4-${index}`"
-                  :src="layer"
-                  class="duval-layer-image"
-                  alt="Duval Triângulo 4"
-                />
-              </div>
-              <ul class="duval-reference-list">
-                <li v-for="(item, index) in duvalReferences.D4" :key="`duval-ref-d4-${index}`">
-                  <span class="duval-reference-dot" :style="{ backgroundColor: item[0] }" aria-hidden="true"></span>
-                  <span>{{ item[1] }}</span>
-                </li>
-              </ul>
-            </article>
-
-            <article class="duval-diagram-card">
-              <div class="duval-image-frame">
-                <img
-                  v-for="(layer, index) in duvalLayersD5"
-                  :key="`duval-d5-${index}`"
-                  :src="layer"
-                  class="duval-layer-image"
-                  alt="Duval Triângulo 5"
-                />
-              </div>
-              <ul class="duval-reference-list">
-                <li v-for="(item, index) in duvalReferences.D5" :key="`duval-ref-d5-${index}`">
-                  <span class="duval-reference-dot" :style="{ backgroundColor: item[0] }" aria-hidden="true"></span>
-                  <span>{{ item[1] }}</span>
-                </li>
-              </ul>
-            </article>
-          </div>
-
-          <div v-else class="duval-diagram-grid duval-diagram-grid-pentagons">
-            <article class="duval-diagram-card">
-              <div class="duval-image-frame">
-                <img
-                  v-for="(layer, index) in duvalLayersP1"
-                  :key="`duval-p1-${index}`"
-                  :src="layer"
-                  class="duval-layer-image"
-                  alt="Duval Pentágono 1"
-                />
-              </div>
-              <ul class="duval-reference-list">
-                <li v-for="(item, index) in duvalReferences.P1" :key="`duval-ref-p1-${index}`">
-                  <span class="duval-reference-dot" :style="{ backgroundColor: item[0] }" aria-hidden="true"></span>
-                  <span>{{ item[1] }}</span>
-                </li>
-              </ul>
-            </article>
-
-            <article class="duval-diagram-card">
-              <div class="duval-image-frame">
-                <img
-                  v-for="(layer, index) in duvalLayersP2"
-                  :key="`duval-p2-${index}`"
-                  :src="layer"
-                  class="duval-layer-image"
-                  alt="Duval Pentágono 2"
-                />
-              </div>
-              <ul class="duval-reference-list">
-                <li v-for="(item, index) in duvalReferences.P2" :key="`duval-ref-p2-${index}`">
-                  <span class="duval-reference-dot" :style="{ backgroundColor: item[0] }" aria-hidden="true"></span>
-                  <span>{{ item[1] }}</span>
-                </li>
-              </ul>
-            </article>
-          </div>
-
-          <article class="duval-data-card">
-            <div class="duval-data-head">
-              <h4>Concentração de Gases (ppm)</h4>
-              <button type="button" class="history-action-btn small" @click="clearDuvalSelection">
-                Limpar Seleção
-              </button>
-            </div>
-            <div class="mini-table-wrap">
-              <table class="table compact duval-data-table">
-                <thead>
-                  <tr>
-                    <th class="text-center">Selecionar</th>
-                    <th class="text-center">Análises</th>
-                    <th class="text-center">C2H2</th>
-                    <th class="text-center">C2H4</th>
-                    <th class="text-center">CH4</th>
-                    <th class="text-center">C2H6</th>
-                    <th class="text-center">H2</th>
-                    <th class="text-center">Duval 1</th>
-                    <th class="text-center">Duval 4</th>
-                    <th class="text-center">Duval 5</th>
-                    <th class="text-center">Pentágono 1</th>
-                    <th class="text-center">Pentágono 2</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  <tr v-for="row in duvalAnalysesRows" :key="row.id">
-                    <td class="text-center">
-                      <input
-                        type="checkbox"
-                        :checked="isDuvalManualSelected(row.id)"
-                        @change="handleDuvalSelection(row.id, ($event.target as HTMLInputElement).checked)"
-                      />
-                    </td>
-                    <td class="text-center">{{ row.date }}</td>
-                    <td class="text-center">{{ row.C2H2 }}</td>
-                    <td class="text-center">{{ row.C2H4 }}</td>
-                    <td class="text-center">{{ row.CH4 }}</td>
-                    <td class="text-center">{{ row.C2H6 }}</td>
-                    <td class="text-center">{{ row.H2 }}</td>
-                    <td class="text-center">{{ row.AREA_D1 }}</td>
-                    <td class="text-center">{{ row.AREA_D4 }}</td>
-                    <td class="text-center">{{ row.AREA_D5 }}</td>
-                    <td class="text-center">{{ row.AREA_P1 }}</td>
-                    <td class="text-center">{{ row.AREA_P2 }}</td>
-                  </tr>
-                  <tr v-if="!duvalAnalysesRows.length">
-                    <td class="text-center" colspan="12">
-                      Sem dados de cromatografia para compor a visualização Duval.
-                    </td>
-                  </tr>
-                </tbody>
-              </table>
-            </div>
-          </article>
-        </article>
-      </section>
-
       <section v-else-if="activeTab === 'TR Óleo'" class="panel table-panel">
         <article class="tile tile-wide">
           <h4>TR Óleo</h4>
@@ -4747,9 +4958,9 @@ watch([activeTab, selectedId], async () => {
             <tr>
               <th>Data</th>
               <th>Laboratório</th>
-              <th>H2</th>
-              <th>CH4</th>
-              <th>C2H4</th>
+              <th :title="chemicalTooltipFromText('H₂') || undefined">H₂</th>
+              <th :title="chemicalTooltipFromText('CH₄') || undefined">CH₄</th>
+              <th :title="chemicalTooltipFromText('C₂H₄') || undefined">C₂H₄</th>
               <th>Total Gases</th>
             </tr>
           </thead>
@@ -4886,7 +5097,7 @@ watch([activeTab, selectedId], async () => {
                   :key="`advanced-field-${advancedFilterContext}-${option.value}`"
                   :value="option.value"
                 >
-                  {{ option.label }}
+                  {{ formatChemicalText(option.label) }}
                 </option>
               </select>
               <select v-model="rule.operator" aria-label="Operador">
@@ -4997,7 +5208,7 @@ watch([activeTab, selectedId], async () => {
             </div>
             <div class="analysis-form-grid">
               <label v-for="field in analysisCromFields" :key="`crom-${field.key}`">
-                <span>{{ field.label }}</span>
+                <span :title="chemicalTooltipFromText(field.label) || undefined" v-html="formatChemicalHtml(field.label)"></span>
                 <input
                   v-if="field.key === 'transformador'"
                   v-model="analysisCromForm[field.key]"
@@ -5033,7 +5244,7 @@ watch([activeTab, selectedId], async () => {
             </div>
             <div class="analysis-form-grid">
               <label v-for="field in analysisFisicoFields" :key="`fis-${field.key}`">
-                <span>{{ field.label }}</span>
+                <span :title="chemicalTooltipFromText(field.label) || undefined" v-html="formatChemicalHtml(field.label)"></span>
                 <input
                   v-if="field.key === 'transformador'"
                   v-model="analysisFisicoForm[field.key]"
@@ -5069,7 +5280,7 @@ watch([activeTab, selectedId], async () => {
             </div>
             <div class="analysis-form-grid">
               <label v-for="field in analysisEnsaiosFields" :key="`ens-${field.key}`">
-                <span>{{ field.label }}</span>
+                <span :title="chemicalTooltipFromText(field.label) || undefined" v-html="formatChemicalHtml(field.label)"></span>
                 <input
                   v-if="field.key === 'transformador'"
                   v-model="analysisEnsaiosForm[field.key]"
@@ -5105,7 +5316,7 @@ watch([activeTab, selectedId], async () => {
             </div>
             <div class="analysis-form-grid">
               <label v-for="field in analysisOltcFields" :key="`oltc-${field.key}`">
-                <span>{{ field.label }}</span>
+                <span :title="chemicalTooltipFromText(field.label) || undefined" v-html="formatChemicalHtml(field.label)"></span>
                 <input
                   v-if="field.key === 'transformador'"
                   v-model="analysisOltcForm[field.key]"
@@ -5141,7 +5352,7 @@ watch([activeTab, selectedId], async () => {
             </div>
             <div class="analysis-form-grid">
               <label v-for="field in analysisFisicoOltcFields" :key="`fis-oltc-${field.key}`">
-                <span>{{ field.label }}</span>
+                <span :title="chemicalTooltipFromText(field.label) || undefined" v-html="formatChemicalHtml(field.label)"></span>
                 <input
                   v-if="field.key === 'transformador'"
                   v-model="analysisFisicoOltcForm[field.key]"
@@ -5170,7 +5381,7 @@ watch([activeTab, selectedId], async () => {
               :key="`analysis-transformer-${option.value}`"
               :value="option.value"
             >
-              {{ option.label }}
+              {{ formatChemicalText(option.label) }}
             </option>
           </datalist>
 
@@ -5224,7 +5435,7 @@ watch([activeTab, selectedId], async () => {
               :key="`coletas-transformer-${option.value}`"
               :value="option.value"
             >
-              {{ option.label }}
+              {{ formatChemicalText(option.label) }}
             </option>
           </datalist>
           <div class="modal-actions">
@@ -5690,13 +5901,17 @@ watch([activeTab, selectedId], async () => {
   top: 8px;
   right: 8px;
   z-index: 2;
-  width: 28px;
-  height: 28px;
+  height: 30px;
+  padding: 0 10px;
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
   border-radius: 8px;
   border: 1px solid rgba(15, 23, 42, 0.22);
   background: rgba(255, 255, 255, 0.86);
   color: #0f172a;
-  font-size: 14px;
+  font-size: 12px;
+  font-weight: 700;
   line-height: 1;
   cursor: pointer;
 }
@@ -6024,6 +6239,11 @@ watch([activeTab, selectedId], async () => {
   font-size: 11px;
 }
 
+.table th[title]{
+  position: relative;
+  cursor: help;
+}
+
 .table thead th{
   background: #64748b !important;
 }
@@ -6307,6 +6527,10 @@ watch([activeTab, selectedId], async () => {
   transform: translateY(1px);
 }
 
+.risk-pies-tab-spacer{
+  visibility: hidden;
+}
+
 .risk-pie-card{
   border: 1px solid rgba(15, 23, 42, 0.08);
   border-radius: 10px 10px 0 0;
@@ -6355,6 +6579,38 @@ watch([activeTab, selectedId], async () => {
   color: #123a6d;
 }
 
+.risk-heatmap-title{
+  box-sizing: border-box;
+  padding: 6px 12px 7px;
+  border: 1px solid rgba(15, 23, 42, 0.1);
+  border-bottom: none;
+  border-top-left-radius: 10px;
+  border-top-right-radius: 10px;
+  background: rgba(15, 23, 42, 0.05);
+  font-size: 12px;
+  font-weight: 700;
+  color: rgba(15, 23, 42, 0.78);
+  text-align: center;
+  transform: translateY(1px);
+}
+
+.risk-heatmap-head{
+  display: grid;
+  grid-template-columns: var(--risk-label-col) repeat(5, minmax(0, 1fr));
+  column-gap: var(--risk-col-gap);
+  width: 100%;
+  min-width: 0;
+}
+
+.risk-heatmap-head-label{
+  margin: 0;
+}
+
+.risk-heatmap-head .risk-heatmap-title{
+  grid-column: 2 / span 5;
+  width: 100%;
+}
+
 .risk-heatmap-wrap{
   border: 1px solid rgba(15, 23, 42, 0.1);
   border-top: none;
@@ -6392,30 +6648,6 @@ watch([activeTab, selectedId], async () => {
   color: rgba(15, 23, 42, 0.78);
   background: rgba(255, 255, 255, 0.88);
   cursor: help;
-}
-
-.risk-heatmap-label::after{
-  content: attr(data-tooltip);
-  position: absolute;
-  left: 100%;
-  top: 50%;
-  transform: translate(8px, -50%);
-  background: rgba(15, 23, 42, 0.92);
-  color: #fff;
-  border-radius: 8px;
-  padding: 6px 8px;
-  font-size: 11px;
-  font-weight: 500;
-  line-height: 1.25;
-  white-space: nowrap;
-  opacity: 0;
-  pointer-events: none;
-  transition: opacity 0.15s ease;
-  z-index: 20;
-}
-
-.risk-heatmap-label:hover::after{
-  opacity: 1;
 }
 
 .risk-heatmap-cell{
@@ -7122,6 +7354,7 @@ watch([activeTab, selectedId], async () => {
   justify-content: space-between;
   gap: 10px;
   flex-wrap: wrap;
+  padding: 6px 8px;
 }
 
 .history-analyses-controls{
@@ -7134,6 +7367,55 @@ watch([activeTab, selectedId], async () => {
 
 .history-analyses-subtabs{
   margin-right: 2px;
+}
+
+.history-analyses-subtabs .history-tab-btn{
+  height: 30px;
+  min-height: 30px;
+}
+
+.analysis-mode-switch{
+  --switch-index: 0;
+  position: relative;
+  display: inline-grid;
+  grid-template-columns: repeat(2, minmax(86px, auto));
+  align-items: center;
+  padding: 2px;
+  border-radius: 999px;
+  background: rgba(255, 255, 255, 0.7);
+  border: 1px solid rgba(15, 23, 42, 0.12);
+  overflow: hidden;
+}
+
+.analysis-mode-switch::before{
+  content: '';
+  position: absolute;
+  top: 2px;
+  bottom: 2px;
+  left: 2px;
+  width: calc((100% - 4px) / 2);
+  border-radius: 999px;
+  background: #1e4e8b;
+  transform: translateX(calc(var(--switch-index) * 100%));
+  transition: transform 0.2s ease;
+  box-shadow: 0 4px 10px rgba(30, 78, 139, 0.28);
+}
+
+.analysis-mode-switch-btn{
+  position: relative;
+  z-index: 1;
+  height: 30px;
+  padding: 0 12px;
+  border: 0;
+  background: transparent;
+  font-size: 12px;
+  font-weight: 700;
+  color: rgba(15, 23, 42, 0.62);
+  cursor: pointer;
+}
+
+.analysis-mode-switch-btn.active{
+  color: #ffffff;
 }
 
 .history-analyses-controls-left{
@@ -7162,6 +7444,15 @@ watch([activeTab, selectedId], async () => {
   display: inline-flex;
   align-items: center;
   gap: 6px;
+}
+
+.chem-sub{
+  font-size: 0.82em;
+  font-weight: 700;
+  line-height: 0;
+  vertical-align: baseline;
+  position: relative;
+  bottom: -0.22em;
 }
 
 .history-action-btn.small{
@@ -7544,6 +7835,9 @@ watch([activeTab, selectedId], async () => {
     grid-template-columns: 1fr 1fr;
   }
   .risk-pies-aligned{
+    min-width: 760px;
+  }
+  .risk-heatmap-head{
     min-width: 760px;
   }
   .risk-heatmap-wrap{

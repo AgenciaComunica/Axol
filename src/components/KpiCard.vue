@@ -27,6 +27,66 @@ const open = ref(props.defaultOpen ?? true)
 const bodyRef = ref<HTMLDivElement | null>(null)
 const bodyHeight = ref(0)
 const isOpen = computed(() => open.value)
+const chemicalTokenMeta = {
+  H2O: { display: 'H₂O', html: 'H<sub class="chem-sub">2</sub>O', name: 'Água' },
+  C2H2: { display: 'C₂H₂', html: 'C<sub class="chem-sub">2</sub>H<sub class="chem-sub">2</sub>', name: 'Acetileno' },
+  C2H4: { display: 'C₂H₄', html: 'C<sub class="chem-sub">2</sub>H<sub class="chem-sub">4</sub>', name: 'Etileno' },
+  C2H6: { display: 'C₂H₆', html: 'C<sub class="chem-sub">2</sub>H<sub class="chem-sub">6</sub>', name: 'Etano' },
+  CH4: { display: 'CH₄', html: 'CH<sub class="chem-sub">4</sub>', name: 'Metano' },
+  CO2: { display: 'CO₂', html: 'CO<sub class="chem-sub">2</sub>', name: 'Dióxido de Carbono' },
+  H2: { display: 'H₂', html: 'H<sub class="chem-sub">2</sub>', name: 'Hidrogênio' },
+  O2: { display: 'O₂', html: 'O<sub class="chem-sub">2</sub>', name: 'Oxigênio' },
+  N2: { display: 'N₂', html: 'N<sub class="chem-sub">2</sub>', name: 'Nitrogênio' },
+  CO: { display: 'CO', html: 'CO', name: 'Monóxido de Carbono' },
+} as const
+const chemicalRegex = /\b(C2H6|C2H4|C2H2|CO2|CH4|H2O|H2|O2|N2|CO)\b/g
+const subscriptToAsciiMap: Record<string, string> = {
+  '₀': '0',
+  '₁': '1',
+  '₂': '2',
+  '₃': '3',
+  '₄': '4',
+  '₅': '5',
+  '₆': '6',
+  '₇': '7',
+  '₈': '8',
+  '₉': '9',
+}
+
+function normalizeChemicalText(text: string) {
+  return text.replace(/[₀₁₂₃₄₅₆₇₈₉]/g, (digit) => subscriptToAsciiMap[digit] || digit)
+}
+
+function formatChemicalText(text: string) {
+  if (!text) return text
+  return normalizeChemicalText(text).replace(
+    chemicalRegex,
+    (token) => chemicalTokenMeta[token as keyof typeof chemicalTokenMeta]?.display || token,
+  )
+}
+
+function formatChemicalHtml(text: string) {
+  if (!text) return text
+  return normalizeChemicalText(text).replace(
+    chemicalRegex,
+    (token) => chemicalTokenMeta[token as keyof typeof chemicalTokenMeta]?.html || token,
+  )
+}
+
+function chemicalTooltipFromText(text: string) {
+  if (!text) return ''
+  const matches = new Set<string>()
+  const regex = new RegExp(chemicalRegex.source, 'g')
+  const normalizedText = normalizeChemicalText(text)
+  let match: RegExpExecArray | null
+  while ((match = regex.exec(normalizedText)) !== null) {
+    const token = match[1] as keyof typeof chemicalTokenMeta
+    const meta = chemicalTokenMeta[token]
+    if (meta) matches.add(`${meta.display} - ${meta.name}`)
+  }
+  return Array.from(matches).join(' • ')
+}
+
 const chartSeries = computed(() => props.chart?.segments?.map((segment) => segment.value) || [])
 const chartOptions = computed<ApexOptions>(() => ({
   chart: {
@@ -36,7 +96,7 @@ const chartOptions = computed<ApexOptions>(() => ({
     toolbar: { show: false },
     parentHeightOffset: 0,
   },
-  labels: props.chart?.segments?.map((segment) => segment.label) || [],
+  labels: props.chart?.segments?.map((segment) => formatChemicalText(segment.label)) || [],
   colors: props.chart?.segments?.map((segment) => segment.color) || [],
   dataLabels: { enabled: false },
   legend: { show: false },
@@ -107,7 +167,7 @@ onMounted(() => {
         <div class="chart-legend">
           <div v-for="segment in chart.segments" :key="segment.label" class="chart-legend-item">
             <span class="chart-dot" :style="{ background: segment.color }"></span>
-            <span>{{ segment.label }}</span>
+            <span :title="chemicalTooltipFromText(segment.label) || undefined" v-html="formatChemicalHtml(segment.label)"></span>
             <b>{{ segment.value.toFixed(0) }}%</b>
           </div>
         </div>
@@ -257,10 +317,24 @@ onMounted(() => {
   gap: 6px;
 }
 
+.chart-legend-item span[title]{
+  position: relative;
+  cursor: help;
+}
+
 .chart-legend-item b{
   margin-left: auto;
   font-weight: 600;
   color: rgba(15, 23, 42, 0.9);
+}
+
+.chem-sub{
+  font-size: 0.82em;
+  font-weight: 700;
+  line-height: 0;
+  vertical-align: baseline;
+  position: relative;
+  bottom: -0.22em;
 }
 
 .chart-dot{
