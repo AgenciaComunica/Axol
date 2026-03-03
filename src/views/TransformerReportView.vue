@@ -3412,7 +3412,8 @@ watch([activeTab, selectedId], async () => {
               aria-label="Expandir visualização do transformador"
               @click="openReportViewerModal"
             >
-              ⛶
+              <span aria-hidden="true">⛶</span>
+              <span>Ver em 3D</span>
             </button>
             <iframe
               v-if="reportViewerCardSrc"
@@ -5694,13 +5695,17 @@ watch([activeTab, selectedId], async () => {
   top: 8px;
   right: 8px;
   z-index: 2;
-  width: 28px;
-  height: 28px;
+  height: 30px;
+  padding: 0 10px;
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
   border-radius: 8px;
   border: 1px solid rgba(15, 23, 42, 0.22);
   background: rgba(255, 255, 255, 0.86);
   color: #0f172a;
-  font-size: 14px;
+  font-size: 12px;
+  font-weight: 700;
   line-height: 1;
   cursor: pointer;
 }
