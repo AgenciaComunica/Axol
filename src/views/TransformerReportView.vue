@@ -141,13 +141,13 @@ function getAnalysisDataSerialAliases(): Record<string, string[]> {
   }
 }
 
-const macroTabs = ['TR Óleo', 'TR Rota', 'OLTC'] as const
+const macroTabs = ['TR-Óleo', 'TR-OLTC', 'TR-Rota'] as const
 type MacroTab = (typeof macroTabs)[number]
 
 const tabs = [
   'Avaliação Completa',
   'Histórico de Análises',
-  'IEEE Std C57.104™',
+  'Avaliações Complementares',
   'Coletas',
   'Tratamento de Óleo',
 ] as const
@@ -157,14 +157,18 @@ type ReportTab = (typeof tabs)[number]
 function toValidTab(value: unknown): ReportTab {
   const text = String(value || '')
   if (text === 'Próximas Coletas') return 'Coletas'
-  if (text === 'Avaliação IEEE') return 'IEEE Std C57.104™'
-  if (text === 'Duval') return 'IEEE Std C57.104™'
+  if (text === 'Avaliação IEEE') return 'Avaliações Complementares'
+  if (text === 'IEEE Std C57.104™') return 'Avaliações Complementares'
+  if (text === 'Duval') return 'Avaliações Complementares'
   return (tabs.find((tab) => tab === text) as ReportTab) || 'Avaliação Completa'
 }
 
 function toValidMacro(value: unknown): MacroTab {
   const text = String(value || '')
-  return (macroTabs.find((tab) => tab === text) as MacroTab) || 'TR Óleo'
+  if (text === 'TR Óleo') return 'TR-Óleo'
+  if (text === 'OLTC') return 'TR-OLTC'
+  if (text === 'TR Rota') return 'TR-Rota'
+  return (macroTabs.find((tab) => tab === text) as MacroTab) || 'TR-Óleo'
 }
 
 const activeMacroTab = ref<MacroTab>(toValidMacro(route.query.macro))
@@ -199,21 +203,21 @@ const forcedGlobalTab = computed<ReportTab | null>(() => {
   if (isGlobalColetasView.value) return 'Coletas'
   return null
 })
-const isOltcMacro = computed(() => activeMacroTab.value === 'OLTC')
-const isTrRotaMacro = computed(() => activeMacroTab.value === 'TR Rota')
+const isOltcMacro = computed(() => activeMacroTab.value === 'TR-OLTC')
+const isTrRotaMacro = computed(() => activeMacroTab.value === 'TR-Rota')
 
 const trOleoSubTabs: ReportTab[] = [
   'Avaliação Completa',
   'Histórico de Análises',
-  'IEEE Std C57.104™',
+  'Avaliações Complementares',
   'Coletas',
   'Tratamento de Óleo',
 ]
-const trRotaSubTabs: ReportTab[] = ['Avaliação Completa', 'Histórico de Análises']
+const trRotaSubTabs: ReportTab[] = ['Avaliação Completa', 'Histórico de Análises', 'Coletas']
 const oltcSubTabs: ReportTab[] = [
   'Avaliação Completa',
   'Histórico de Análises',
-  'IEEE Std C57.104™',
+  'Avaliações Complementares',
   'Coletas',
   'Tratamento de Óleo',
 ]
@@ -221,9 +225,9 @@ const oltcSubTabs: ReportTab[] = [
 const activeSubTabs = computed(() => {
   if (isGlobalScopeView.value) return tabs.map((tab) => ({ value: tab, label: tab }))
   const base =
-    activeMacroTab.value === 'TR Óleo'
+    activeMacroTab.value === 'TR-Óleo'
       ? trOleoSubTabs
-      : activeMacroTab.value === 'TR Rota'
+      : activeMacroTab.value === 'TR-Rota'
         ? trRotaSubTabs
         : oltcSubTabs
   return base.map((tab) => ({
@@ -236,10 +240,10 @@ const generateReportWrapRef = ref<HTMLElement | null>(null)
 const generateReportItems = [
   'Avaliação Completa',
   'Histórico de Análises',
-  'IEEE Std C57.104™',
+  'Avaliações Complementares',
   'Coletas',
   'Tratamento de Óleo',
-  'TR Óleo',
+  'TR-Óleo',
 ]
 const generateReportSelected = ref<string[]>([...generateReportItems])
 
@@ -1994,6 +1998,21 @@ const analysisExportOptions = computed(() =>
     : ['Cromatografia', 'Físico Químico', 'Ensaios Especiais']
 )
 
+const hasAnalysisColumnChanges = computed(() => {
+  if (analysisRecentTab.value === 'oltc') {
+    if (oltcAnalysisVisibleColumnIds.value.length !== oltcAnalysisColumnDefaults.length) return true
+    return oltcAnalysisVisibleColumnIds.value.some((id) => !oltcAnalysisColumnDefaults.includes(id))
+  }
+  if (analysisVisibleColumnIds.value.length !== analysisColumnDefaults.length) return true
+  return analysisVisibleColumnIds.value.some((id) => !analysisColumnDefaults.includes(id))
+})
+
+const hasAnalysisFilterChanges = computed(() =>
+  !!analysisSearchQuery.value.trim()
+  || advancedFilterApplied.value.analises
+  || hasAnalysisColumnChanges.value
+)
+
 function isActiveAnalysisColumnChecked(columnId: string) {
   return analysisRecentTab.value === 'oltc'
     ? oltcAnalysisVisibleColumnIds.value.includes(columnId)
@@ -2018,6 +2037,17 @@ function toggleAnalysisColumnsMenu() {
   analysisExportMenuOpen.value = false
   generateReportMenuOpen.value = false
   analysisColumnsMenuOpen.value = !analysisColumnsMenuOpen.value
+}
+
+function resetAnalysisFilters() {
+  analysisSearchQuery.value = ''
+  clearAdvancedFilter('analises')
+  if (analysisRecentTab.value === 'oltc') {
+    oltcAnalysisVisibleColumnIds.value = [...oltcAnalysisColumnDefaults]
+  } else {
+    analysisVisibleColumnIds.value = [...analysisColumnDefaults]
+  }
+  analysisColumnsMenuOpen.value = false
 }
 
 function closeAnalysisColumnsOnOutsideClick(event: MouseEvent) {
@@ -3010,6 +3040,20 @@ const coletasFilteredRows = computed(() => {
   return periodFiltered.filter((row) => matchesAdvancedFilterContext('coletas', row as Record<string, unknown>))
 })
 
+const hasColetasFilterChanges = computed(() =>
+  !!coletasFilterQuarter.value
+  || !!coletasFilterMonth.value
+  || !!coletasFilterYear.value
+  || advancedFilterApplied.value.coletas
+)
+
+function resetColetasFilters() {
+  coletasFilterQuarter.value = ''
+  coletasFilterMonth.value = ''
+  coletasFilterYear.value = ''
+  clearAdvancedFilter('coletas')
+}
+
 const treatmentColumns: TreatmentColumn[] = [
   { id: 'serial', label: 'No. Série', defaultVisible: true },
   { id: 'statusTratamento', label: 'Status Tratamento', defaultVisible: true },
@@ -3172,6 +3216,24 @@ const treatmentFilteredRows = computed(() => {
   return queryFiltered.filter((row) => matchesAdvancedFilterContext('tratamento', row as Record<string, unknown>))
 })
 
+const hasTreatmentColumnChanges = computed(() => {
+  if (treatmentVisibleColumnIds.value.length !== treatmentColumnDefaults.length) return true
+  return treatmentVisibleColumnIds.value.some((id) => !treatmentColumnDefaults.includes(id))
+})
+
+const hasTreatmentFilterChanges = computed(() =>
+  !!treatmentSearch.value.trim()
+  || advancedFilterApplied.value.tratamento
+  || hasTreatmentColumnChanges.value
+)
+
+function resetTreatmentFilters() {
+  treatmentSearch.value = ''
+  clearAdvancedFilter('tratamento')
+  treatmentVisibleColumnIds.value = [...treatmentColumnDefaults]
+  treatmentColumnsMenuOpen.value = false
+}
+
 const specialTests = computed(() => {
   if (!selectedTransformer.value) return []
   const failure = selectedTransformer.value.failureMode
@@ -3228,7 +3290,7 @@ function riskLevelColor(index: number, probability: number) {
   return `rgba(${r}, ${g}, ${b}, ${alpha.toFixed(3)})`
 }
 
-const riskParameterDefs = [
+const riskParameterDefsOleo = [
   { key: 'TEMP', label: 'TEMP', tooltip: 'TEMP - Temperatura' },
   { key: 'H2O', label: 'H₂O', tooltip: 'H₂O - Água' },
   { key: 'TIF', label: 'TIF', tooltip: 'TIF - Tensão Interfacial' },
@@ -3244,7 +3306,27 @@ const riskParameterDefs = [
   { key: 'C2H4', label: 'C₂H₄', tooltip: 'C₂H₄ - Etileno' },
   { key: 'C2H2', label: 'C₂H₂', tooltip: 'C₂H₂ - Acetileno' },
 ]
-const demoRiskHeatmapByLabel: Record<string, number[]> = {
+const riskParameterDefsTrRota = [
+  { key: 'TEMP_OLEO', label: 'TEMP-Óleo', tooltip: 'TEMP- Óleo - Temperatura do óleo' },
+  { key: 'TEMP_ENROL', label: 'TEMP-Enrol', tooltip: 'TEMP - Enrol - Temperatura do enrolamento' },
+  { key: 'TEMP_AMB', label: 'TEMP-Amb', tooltip: 'TEMP-Amb - Temperatura ambiente' },
+  { key: 'LIMP', label: 'LIMP', tooltip: 'LIMP - Limpeza do transformador' },
+  { key: 'CORR', label: 'CORR', tooltip: 'CORR - Corrosão no transformador' },
+  { key: 'PINT', label: 'PINT', tooltip: 'PINT - Pintura do transformador' },
+  { key: 'ATERR', label: 'ATERR', tooltip: 'ATERR - Aterramento do transformador' },
+  { key: 'VAZA', label: 'VAZA', tooltip: 'VAZA - Vazamentos no transformador' },
+  { key: 'CONSER', label: 'CONSER', tooltip: 'CONSER - Conservador de óleo' },
+  { key: 'NIVEL_OLEO', label: 'Nível de óleo', tooltip: 'Nível de óleo isolante' },
+  { key: 'SECA', label: 'SECA', tooltip: 'SECA - Secador de ar' },
+  { key: 'CONEX_AT', label: 'CONEX-AT', tooltip: 'CONEX-AT - Conexões AT' },
+  { key: 'CONEX_BT', label: 'CONEX-BT', tooltip: 'CONEX-BT - Conexões BT' },
+  { key: 'TEMP_PRIM', label: 'TEMP-Prim', tooltip: 'TEMP-Prim - Temperaturas do primário' },
+  { key: 'TEMP_SEC', label: 'TEMP-Sec', tooltip: 'TEMP-Sec - Temperaturas do secundário' },
+  { key: 'VIBRA', label: 'VIBRA', tooltip: 'VIBRA - Vibração da parte ativa' },
+]
+const riskParameterDefs = computed(() => (isTrRotaMacro.value ? riskParameterDefsTrRota : riskParameterDefsOleo))
+
+const demoRiskHeatmapByLabelOleo: Record<string, number[]> = {
   TEMP: [0, 1, 0, 0, 0],
   H2O: [0, 12, 0, 0, 0],
   TIF: [0, 0, 35, 0, 0],
@@ -3260,6 +3342,24 @@ const demoRiskHeatmapByLabel: Record<string, number[]> = {
   C2H4: [0, 0, 14, 0, 0],
   C2H2: [0, 0, 0, 0, 8],
 }
+const demoRiskHeatmapByLabelTrRota: Record<string, number[]> = {
+  TEMP_OLEO: [0, 0, 24, 0, 0],
+  TEMP_ENROL: [0, 0, 18, 0, 0],
+  TEMP_AMB: [0, 0, 6, 0, 0],
+  LIMP: [0, 15, 0, 0, 0],
+  CORR: [0, 0, 0, 20, 0],
+  PINT: [0, 10, 0, 0, 0],
+  ATERR: [0, 0, 0, 22, 0],
+  VAZA: [0, 0, 0, 0, 28],
+  CONSER: [0, 0, 12, 0, 0],
+  NIVEL_OLEO: [0, 0, 0, 16, 0],
+  SECA: [0, 8, 0, 0, 0],
+  CONEX_AT: [0, 0, 0, 0, 36],
+  CONEX_BT: [0, 0, 0, 18, 0],
+  TEMP_PRIM: [0, 0, 14, 0, 0],
+  TEMP_SEC: [0, 0, 0, 12, 0],
+  VIBRA: [0, 0, 0, 26, 0],
+}
 
 const riskHeatmapRows = computed(() => {
   const trafo = selectedTransformer.value
@@ -3267,25 +3367,27 @@ const riskHeatmapRows = computed(() => {
   const serial = String(trafo?.serial || '').toUpperCase()
   const tag = String(trafo?.tag || '').toUpperCase()
   const is9701A01Demo = id.includes('9701-A01') || (tag === '9701' && serial === 'A01')
+  const activeDefs = riskParameterDefs.value
+  const activeDemoValues = isTrRotaMacro.value ? demoRiskHeatmapByLabelTrRota : demoRiskHeatmapByLabelOleo
 
   if (is9701A01Demo) {
-    return riskParameterDefs.map((parameter) => ({
+    return activeDefs.map((parameter) => ({
       key: parameter.key,
       label: parameter.label,
       tooltip: parameter.tooltip,
-      values: demoRiskHeatmapByLabel[parameter.key] || [0, 0, 0, 0, 0],
+      values: activeDemoValues[parameter.key] || [0, 0, 0, 0, 0],
     }))
   }
 
   const levels = riskProbabilities.value.map((value, index) => {
     const scale = Math.max(value, 8)
-    return riskParameterDefs.map((_, labelIndex) => {
+    return activeDefs.map((_, labelIndex) => {
       const ratio = 0.15 + ((labelIndex % 7) * 0.06) + index * 0.015
       return Number((scale * ratio).toFixed(2))
     })
   })
 
-  return riskParameterDefs.map((parameter, rowIndex) => ({
+  return activeDefs.map((parameter, rowIndex) => ({
     key: parameter.key,
     label: parameter.label,
     tooltip: parameter.tooltip,
@@ -3785,6 +3887,14 @@ watch([activeTab, selectedId], async () => {
                   </section>
                 </div>
               </div>
+              <button
+                v-if="hasAnalysisFilterChanges"
+                type="button"
+                class="history-columns-trigger history-clear-filter-btn"
+                @click="resetAnalysisFilters"
+              >
+                <span>Limpar Filtro</span>
+              </button>
               <div
                 v-if="showAnalysisRecentSubtabs"
                 class="analysis-mode-switch"
@@ -4024,7 +4134,13 @@ watch([activeTab, selectedId], async () => {
             </button>
           </div>
           <template v-if="evalCardOpen['3']">
-          <p><b>Guia IEEE Std C57.104™- 2008 para a Interpretação de gases dissolvidos no óleo isolante dos transformadores</b></p>
+          <p>
+            <b>{{
+              isTrRotaMacro
+                ? 'Plano de inspeção de rota (Inspeção de campo)'
+                : 'Guia IEEE Std C57.104™- 2008 para a Interpretação de gases dissolvidos no óleo isolante dos transformadores'
+            }}</b>
+          </p>
           <p>
             Foi desenvolvido um critério de quatro níveis para classificar os riscos aos transformadores, quando não há
             histórico de gás dissolvido, para operação contínua em vários níveis de gás combustível. O critério usa
@@ -4174,8 +4290,8 @@ watch([activeTab, selectedId], async () => {
           </div>
 
           <div class="risk-heatmap-head">
-            <div class="risk-pies-tab risk-heatmap-head-label" aria-label="Parâmetros">Parâmetros</div>
-            <div class="risk-heatmap-title">Estado de Risco</div>
+            <div class="risk-pies-tab risk-heatmap-head-label" aria-label="Variáveis">Variáveis</div>
+            <div class="risk-heatmap-title">Variáveis fora das faixas estabelecidas</div>
           </div>
           <div class="risk-heatmap-wrap">
             <div class="risk-heatmap-grid">
@@ -4194,10 +4310,13 @@ watch([activeTab, selectedId], async () => {
           </div>
           </div>
 
-          <p><b>Variáveis do óleo que levaram o transformador aos estados de risco:</b></p>
+          <p><b>{{ isTrRotaMacro ? 'Variáveis de inspeção de campo que levaram o transformador aos estados de risco:' : 'Variáveis do óleo que levaram o transformador aos estados de risco:' }}</b></p>
           <p>
-            A matrix acima apresenta as variáveis do óleo isolante que levaram o transformador a operar nas regiões
-            de risco (N1 a N5).
+            {{
+              isTrRotaMacro
+                ? 'A matriz acima apresenta as variáveis de inspeção de campo que levaram o transformador a operar nas regiões de risco (N1 a N5).'
+                : 'A matrix acima apresenta as variáveis do óleo isolante que levaram o transformador a operar nas regiões de risco (N1 a N5).'
+            }}
           </p>
 
           <div class="risk-heatmap-legend">
@@ -4265,7 +4384,7 @@ watch([activeTab, selectedId], async () => {
         </article>
       </section>
 
-      <section v-else-if="activeTab === 'IEEE Std C57.104™'" class="panel table-panel history-panel">
+      <section v-else-if="activeTab === 'Avaliações Complementares'" class="panel table-panel history-panel">
         <article class="history-block-card">
           <button
             type="button"
@@ -4643,6 +4762,14 @@ watch([activeTab, selectedId], async () => {
                 <span v-else class="advanced-filter-pill-icon" aria-hidden="true">⚙</span>
                 <span>Filtro avançado</span>
               </button>
+              <button
+                v-if="hasColetasFilterChanges"
+                type="button"
+                class="history-columns-trigger history-clear-filter-btn"
+                @click="resetColetasFilters"
+              >
+                <span>Limpar Filtro</span>
+              </button>
               <div class="history-tabs-inline history-tabs-main">
                 <button
                   type="button"
@@ -4907,6 +5034,14 @@ watch([activeTab, selectedId], async () => {
                   </label>
                 </div>
               </div>
+              <button
+                v-if="hasTreatmentFilterChanges"
+                type="button"
+                class="history-columns-trigger history-clear-filter-btn"
+                @click="resetTreatmentFilters"
+              >
+                <span>Limpar Filtro</span>
+              </button>
             </div>
           </div>
 

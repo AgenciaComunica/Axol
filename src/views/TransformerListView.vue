@@ -360,12 +360,14 @@ const filteredTransformers = computed(() => {
 
 const orderedTransformers = computed(() => {
   return [...filteredTransformers.value].sort((a, b) => {
-    const aRank = statusRank[normalizeStatus(a.status)] || 0
-    const bRank = statusRank[normalizeStatus(b.status)] || 0
+    const primary = compareBySortField(a, b, sortField.value, sortDirection.value)
+    if (primary !== 0) return primary
+    const aRank = statusSortRank(a.status)
+    const bRank = statusSortRank(b.status)
     if (aRank !== bRank) return bRank - aRank
     const aId = `${a.tag || ''}${a.serial || a.id}`
     const bId = `${b.tag || ''}${b.serial || b.id}`
-    return aId.localeCompare(bId)
+    return aId.localeCompare(bId, 'pt-BR', { sensitivity: 'base' })
   })
 })
 
@@ -389,6 +391,10 @@ const pageRangeLabel = computed(() => {
 const openActionId = ref<string | null>(null)
 const exportMenuOpen = ref(false)
 const exportWrapRef = ref<HTMLElement | null>(null)
+const sortMenuOpen = ref(false)
+const sortWrapRef = ref<HTMLElement | null>(null)
+const sortField = ref('status')
+const sortDirection = ref<'asc' | 'desc'>('desc')
 const columnsMenuOpen = ref(false)
 const columnsWrapRef = ref<HTMLElement | null>(null)
 const newMenuOpen = ref(false)
@@ -426,6 +432,8 @@ type AdvancedFilterRule = {
   connector: AdvancedConnector
 }
 
+type SortFieldKind = 'text' | 'number' | 'status'
+
 const columns: ColumnConfig[] = [
   { id: 'serial', label: 'No. Série', align: 'center', defaultVisible: true },
   { id: 'substation', label: 'Subestacao', align: 'center', defaultVisible: true },
@@ -456,6 +464,126 @@ const columns: ColumnConfig[] = [
   { id: 'location', label: 'Localização', align: 'center', defaultVisible: true },
   { id: 'actions', label: 'Ações', align: 'center', defaultVisible: true },
 ]
+
+function statusSortRank(raw?: string) {
+  if (!raw) return 0
+  const value = raw
+    .toLowerCase()
+    .normalize('NFD')
+    .replace(/[\u0300-\u036f]/g, '')
+  if (value.includes('crit')) return 3
+  if (value.includes('alert') || value.includes('manut') || value.includes('reclass')) return 2
+  if (value.includes('pend')) return 1
+  return 0
+}
+
+function parseNumericValue(value: unknown) {
+  if (typeof value === 'number') return Number.isFinite(value) ? value : null
+  const source = String(value ?? '').trim()
+  if (!source || source === '-') return null
+  const normalized = source
+    .replace(/\s+/g, '')
+    .replace(/\.(?=\d{3}(?:\D|$))/g, '')
+    .replace(',', '.')
+  const match = normalized.match(/-?\d+(?:\.\d+)?/)
+  if (!match) return null
+  const parsed = Number(match[0])
+  return Number.isFinite(parsed) ? parsed : null
+}
+
+function getSortFieldKind(field: string): SortFieldKind {
+  if (field === 'status' || field === 'statusTr' || field === 'analystStatus') return 'status'
+  if (
+    [
+      'n1',
+      'n2',
+      'n3',
+      'n4',
+      'n5',
+      'year',
+      'primaryVoltage',
+      'secondaryVoltage',
+      'power',
+      'voltage',
+      'volume',
+      'load',
+      'latitude',
+      'longitude',
+    ].includes(field)
+  ) {
+    return 'number'
+  }
+  return 'text'
+}
+
+function getSortFieldRawValue(item: TableTransformer, field: string): unknown {
+  if (field === 'status') return item.status
+  if (field === 'n1') return item.levels?.N1
+  if (field === 'n2') return item.levels?.N2
+  if (field === 'n3') return item.levels?.N3
+  if (field === 'n4') return item.levels?.N4
+  if (field === 'n5') return item.levels?.N5
+  return (item as unknown as Record<string, unknown>)[field]
+}
+
+function compareNullable(
+  direction: 'asc' | 'desc',
+  a: unknown,
+  b: unknown,
+  compare: (x: unknown, y: unknown) => number
+) {
+  const aEmpty = a === null || a === undefined || String(a).trim() === '' || String(a).trim() === '-'
+  const bEmpty = b === null || b === undefined || String(b).trim() === '' || String(b).trim() === '-'
+  if (aEmpty && bEmpty) return 0
+  if (aEmpty) return 1
+  if (bEmpty) return -1
+  const base = compare(a, b)
+  return direction === 'asc' ? base : -base
+}
+
+function compareBySortField(itemA: TableTransformer, itemB: TableTransformer, field: string, direction: 'asc' | 'desc') {
+  const kind = getSortFieldKind(field)
+  const valueA = getSortFieldRawValue(itemA, field)
+  const valueB = getSortFieldRawValue(itemB, field)
+  if (kind === 'status') {
+    return compareNullable(direction, valueA, valueB, (a, b) => statusSortRank(String(a)) - statusSortRank(String(b)))
+  }
+  if (kind === 'number') {
+    const numA = parseNumericValue(valueA)
+    const numB = parseNumericValue(valueB)
+    return compareNullable(direction, numA, numB, (a, b) => Number(a) - Number(b))
+  }
+  return compareNullable(direction, valueA, valueB, (a, b) =>
+    String(a).localeCompare(String(b), 'pt-BR', { sensitivity: 'base', numeric: true })
+  )
+}
+
+const sortableFieldOptions = computed(() => {
+  const options = columns
+    .filter((column) => column.id !== 'actions')
+    .map((column) => ({ value: column.id, label: column.label }))
+  return [{ value: 'status', label: 'Status Geral' }, ...options]
+})
+
+const sortDirectionOptions = computed(() => {
+  const kind = getSortFieldKind(sortField.value)
+  if (kind === 'status') {
+    return [
+      { value: 'desc', label: 'Pior → Melhor' },
+      { value: 'asc', label: 'Melhor → Pior' },
+    ] as const
+  }
+  if (kind === 'number') {
+    return [
+      { value: 'desc', label: 'Maior → Menor' },
+      { value: 'asc', label: 'Menor → Maior' },
+    ] as const
+  }
+  return [
+    { value: 'asc', label: 'A → Z' },
+    { value: 'desc', label: 'Z → A' },
+  ] as const
+})
 
 function getColumnsStorageUserKey() {
   if (typeof window === 'undefined') return 'anon'
@@ -498,6 +626,20 @@ const visibleColumnIds = ref<string[]>(
 )
 
 const visibleColumns = computed(() => columns.filter((col) => visibleColumnIds.value.includes(col.id)))
+
+function hasColumnSelectionChanges() {
+  if (visibleColumnIds.value.length !== transformerColumnDefaults.length) return true
+  return visibleColumnIds.value.some((columnId) => !transformerColumnDefaults.includes(columnId))
+}
+
+const hasCustomSorting = computed(() => sortField.value !== 'status' || sortDirection.value !== 'desc')
+const hasFilterChanges = computed(
+  () =>
+    hasColumnSelectionChanges()
+    || advancedFilterApplied.value
+    || hasCustomSorting.value
+    || !!searchQuery.value.trim()
+)
 
 const advancedFilterModalOpen = ref(false)
 const advancedFilterApplied = ref(false)
@@ -597,6 +739,7 @@ function openReportSection(transformer: TableTransformer, section: string) {
 function closeActions() {
   openActionId.value = null
   exportMenuOpen.value = false
+  sortMenuOpen.value = false
   columnsMenuOpen.value = false
   newMenuOpen.value = false
 }
@@ -619,6 +762,10 @@ function toggleNewMenu() {
 
 function toggleColumnsMenu() {
   columnsMenuOpen.value = !columnsMenuOpen.value
+}
+
+function toggleSortMenu() {
+  sortMenuOpen.value = !sortMenuOpen.value
 }
 
 function openAdvancedFilterModal() {
@@ -673,6 +820,16 @@ function toggleColumn(id: string) {
     return
   }
   visibleColumnIds.value = [...visibleColumnIds.value, id]
+}
+
+function resetTableFilters() {
+  searchQuery.value = ''
+  visibleColumnIds.value = [...transformerColumnDefaults]
+  clearAdvancedFilter()
+  sortField.value = 'status'
+  sortDirection.value = 'desc'
+  sortMenuOpen.value = false
+  columnsMenuOpen.value = false
 }
 
 function openLocation(transformer: TableTransformer) {
@@ -732,6 +889,10 @@ function handleDocumentClick(event: MouseEvent) {
   if (columnsWrap && !columnsWrap.contains(target)) {
     columnsMenuOpen.value = false
   }
+  const sortWrap = sortWrapRef.value
+  if (sortWrap && !sortWrap.contains(target)) {
+    sortMenuOpen.value = false
+  }
   const newWrap = newWrapRef.value
   if (newWrap && !newWrap.contains(target)) {
     newMenuOpen.value = false
@@ -757,6 +918,15 @@ watch(searchQuery, () => {
 
 watch(rowsPerPage, () => {
   page.value = 1
+})
+
+watch([sortField, sortDirection], () => {
+  page.value = 1
+})
+
+watch(sortField, (value) => {
+  const kind = getSortFieldKind(value)
+  sortDirection.value = kind === 'text' ? 'asc' : 'desc'
 })
 
 watch(
@@ -789,6 +959,38 @@ watch(
               placeholder="Pesquisar transformador..."
               aria-label="Pesquisar transformador"
             />
+          </div>
+          <div class="sort-wrap" ref="sortWrapRef">
+            <button type="button" class="ghost-btn sort-btn" @click="toggleSortMenu">
+              Ordenado por
+            </button>
+            <div v-if="sortMenuOpen" class="sort-menu">
+              <label class="sort-option">
+                <span>Coluna</span>
+                <select v-model="sortField" aria-label="Ordenar por coluna">
+                  <option
+                    v-for="option in sortableFieldOptions"
+                    :key="`sort-field-${option.value}`"
+                    :value="option.value"
+                  >
+                    {{ option.label }}
+                  </option>
+                </select>
+              </label>
+              <label class="sort-option">
+                <span>Ordem</span>
+                <div class="sort-radio-group" role="radiogroup" aria-label="Iniciar por">
+                  <label
+                    v-for="option in sortDirectionOptions"
+                    :key="`sort-direction-${option.value}`"
+                    class="sort-radio-option"
+                  >
+                    <input v-model="sortDirection" type="radio" name="sort-direction" :value="option.value" />
+                    <span>{{ option.label }}</span>
+                  </label>
+                </div>
+              </label>
+            </div>
           </div>
           <button
             type="button"
@@ -826,6 +1028,9 @@ watch(
               </label>
             </div>
           </div>
+          <button v-if="hasFilterChanges" type="button" class="ghost-btn clear-filter-btn" @click="resetTableFilters">
+            Limpar Filtro
+          </button>
         </div>
         <div class="table-head-right">
           <div class="export-wrap" ref="newWrapRef">
@@ -1191,6 +1396,84 @@ watch(
   background: rgba(255,255,255,0.8);
 }
 
+.sort-wrap{
+  position: relative;
+}
+
+.sort-btn{
+  padding: 8px 16px;
+  font-size: 13px;
+  box-shadow: 0 6px 14px rgba(15, 23, 42, 0.08);
+  border: 1px solid rgba(15, 23, 42, 0.12);
+  border-radius: 999px;
+  color: rgba(15, 23, 42, 0.8);
+  cursor: pointer;
+  background: rgba(255,255,255,0.7);
+}
+
+.sort-menu{
+  position: absolute;
+  left: 0;
+  top: 40px;
+  background: #fff;
+  border: 1px solid rgba(15, 23, 42, 0.12);
+  border-radius: 12px;
+  box-shadow: 0 16px 32px rgba(15, 23, 42, 0.12);
+  display: grid;
+  gap: 10px;
+  padding: 12px;
+  z-index: 7;
+  min-width: 280px;
+}
+
+.sort-option{
+  display: grid;
+  gap: 6px;
+  font-size: 12px;
+  color: rgba(15, 23, 42, 0.72);
+}
+
+.sort-option select{
+  height: 34px;
+  border-radius: 10px;
+  border: 1px solid rgba(15, 23, 42, 0.14);
+  background: rgba(255, 255, 255, 0.95);
+  padding: 0 10px;
+  font-size: 13px;
+  color: rgba(15, 23, 42, 0.86);
+}
+
+.sort-radio-group{
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  flex-wrap: wrap;
+  padding: 8px 10px;
+  border: 1px solid rgba(15, 23, 42, 0.1);
+  border-radius: 10px;
+  background: rgba(248, 250, 252, 0.7);
+}
+
+.sort-radio-title{
+  font-size: 12px;
+  font-weight: 600;
+  color: rgba(15, 23, 42, 0.75);
+}
+
+.sort-radio-option{
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  margin: 0;
+  font-size: 13px;
+  color: rgba(15, 23, 42, 0.86);
+  cursor: pointer;
+}
+
+.sort-radio-option input{
+  accent-color: #1e4e8b;
+}
+
 .columns-wrap{
   position: relative;
 }
@@ -1218,6 +1501,21 @@ watch(
   display: inline-flex;
   align-items: center;
   gap: 8px;
+}
+
+.clear-filter-btn{
+  padding: 8px 14px;
+  font-size: 13px;
+  border-radius: 999px;
+  border: 1px solid rgba(15, 23, 42, 0.12);
+  background: rgba(255,255,255,0.7);
+  color: rgba(15, 23, 42, 0.8);
+  box-shadow: 0 6px 14px rgba(15, 23, 42, 0.08);
+  cursor: pointer;
+}
+
+.clear-filter-btn:hover{
+  background: rgba(255,255,255,0.92);
 }
 
 .advanced-filter-pill .advanced-filter-icon{
