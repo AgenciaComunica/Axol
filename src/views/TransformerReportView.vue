@@ -3887,14 +3887,6 @@ watch([activeTab, selectedId], async () => {
                   </section>
                 </div>
               </div>
-              <button
-                v-if="hasAnalysisFilterChanges"
-                type="button"
-                class="history-columns-trigger history-clear-filter-btn"
-                @click="resetAnalysisFilters"
-              >
-                <span>Limpar Filtro</span>
-              </button>
               <div
                 v-if="showAnalysisRecentSubtabs"
                 class="analysis-mode-switch"
@@ -3961,6 +3953,14 @@ watch([activeTab, selectedId], async () => {
                   Físico Químico
                 </button>
               </div>
+              <button
+                v-if="hasAnalysisFilterChanges"
+                type="button"
+                class="history-columns-trigger history-clear-filter-btn"
+                @click="resetAnalysisFilters"
+              >
+                <span>Limpar Filtro</span>
+              </button>
             </div>
             <div class="history-analyses-actions">
               <div ref="analysisNewWrapRef" class="history-actions-wrap">
@@ -4762,14 +4762,6 @@ watch([activeTab, selectedId], async () => {
                 <span v-else class="advanced-filter-pill-icon" aria-hidden="true">⚙</span>
                 <span>Filtro avançado</span>
               </button>
-              <button
-                v-if="hasColetasFilterChanges"
-                type="button"
-                class="history-columns-trigger history-clear-filter-btn"
-                @click="resetColetasFilters"
-              >
-                <span>Limpar Filtro</span>
-              </button>
               <div class="history-tabs-inline history-tabs-main">
                 <button
                   type="button"
@@ -4788,6 +4780,14 @@ watch([activeTab, selectedId], async () => {
                   Realizadas
                 </button>
               </div>
+              <button
+                v-if="hasColetasFilterChanges"
+                type="button"
+                class="history-columns-trigger history-clear-filter-btn"
+                @click="resetColetasFilters"
+              >
+                <span>Limpar Filtro</span>
+              </button>
             </div>
             <div class="history-analyses-actions">
               <div ref="coletasNewWrapRef" class="history-actions-wrap">
