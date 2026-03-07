@@ -1726,6 +1726,10 @@ const advancedFilterRulesApplied = ref<Record<AdvancedFilterContext, AdvancedFil
 })
 const analysisColumnsMenuOpen = ref(false)
 const analysisColumnsWrapRef = ref<HTMLElement | null>(null)
+const analysisSortMenuOpen = ref(false)
+const analysisSortWrapRef = ref<HTMLElement | null>(null)
+const analysisSortField = ref('dataColeta')
+const analysisSortDirection = ref<'asc' | 'desc'>('desc')
 const analysisNewMenuOpen = ref(false)
 const analysisExportMenuOpen = ref(false)
 const analysisNewWrapRef = ref<HTMLElement | null>(null)
@@ -1744,6 +1748,10 @@ const coletasExportSelected = ref<string[]>([])
 const coletasFilterQuarter = ref('')
 const coletasFilterMonth = ref('')
 const coletasFilterYear = ref('')
+const coletasSortMenuOpen = ref(false)
+const coletasSortWrapRef = ref<HTMLElement | null>(null)
+const coletasSortField = ref('dataColeta')
+const coletasSortDirection = ref<'asc' | 'desc'>('desc')
 const coletasModalOpen = ref(false)
 const coletasModalForm = ref({
   transformador: '',
@@ -1758,8 +1766,12 @@ const manualColetas = ref<ColetaRow[]>([])
 const treatmentSearch = ref('')
 const treatmentColumnsMenuOpen = ref(false)
 const treatmentNewMenuOpen = ref(false)
+const treatmentSortMenuOpen = ref(false)
 const treatmentColumnsWrapRef = ref<HTMLElement | null>(null)
+const treatmentSortWrapRef = ref<HTMLElement | null>(null)
 const treatmentNewWrapRef = ref<HTMLElement | null>(null)
+const treatmentSortField = ref('dataColeta')
+const treatmentSortDirection = ref<'asc' | 'desc'>('desc')
 const treatmentDetailsModalOpen = ref(false)
 const treatmentCreateModalOpen = ref(false)
 const manualTreatmentRows = ref<TreatmentRow[]>([])
@@ -1998,6 +2010,53 @@ const analysisExportOptions = computed(() =>
     : ['Cromatografia', 'Físico Químico', 'Ensaios Especiais']
 )
 
+const analysisSortFieldOptions = computed(() => {
+  const options = activeAnalysisVisibleColumns.value.map((column) => ({ value: column.id, label: column.label }))
+  return [{ value: 'dataColeta', label: 'Data Coleta' }, ...options.filter((item) => item.value !== 'dataColeta')]
+})
+
+const analysisSortKind = computed<TableSortKind>(() => {
+  if (['dataColeta', 'dataIntervencao'].includes(analysisSortField.value)) return 'date'
+  if (
+    [
+      'hidrogenio',
+      'oxigenio',
+      'nitrogenio',
+      'monCarbono',
+      'metano',
+      'dioxCarbono',
+      'etileno',
+      'etano',
+      'acetileno',
+      'totalGases',
+      'tgcb',
+      'teorAgua',
+      'rd',
+      'tif',
+      'indNeutr',
+      'densRel',
+      'fPot25',
+      'fPot90',
+      'fPot100',
+      'ensaioDbpc',
+      'teorDbds',
+      'teorPassivador',
+      'enxofreElementar',
+      'gpFabrica',
+      'gp',
+      'furanos',
+      'rdLimite',
+      'teorAguaLimite',
+    ].includes(analysisSortField.value)
+  ) {
+    return 'number'
+  }
+  if (['statusOltc', 'enxofreCorrosivo'].includes(analysisSortField.value)) return 'status'
+  return 'text'
+})
+
+const analysisSortDirectionOptions = computed(() => sortDirectionOptionsByKind(analysisSortKind.value))
+
 const hasAnalysisColumnChanges = computed(() => {
   if (analysisRecentTab.value === 'oltc') {
     if (oltcAnalysisVisibleColumnIds.value.length !== oltcAnalysisColumnDefaults.length) return true
@@ -2011,6 +2070,8 @@ const hasAnalysisFilterChanges = computed(() =>
   !!analysisSearchQuery.value.trim()
   || advancedFilterApplied.value.analises
   || hasAnalysisColumnChanges.value
+  || analysisSortField.value !== 'dataColeta'
+  || analysisSortDirection.value !== 'desc'
 )
 
 function isActiveAnalysisColumnChecked(columnId: string) {
@@ -2036,7 +2097,16 @@ function toggleAnalysisColumnsMenu() {
   analysisNewMenuOpen.value = false
   analysisExportMenuOpen.value = false
   generateReportMenuOpen.value = false
+  analysisSortMenuOpen.value = false
   analysisColumnsMenuOpen.value = !analysisColumnsMenuOpen.value
+}
+
+function toggleAnalysisSortMenu() {
+  analysisColumnsMenuOpen.value = false
+  analysisNewMenuOpen.value = false
+  analysisExportMenuOpen.value = false
+  generateReportMenuOpen.value = false
+  analysisSortMenuOpen.value = !analysisSortMenuOpen.value
 }
 
 function resetAnalysisFilters() {
@@ -2047,7 +2117,10 @@ function resetAnalysisFilters() {
   } else {
     analysisVisibleColumnIds.value = [...analysisColumnDefaults]
   }
+  analysisSortField.value = 'dataColeta'
+  analysisSortDirection.value = 'desc'
   analysisColumnsMenuOpen.value = false
+  analysisSortMenuOpen.value = false
 }
 
 function closeAnalysisColumnsOnOutsideClick(event: MouseEvent) {
@@ -2057,16 +2130,20 @@ function closeAnalysisColumnsOnOutsideClick(event: MouseEvent) {
     transformerPickerWrapRef.value?.contains(target) ||
     generateReportWrapRef.value?.contains(target) ||
     analysisColumnsWrapRef.value?.contains(target) ||
+    analysisSortWrapRef.value?.contains(target) ||
     analysisNewWrapRef.value?.contains(target) ||
     analysisExportWrapRef.value?.contains(target) ||
     coletasNewWrapRef.value?.contains(target) ||
     coletasExportWrapRef.value?.contains(target) ||
+    coletasSortWrapRef.value?.contains(target) ||
     treatmentColumnsWrapRef.value?.contains(target) ||
+    treatmentSortWrapRef.value?.contains(target) ||
     treatmentNewWrapRef.value?.contains(target)
   ) {
     return
   }
   analysisColumnsMenuOpen.value = false
+  analysisSortMenuOpen.value = false
   generateReportMenuOpen.value = false
   analysisNewMenuOpen.value = false
   analysisExportMenuOpen.value = false
@@ -2102,24 +2179,34 @@ function downloadGeneratedReport() {
 
 function toggleAnalysisNewMenu() {
   analysisColumnsMenuOpen.value = false
+  analysisSortMenuOpen.value = false
   analysisExportMenuOpen.value = false
   analysisNewMenuOpen.value = !analysisNewMenuOpen.value
 }
 
 function toggleAnalysisExportMenu() {
   analysisColumnsMenuOpen.value = false
+  analysisSortMenuOpen.value = false
   analysisNewMenuOpen.value = false
   analysisExportMenuOpen.value = !analysisExportMenuOpen.value
 }
 
 function toggleColetasNewMenu() {
   coletasExportMenuOpen.value = false
+  coletasSortMenuOpen.value = false
   coletasNewMenuOpen.value = !coletasNewMenuOpen.value
 }
 
 function toggleColetasExportMenu() {
   coletasNewMenuOpen.value = false
+  coletasSortMenuOpen.value = false
   coletasExportMenuOpen.value = !coletasExportMenuOpen.value
+}
+
+function toggleColetasSortMenu() {
+  coletasNewMenuOpen.value = false
+  coletasExportMenuOpen.value = false
+  coletasSortMenuOpen.value = !coletasSortMenuOpen.value
 }
 
 function toggleColetasExportOption(option: string) {
@@ -2137,7 +2224,14 @@ function downloadColetasExports() {
 
 function toggleTreatmentColumnsMenu() {
   treatmentNewMenuOpen.value = false
+  treatmentSortMenuOpen.value = false
   treatmentColumnsMenuOpen.value = !treatmentColumnsMenuOpen.value
+}
+
+function toggleTreatmentSortMenu() {
+  treatmentNewMenuOpen.value = false
+  treatmentColumnsMenuOpen.value = false
+  treatmentSortMenuOpen.value = !treatmentSortMenuOpen.value
 }
 
 function toggleTreatmentColumn(columnId: string) {
@@ -2155,6 +2249,7 @@ function downloadTreatmentExports() {
 
 function toggleTreatmentNewMenu() {
   treatmentColumnsMenuOpen.value = false
+  treatmentSortMenuOpen.value = false
   treatmentNewMenuOpen.value = !treatmentNewMenuOpen.value
 }
 
@@ -2726,6 +2821,110 @@ function clearAdvancedFilterDraft() {
   advancedFilterRulesDraft.value[context] = [createAdvancedRule(context)]
 }
 
+type TableSortKind = 'text' | 'number' | 'status' | 'date'
+
+function parseSortNumber(value: unknown) {
+  if (typeof value === 'number') return Number.isFinite(value) ? value : null
+  const source = String(value ?? '').trim()
+  if (!source || source === '-') return null
+  const normalized = source
+    .replace(/\s+/g, '')
+    .replace(/\.(?=\d{3}(?:\D|$))/g, '')
+    .replace(',', '.')
+  const match = normalized.match(/-?\d+(?:\.\d+)?/)
+  if (!match) return null
+  const parsed = Number(match[0])
+  return Number.isFinite(parsed) ? parsed : null
+}
+
+function parseSortBrDate(value: unknown) {
+  const source = String(value ?? '').trim()
+  if (!source || source === '-') return null
+  const parts = source.split('/')
+  if (parts.length !== 3) return null
+  const [day, month, year] = parts
+  const parsed = new Date(`${year}-${month}-${day}T00:00:00`)
+  return Number.isFinite(parsed.getTime()) ? parsed.getTime() : null
+}
+
+function sortStatusRank(value: unknown) {
+  const text = String(value ?? '').toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g, '')
+  if (text.includes('crit')) return 5
+  if (text.includes('atras')) return 4
+  if (text.includes('alert')) return 3
+  if (text.includes('pend')) return 2
+  if (text.includes('colet') || text.includes('conclu')) return 1
+  if (text.includes('normal')) return 0
+  return 0
+}
+
+function compareNullableValues(
+  a: unknown,
+  b: unknown,
+  direction: 'asc' | 'desc',
+  compare: (left: unknown, right: unknown) => number
+) {
+  const aEmpty = a === null || a === undefined || String(a).trim() === '' || String(a).trim() === '-'
+  const bEmpty = b === null || b === undefined || String(b).trim() === '' || String(b).trim() === '-'
+  if (aEmpty && bEmpty) return 0
+  if (aEmpty) return 1
+  if (bEmpty) return -1
+  const base = compare(a, b)
+  return direction === 'asc' ? base : -base
+}
+
+function sortDirectionOptionsByKind(kind: TableSortKind) {
+  if (kind === 'status') {
+    return [
+      { value: 'desc', label: 'Pior → Melhor' },
+      { value: 'asc', label: 'Melhor → Pior' },
+    ] as const
+  }
+  if (kind === 'number') {
+    return [
+      { value: 'desc', label: 'Maior → Menor' },
+      { value: 'asc', label: 'Menor → Maior' },
+    ] as const
+  }
+  if (kind === 'date') {
+    return [
+      { value: 'desc', label: 'Mais recente → Mais antiga' },
+      { value: 'asc', label: 'Mais antiga → Mais recente' },
+    ] as const
+  }
+  return [
+    { value: 'asc', label: 'A → Z' },
+    { value: 'desc', label: 'Z → A' },
+  ] as const
+}
+
+function compareRowsByField(
+  rowA: Record<string, unknown>,
+  rowB: Record<string, unknown>,
+  field: string,
+  direction: 'asc' | 'desc',
+  kind: TableSortKind
+) {
+  const valueA = rowA[field]
+  const valueB = rowB[field]
+  if (kind === 'status') {
+    return compareNullableValues(valueA, valueB, direction, (left, right) => sortStatusRank(left) - sortStatusRank(right))
+  }
+  if (kind === 'number') {
+    const numA = parseSortNumber(valueA)
+    const numB = parseSortNumber(valueB)
+    return compareNullableValues(numA, numB, direction, (left, right) => Number(left) - Number(right))
+  }
+  if (kind === 'date') {
+    const dateA = parseSortBrDate(valueA)
+    const dateB = parseSortBrDate(valueB)
+    return compareNullableValues(dateA, dateB, direction, (left, right) => Number(left) - Number(right))
+  }
+  return compareNullableValues(valueA, valueB, direction, (left, right) =>
+    String(left).localeCompare(String(right), 'pt-BR', { sensitivity: 'base', numeric: true })
+  )
+}
+
 const filteredDefaultAnalysisRows = computed(() => {
   const typeFiltered = unifiedAnalysisRows.value.filter((row) => row.tipo === currentDefaultAnalysisType.value.rowTipo)
   const query = analysisSearchQuery.value.trim().toLowerCase()
@@ -2751,19 +2950,33 @@ const filteredUnifiedAnalysisRows = computed(() =>
   analysisRecentTab.value === 'oltc' ? filteredOltcAnalysisRows.value : filteredDefaultAnalysisRows.value
 )
 
+const sortedUnifiedAnalysisRows = computed(() => {
+  return [...filteredUnifiedAnalysisRows.value].sort((a, b) => {
+    const primary = compareRowsByField(
+      a as unknown as Record<string, unknown>,
+      b as unknown as Record<string, unknown>,
+      analysisSortField.value,
+      analysisSortDirection.value,
+      analysisSortKind.value
+    )
+    if (primary !== 0) return primary
+    return String(a.id).localeCompare(String(b.id))
+  })
+})
+
 const analysisTotalPages = computed(() => {
-  const total = filteredUnifiedAnalysisRows.value.length
+  const total = sortedUnifiedAnalysisRows.value.length
   return Math.max(1, Math.ceil(total / analysisRowsPerPage.value))
 })
 
 const paginatedUnifiedAnalysisRows = computed(() => {
   const start = (analysisPage.value - 1) * analysisRowsPerPage.value
   const end = start + analysisRowsPerPage.value
-  return filteredUnifiedAnalysisRows.value.slice(start, end)
+  return sortedUnifiedAnalysisRows.value.slice(start, end)
 })
 
 const analysisRangeLabel = computed(() => {
-  const total = filteredUnifiedAnalysisRows.value.length
+  const total = sortedUnifiedAnalysisRows.value.length
   if (!total) return '0 de 0'
   const start = (analysisPage.value - 1) * analysisRowsPerPage.value + 1
   const end = Math.min(analysisPage.value * analysisRowsPerPage.value, total)
@@ -2775,6 +2988,10 @@ watch(analysisRowsPerPage, () => {
 })
 
 watch(analysisSearchQuery, () => {
+  analysisPage.value = 1
+})
+
+watch([analysisSortField, analysisSortDirection], () => {
   analysisPage.value = 1
 })
 
@@ -2842,8 +3059,18 @@ watch(selectedId, () => {
   analysisPage.value = 1
 })
 
+watch(analysisSortFieldOptions, (options) => {
+  if (!options.some((option) => option.value === analysisSortField.value)) {
+    analysisSortField.value = 'dataColeta'
+  }
+})
+
+watch(analysisSortKind, (kind) => {
+  analysisSortDirection.value = kind === 'text' ? 'asc' : 'desc'
+})
+
 watch(
-  () => filteredUnifiedAnalysisRows.value.length,
+  () => sortedUnifiedAnalysisRows.value.length,
   () => {
     if (analysisPage.value > analysisTotalPages.value) {
       analysisPage.value = analysisTotalPages.value
@@ -3040,11 +3267,48 @@ const coletasFilteredRows = computed(() => {
   return periodFiltered.filter((row) => matchesAdvancedFilterContext('coletas', row as Record<string, unknown>))
 })
 
+const coletasSortFieldOptions = [
+  { value: 'transformador', label: 'Transformador' },
+  { value: 'status', label: 'Status' },
+  { value: 'statusUltimaColeta', label: 'Status Última Coleta' },
+  { value: 'dataColeta', label: 'Data Coleta' },
+  { value: 'subestacao', label: 'Subestação' },
+  { value: 'unidade', label: 'Unidade' },
+  { value: 'tag', label: 'Tag' },
+  { value: 'tipoAnalise', label: 'Tipo de Análise' },
+  { value: 'faltamDias', label: 'Faltam Dia(s)' },
+]
+
+const coletasSortKind = computed<TableSortKind>(() => {
+  if (coletasSortField.value === 'dataColeta') return 'date'
+  if (coletasSortField.value === 'faltamDias') return 'number'
+  if (coletasSortField.value === 'status' || coletasSortField.value === 'statusUltimaColeta') return 'status'
+  return 'text'
+})
+
+const coletasSortDirectionOptions = computed(() => sortDirectionOptionsByKind(coletasSortKind.value))
+
+const coletasSortedRows = computed(() => {
+  return [...coletasFilteredRows.value].sort((a, b) => {
+    const primary = compareRowsByField(
+      a as unknown as Record<string, unknown>,
+      b as unknown as Record<string, unknown>,
+      coletasSortField.value,
+      coletasSortDirection.value,
+      coletasSortKind.value
+    )
+    if (primary !== 0) return primary
+    return String(a.id).localeCompare(String(b.id))
+  })
+})
+
 const hasColetasFilterChanges = computed(() =>
   !!coletasFilterQuarter.value
   || !!coletasFilterMonth.value
   || !!coletasFilterYear.value
   || advancedFilterApplied.value.coletas
+  || coletasSortField.value !== 'dataColeta'
+  || coletasSortDirection.value !== 'desc'
 )
 
 function resetColetasFilters() {
@@ -3052,6 +3316,9 @@ function resetColetasFilters() {
   coletasFilterMonth.value = ''
   coletasFilterYear.value = ''
   clearAdvancedFilter('coletas')
+  coletasSortField.value = 'dataColeta'
+  coletasSortDirection.value = 'desc'
+  coletasSortMenuOpen.value = false
 }
 
 const treatmentColumns: TreatmentColumn[] = [
@@ -3094,6 +3361,53 @@ const treatmentVisibleColumnIds = ref<string[]>(
 const treatmentVisibleColumns = computed(() =>
   treatmentColumns.filter((column) => treatmentVisibleColumnIds.value.includes(column.id))
 )
+
+const treatmentSortFieldOptions = computed(() => {
+  const options = treatmentVisibleColumns.value.map((column) => ({ value: column.id, label: column.label }))
+  return [{ value: 'dataColeta', label: 'Data Coleta' }, ...options.filter((item) => item.value !== 'dataColeta')]
+})
+
+const treatmentSortKind = computed<TableSortKind>(() => {
+  if (treatmentSortField.value === 'dataColeta') return 'date'
+  if (
+    [
+      'tensaoPrimaria',
+      'tensaoSecundaria',
+      'potencia',
+      'anoFabricacao',
+      'volumeLitros',
+      'carregamento',
+      'rd',
+      'teorAgua',
+      'tensaoInterfacial',
+      'indNeutralizacao',
+      'fator25',
+      'fator90',
+      'fator100',
+      'dbpc',
+    ].includes(treatmentSortField.value)
+  ) {
+    return 'number'
+  }
+  if (treatmentSortField.value === 'statusTratamento') return 'status'
+  return 'text'
+})
+
+const treatmentSortDirectionOptions = computed(() => sortDirectionOptionsByKind(treatmentSortKind.value))
+
+watch(coletasSortKind, (kind) => {
+  coletasSortDirection.value = kind === 'text' ? 'asc' : 'desc'
+})
+
+watch(treatmentSortFieldOptions, (options) => {
+  if (!options.some((option) => option.value === treatmentSortField.value)) {
+    treatmentSortField.value = 'dataColeta'
+  }
+})
+
+watch(treatmentSortKind, (kind) => {
+  treatmentSortDirection.value = kind === 'text' ? 'asc' : 'desc'
+})
 
 watch(
   treatmentVisibleColumnIds,
@@ -3216,6 +3530,20 @@ const treatmentFilteredRows = computed(() => {
   return queryFiltered.filter((row) => matchesAdvancedFilterContext('tratamento', row as Record<string, unknown>))
 })
 
+const treatmentSortedRows = computed(() => {
+  return [...treatmentFilteredRows.value].sort((a, b) => {
+    const primary = compareRowsByField(
+      a as unknown as Record<string, unknown>,
+      b as unknown as Record<string, unknown>,
+      treatmentSortField.value,
+      treatmentSortDirection.value,
+      treatmentSortKind.value
+    )
+    if (primary !== 0) return primary
+    return String(a.id).localeCompare(String(b.id))
+  })
+})
+
 const hasTreatmentColumnChanges = computed(() => {
   if (treatmentVisibleColumnIds.value.length !== treatmentColumnDefaults.length) return true
   return treatmentVisibleColumnIds.value.some((id) => !treatmentColumnDefaults.includes(id))
@@ -3225,13 +3553,18 @@ const hasTreatmentFilterChanges = computed(() =>
   !!treatmentSearch.value.trim()
   || advancedFilterApplied.value.tratamento
   || hasTreatmentColumnChanges.value
+  || treatmentSortField.value !== 'dataColeta'
+  || treatmentSortDirection.value !== 'desc'
 )
 
 function resetTreatmentFilters() {
   treatmentSearch.value = ''
   clearAdvancedFilter('tratamento')
   treatmentVisibleColumnIds.value = [...treatmentColumnDefaults]
+  treatmentSortField.value = 'dataColeta'
+  treatmentSortDirection.value = 'desc'
   treatmentColumnsMenuOpen.value = false
+  treatmentSortMenuOpen.value = false
 }
 
 const specialTests = computed(() => {
@@ -3489,16 +3822,19 @@ watch([activeTab, selectedId], async () => {
   generateReportMenuOpen.value = false
   if (activeTab.value !== 'Histórico de Análises') {
     analysisColumnsMenuOpen.value = false
+    analysisSortMenuOpen.value = false
     analysisNewMenuOpen.value = false
     analysisExportMenuOpen.value = false
   }
   if (activeTab.value !== 'Coletas') {
+    coletasSortMenuOpen.value = false
     coletasNewMenuOpen.value = false
     coletasExportMenuOpen.value = false
     coletasModalOpen.value = false
   }
   if (activeTab.value !== 'Tratamento de Óleo') {
     treatmentColumnsMenuOpen.value = false
+    treatmentSortMenuOpen.value = false
     treatmentNewMenuOpen.value = false
     treatmentDetailsModalOpen.value = false
     treatmentCreateModalOpen.value = false
@@ -3840,6 +4176,34 @@ watch([activeTab, selectedId], async () => {
                   aria-label="Pesquisar análises recentes"
                 />
               </label>
+              <div ref="analysisSortWrapRef" class="history-columns-picker">
+                <button type="button" class="history-columns-trigger" @click="toggleAnalysisSortMenu">
+                  <span>Ordenado por</span>
+                  <i aria-hidden="true">▾</i>
+                </button>
+                <div v-if="analysisSortMenuOpen" class="history-columns-menu history-sort-menu">
+                  <label class="history-sort-row">
+                    <span>Coluna</span>
+                    <select v-model="analysisSortField" aria-label="Ordenar análises por coluna">
+                      <option v-for="option in analysisSortFieldOptions" :key="`analysis-sort-field-${option.value}`" :value="option.value">
+                        {{ formatChemicalText(option.label) }}
+                      </option>
+                    </select>
+                  </label>
+                  <label class="history-sort-row">
+                    <span>Ordem</span>
+                    <select v-model="analysisSortDirection" aria-label="Ordenar análises direção">
+                      <option
+                        v-for="option in analysisSortDirectionOptions"
+                        :key="`analysis-sort-direction-${option.value}`"
+                        :value="option.value"
+                      >
+                        {{ option.label }}
+                      </option>
+                    </select>
+                  </label>
+                </div>
+              </div>
               <button
                 v-if="isGlobalAnalisesView"
                 type="button"
@@ -4762,6 +5126,34 @@ watch([activeTab, selectedId], async () => {
                 <span v-else class="advanced-filter-pill-icon" aria-hidden="true">⚙</span>
                 <span>Filtro avançado</span>
               </button>
+              <div ref="coletasSortWrapRef" class="history-columns-picker">
+                <button type="button" class="history-columns-trigger" @click="toggleColetasSortMenu">
+                  <span>Ordenado por</span>
+                  <i aria-hidden="true">▾</i>
+                </button>
+                <div v-if="coletasSortMenuOpen" class="history-columns-menu history-sort-menu">
+                  <label class="history-sort-row">
+                    <span>Coluna</span>
+                    <select v-model="coletasSortField" aria-label="Ordenar coletas por coluna">
+                      <option v-for="option in coletasSortFieldOptions" :key="`coletas-sort-field-${option.value}`" :value="option.value">
+                        {{ option.label }}
+                      </option>
+                    </select>
+                  </label>
+                  <label class="history-sort-row">
+                    <span>Ordem</span>
+                    <select v-model="coletasSortDirection" aria-label="Ordenar coletas direção">
+                      <option
+                        v-for="option in coletasSortDirectionOptions"
+                        :key="`coletas-sort-direction-${option.value}`"
+                        :value="option.value"
+                      >
+                        {{ option.label }}
+                      </option>
+                    </select>
+                  </label>
+                </div>
+              </div>
               <div class="history-tabs-inline history-tabs-main">
                 <button
                   type="button"
@@ -4848,7 +5240,7 @@ watch([activeTab, selectedId], async () => {
               </thead>
               <tbody>
                 <tr
-                  v-for="row in coletasFilteredRows"
+                  v-for="row in coletasSortedRows"
                   :key="row.id"
                 >
                   <td class="text-center">{{ row.transformador }}</td>
@@ -4863,7 +5255,7 @@ watch([activeTab, selectedId], async () => {
                   <td class="text-center">{{ row.tipoAnalise }}</td>
                   <td class="text-center">{{ row.status === 'Coletado' ? '-' : row.faltamDias }}</td>
                 </tr>
-                <tr v-if="!coletasFilteredRows.length">
+                <tr v-if="!coletasSortedRows.length">
                   <td class="text-center" colspan="9">Sem coletas cadastradas.</td>
                 </tr>
               </tbody>
@@ -5017,6 +5409,34 @@ watch([activeTab, selectedId], async () => {
                 <span v-else class="advanced-filter-pill-icon" aria-hidden="true">⚙</span>
                 <span>Filtro avançado</span>
               </button>
+              <div ref="treatmentSortWrapRef" class="history-columns-picker">
+                <button type="button" class="history-columns-trigger" @click="toggleTreatmentSortMenu">
+                  <span>Ordenado por</span>
+                  <i aria-hidden="true">▾</i>
+                </button>
+                <div v-if="treatmentSortMenuOpen" class="history-columns-menu history-sort-menu">
+                  <label class="history-sort-row">
+                    <span>Coluna</span>
+                    <select v-model="treatmentSortField" aria-label="Ordenar tratamentos por coluna">
+                      <option v-for="option in treatmentSortFieldOptions" :key="`treatment-sort-field-${option.value}`" :value="option.value">
+                        {{ formatChemicalText(option.label) }}
+                      </option>
+                    </select>
+                  </label>
+                  <label class="history-sort-row">
+                    <span>Ordem</span>
+                    <select v-model="treatmentSortDirection" aria-label="Ordenar tratamentos direção">
+                      <option
+                        v-for="option in treatmentSortDirectionOptions"
+                        :key="`treatment-sort-direction-${option.value}`"
+                        :value="option.value"
+                      >
+                        {{ option.label }}
+                      </option>
+                    </select>
+                  </label>
+                </div>
+              </div>
               <div ref="treatmentColumnsWrapRef" class="history-columns-picker">
                 <button type="button" class="history-columns-trigger" @click="toggleTreatmentColumnsMenu">
                   <span>Colunas</span>
@@ -5056,7 +5476,7 @@ watch([activeTab, selectedId], async () => {
                 </tr>
               </thead>
               <tbody>
-                <tr v-for="row in treatmentFilteredRows" :key="row.id">
+                <tr v-for="row in treatmentSortedRows" :key="row.id">
                   <td v-for="column in treatmentVisibleColumns" :key="`${row.id}-${column.id}`" class="text-center">
                     {{ row[column.id] }}
                   </td>
@@ -5069,7 +5489,7 @@ watch([activeTab, selectedId], async () => {
                     </div>
                   </td>
                 </tr>
-                <tr v-if="!treatmentFilteredRows.length">
+                <tr v-if="!treatmentSortedRows.length">
                   <td class="text-center" :colspan="treatmentVisibleColumns.length + 1">
                     Sem dados de tratamento para o filtro informado.
                   </td>
@@ -7816,6 +8236,29 @@ watch([activeTab, selectedId], async () => {
   background: #fff;
   box-shadow: 0 10px 24px rgba(15, 23, 42, 0.14);
   padding: 8px;
+}
+
+.history-sort-menu{
+  width: min(320px, 90vw);
+  display: grid;
+  gap: 8px;
+}
+
+.history-sort-row{
+  display: grid;
+  gap: 6px;
+  font-size: 12px;
+  color: rgba(15, 23, 42, 0.78);
+}
+
+.history-sort-row select{
+  height: 34px;
+  border-radius: 10px;
+  border: 1px solid rgba(15, 23, 42, 0.14);
+  background: #fff;
+  color: #0f172a;
+  font-size: 12px;
+  padding: 0 10px;
 }
 
 .history-columns-group + .history-columns-group{
