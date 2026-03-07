@@ -1423,7 +1423,7 @@ watch(
   gap: 10px;
   padding: 12px;
   z-index: 7;
-  min-width: 280px;
+  min-width: 340px;
 }
 
 .sort-option{
@@ -1465,6 +1465,7 @@ watch(
   align-items: center;
   gap: 8px;
   margin: 0;
+  white-space: nowrap;
   font-size: 13px;
   color: rgba(15, 23, 42, 0.86);
   cursor: pointer;
