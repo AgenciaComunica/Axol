@@ -75,6 +75,11 @@ type TreatmentColumn = {
   label: string
   defaultVisible: boolean
 }
+type RouteAnalysisColumn = {
+  id: string
+  label: string
+  defaultVisible: boolean
+}
 type TreatmentRow = Record<string, string | number> & { id: string }
 type TransformerPickerGroup = {
   substation: string
@@ -1325,6 +1330,31 @@ type RouteInspectionSnapshot = {
   date: string
   sections: RouteInspectionSection[]
 }
+type RouteInspectionSource = {
+  id: string
+  transformerId: string
+  date: string
+  tecnico?: string
+  operando: string
+  acesso: string
+  identificacao: string
+  tempOleo: number
+  tempEnrolamento: number
+  tempAmbiente: number
+  limpeza: string
+  corrosao: string
+  pintura: string
+  aterramento: string
+  vazamentos: string
+  conservador: string
+  nivelOleo: string
+  secador: string
+  conexoesAt: string
+  conexoesBt: string
+  tempPrimario: string
+  tempSecundario: string
+  vibracao: string
+}
 
 const historyActiveTab = ref<HistoryChartTab>('cromatografia')
 const historyCromDisplayMode = ref<HistoryDisplayMode>('base')
@@ -1593,7 +1623,7 @@ function buildHistoryChartData(rows: BaseRow[], defs: HistorySeriesDef[], mode: 
 const routeFieldToneOptions = {
   operando: [
     { label: 'Sim', tone: 'good' },
-    { label: 'Não', tone: 'neutral' },
+    { label: 'Não', tone: 'bad' },
   ],
   acesso: [
     { label: 'Bom', tone: 'good' },
@@ -1767,6 +1797,14 @@ function buildRouteInspectionSections(snapshot: Record<string, string | number>)
   ] satisfies RouteInspectionSection[]
 }
 
+function createRouteInspectionSnapshot(source: RouteInspectionSource): RouteInspectionSnapshot {
+  return {
+    id: source.id,
+    date: source.date,
+    sections: buildRouteInspectionSections(source),
+  }
+}
+
 const routeInspectionSnapshots = computed<RouteInspectionSnapshot[]>(() => {
   if (!selectedTransformer.value) return []
   const latestFisico = fisicoRows.value[0] || {}
@@ -1781,7 +1819,7 @@ const routeInspectionSnapshots = computed<RouteInspectionSnapshot[]>(() => {
   const sourceDates = (dates.length ? dates : fallbackDates).slice(0, 4)
   const severitySeed = normalizeStatus(selectedTransformer.value.statusAnalyst || selectedTransformer.value.status)
   const baseSeverity = severitySeed === 'Crítico' ? 2 : severitySeed === 'Alerta' ? 1 : 0
-  return sourceDates.map((date, index) => {
+  const generatedSources = sourceDates.map((date, index) => {
     const severity = Math.min(2, Math.max(0, baseSeverity + (index === 0 ? 0 : index > 2 ? -1 : 0)))
     const oilTemp = Number(latestFisico.TEMP_OLEO ?? latestFisico.TEMP_AMOSTRA ?? 58) || 58
     const windingTemp = Number(latestFisico.TEMP_ENROLAM ?? 67) || 67
@@ -1809,65 +1847,96 @@ const routeInspectionSnapshots = computed<RouteInspectionSnapshot[]>(() => {
     }
     return {
       id: `route-inspection-${date}-${index}`,
+      transformerId: selectedTransformer.value?.id || '',
       date,
-      sections: buildRouteInspectionSections(snapshot),
+      ...snapshot,
     }
   })
+  return [...manualRouteInspectionRows.value.filter((row) => row.transformerId === selectedTransformer.value?.id), ...generatedSources]
+    .sort((a, b) => parseBrDate(b.date) - parseBrDate(a.date))
+    .map((source) => createRouteInspectionSnapshot(source))
 })
 
 const latestRouteInspectionSnapshot = computed(() => routeInspectionSnapshots.value[0] || null)
 
-const routeInspectionChartModel = computed<HistoryChartData>(() => {
-  const snapshots = [...routeInspectionSnapshots.value].reverse()
-  const categories = snapshots.map((item) => item.date)
-  const scoreByKey = new Map<string, number[]>()
-  snapshots.forEach((snapshot) => {
-    snapshot.sections.forEach((section) => {
-      section.fields.forEach((field) => {
-        if (!scoreByKey.has(field.key)) scoreByKey.set(field.key, [])
-        scoreByKey.get(field.key)!.push(field.score)
-      })
-    })
-  })
-  const series = routeFieldSeriesDefs.map((def) => ({
-    name: def.label,
-    data: scoreByKey.get(def.key) || Array.from({ length: categories.length }, () => 0),
-  }))
-  return {
-    max: 3,
-    categories,
-    series,
-    colors: routeFieldSeriesDefs.map((def) => def.color),
-  }
-})
-
 const routeInspectionTableRows = computed(() =>
   routeInspectionSnapshots.value.map((snapshot) => {
     const fieldMap = new Map(snapshot.sections.flatMap((section) => section.fields.map((field) => [field.key, field] as const)))
+    const pick = (key: string) => {
+      const field = fieldMap.get(key)
+      return field?.displayValue || field?.value || '-'
+    }
     return {
       id: snapshot.id,
       dataColeta: snapshot.date,
-      operando: fieldMap.get('operando')?.value || '-',
-      acesso: fieldMap.get('acesso')?.value || '-',
-      identificacao: fieldMap.get('identificacao')?.value || '-',
-      tempOleo: fieldMap.get('tempOleo')?.value || '-',
-      tempEnrolamento: fieldMap.get('tempEnrolamento')?.value || '-',
-      tempAmbiente: fieldMap.get('tempAmbiente')?.value || '-',
-      limpeza: fieldMap.get('limpeza')?.value || '-',
-      corrosao: fieldMap.get('corrosao')?.value || '-',
-      pintura: fieldMap.get('pintura')?.value || '-',
-      aterramento: fieldMap.get('aterramento')?.value || '-',
-      vazamentos: fieldMap.get('vazamentos')?.value || '-',
-      conservador: fieldMap.get('conservador')?.value || '-',
-      nivelOleo: fieldMap.get('nivelOleo')?.value || '-',
-      secador: fieldMap.get('secador')?.value || '-',
-      conexoesAt: fieldMap.get('conexoesAt')?.value || '-',
-      conexoesBt: fieldMap.get('conexoesBt')?.value || '-',
-      tempPrimario: fieldMap.get('tempPrimario')?.value || '-',
-      tempSecundario: fieldMap.get('tempSecundario')?.value || '-',
-      vibracao: fieldMap.get('vibracao')?.value || '-',
+      operando: pick('operando'),
+      acesso: pick('acesso'),
+      identificacao: pick('identificacao'),
+      tempOleo: pick('tempOleo'),
+      tempEnrolamento: pick('tempEnrolamento'),
+      tempAmbiente: pick('tempAmbiente'),
+      limpeza: pick('limpeza'),
+      corrosao: pick('corrosao'),
+      pintura: pick('pintura'),
+      aterramento: pick('aterramento'),
+      vazamentos: pick('vazamentos'),
+      conservador: pick('conservador'),
+      nivelOleo: pick('nivelOleo'),
+      secador: pick('secador'),
+      conexoesAt: pick('conexoesAt'),
+      conexoesBt: pick('conexoesBt'),
+      tempPrimario: pick('tempPrimario'),
+      tempSecundario: pick('tempSecundario'),
+      vibracao: pick('vibracao'),
     }
   })
+)
+
+const filteredRouteInspectionTableRows = computed(() => {
+  const query = routeAnalysisSearchQuery.value.trim().toLowerCase()
+  if (!query) return routeInspectionTableRows.value
+  return routeInspectionTableRows.value.filter((row) =>
+    Object.values(row).some((value) => String(value).toLowerCase().includes(query))
+  )
+})
+
+const routeAnalysisSortFieldOptions = computed(() => {
+  const options = routeAnalysisColumns.map((column) => ({ value: column.id, label: column.label }))
+  return [{ value: 'dataColeta', label: 'Data Coleta' }, ...options.filter((item) => item.value !== 'dataColeta')]
+})
+
+const routeAnalysisSortKind = computed<TableSortKind>(() => {
+  if (routeAnalysisSortField.value === 'dataColeta') return 'date'
+  if (['tempOleo', 'tempEnrolamento', 'tempAmbiente'].includes(routeAnalysisSortField.value)) return 'number'
+  return 'text'
+})
+
+const routeAnalysisSortDirectionOptions = computed(() => sortDirectionOptionsByKind(routeAnalysisSortKind.value))
+
+const sortedRouteInspectionTableRows = computed(() =>
+  [...filteredRouteInspectionTableRows.value].sort((a, b) => {
+    const primary = compareRowsByField(
+      a as unknown as Record<string, unknown>,
+      b as unknown as Record<string, unknown>,
+      routeAnalysisSortField.value,
+      routeAnalysisSortDirection.value,
+      routeAnalysisSortKind.value
+    )
+    if (primary !== 0) return primary
+    return String(a.id).localeCompare(String(b.id))
+  })
+)
+
+const hasRouteAnalysisColumnChanges = computed(() => {
+  if (routeAnalysisVisibleColumnIds.value.length !== routeAnalysisColumnDefaults.length) return true
+  return routeAnalysisVisibleColumnIds.value.some((id) => !routeAnalysisColumnDefaults.includes(id))
+})
+
+const hasRouteAnalysisFilterChanges = computed(() =>
+  !!routeAnalysisSearchQuery.value.trim()
+  || hasRouteAnalysisColumnChanges.value
+  || routeAnalysisSortField.value !== 'dataColeta'
+  || routeAnalysisSortDirection.value !== 'desc'
 )
 
 const historyCromMultiModel = computed(() =>
@@ -1881,7 +1950,6 @@ const historyEnsaiosMultiModel = computed(() =>
 )
 
 const activeHistoryModel = computed(() => {
-  if (isTrRotaMacro.value && !isGlobalAnalisesView.value) return routeInspectionChartModel.value
   if (historyActiveTab.value === 'fisicoquimica') return historyFisicoMultiModel.value
   if (historyActiveTab.value === 'ensaiosespeciais') return historyEnsaiosMultiModel.value
   return historyCromMultiModel.value
@@ -2082,6 +2150,16 @@ const manualTreatmentRows = ref<TreatmentRow[]>([])
 const treatmentLimitsOpen = ref(false)
 const historyConditionsOpen = ref(true)
 const historyAnalysesOpen = ref(true)
+const routeAnalysisSearchQuery = ref('')
+const routeAnalysisColumnsMenuOpen = ref(false)
+const routeAnalysisColumnsWrapRef = ref<HTMLElement | null>(null)
+const routeAnalysisSortMenuOpen = ref(false)
+const routeAnalysisSortWrapRef = ref<HTMLElement | null>(null)
+const routeAnalysisSortField = ref('dataColeta')
+const routeAnalysisSortDirection = ref<'asc' | 'desc'>('desc')
+const routeAnalysisModalOpen = ref(false)
+const routeAnalysisModalStep = ref(0)
+const manualRouteInspectionRows = ref<RouteInspectionSource[]>([])
 const evalCardOpen = ref<Record<'1' | '2' | '3' | '4' | '5', boolean>>({
   '1': true,
   '2': true,
@@ -2106,6 +2184,29 @@ const treatmentForm = ref({
   fator100: '',
   dbpc: '',
 })
+const routeAnalysisForm = ref({
+  dataColeta: '',
+  tecnico: '',
+  operando: 'Sim',
+  acesso: 'Bom',
+  identificacao: 'Boa',
+  tempOleo: '58',
+  tempEnrolamento: '67',
+  tempAmbiente: '26',
+  limpeza: 'Boa',
+  corrosao: 'Ausência',
+  pintura: 'Boa',
+  aterramento: 'Bom',
+  vazamentos: 'Sem vazamentos',
+  conservador: 'Boas condições',
+  nivelOleo: 'Condição normal',
+  secador: 'Boas condições',
+  conexoesAt: 'Bom',
+  conexoesBt: 'Bom',
+  tempPrimario: 'Normal',
+  tempSecundario: 'Normal',
+  vibracao: 'Normal',
+})
 
 const coletasMonthOptions = [
   { value: '01', label: 'Janeiro' },
@@ -2128,6 +2229,16 @@ const coletasQuarterOptions = [
   { value: 'Q3', label: 'Q3 (Jul-Set)' },
   { value: 'Q4', label: 'Q4 (Out-Dez)' },
 ]
+
+const routeAnalysisModalTabs = [
+  'Identificação da coleta',
+  'Status do transformador',
+  'Temperaturas',
+  'Sistema estrutural',
+  'Preservação de óleo',
+  'Sistema de conexão',
+  'Sistema de ativo',
+] as const
 
 function toggleEvalCard(card: '1' | '2' | '3' | '4' | '5') {
   evalCardOpen.value[card] = !evalCardOpen.value[card]
@@ -2211,6 +2322,29 @@ const oltcAnalysisColumns: OltcAnalysisColumn[] = [
   { id: 'ensaioDbpc', label: 'Ensaio de DBPC', group: 'Físico Químico', defaultVisible: false },
 ]
 
+const routeAnalysisColumns: RouteAnalysisColumn[] = [
+  { id: 'dataColeta', label: 'Data Coleta', defaultVisible: true },
+  { id: 'operando', label: 'Operando', defaultVisible: true },
+  { id: 'acesso', label: 'Acesso', defaultVisible: true },
+  { id: 'identificacao', label: 'Identificação', defaultVisible: true },
+  { id: 'tempOleo', label: 'Temp. Óleo', defaultVisible: true },
+  { id: 'tempEnrolamento', label: 'Temp. Enrolamento', defaultVisible: true },
+  { id: 'tempAmbiente', label: 'Temp. Ambiente', defaultVisible: true },
+  { id: 'limpeza', label: 'Limpeza', defaultVisible: true },
+  { id: 'corrosao', label: 'Corrosão', defaultVisible: false },
+  { id: 'pintura', label: 'Pintura', defaultVisible: false },
+  { id: 'aterramento', label: 'Aterramento', defaultVisible: false },
+  { id: 'vazamentos', label: 'Vazamentos', defaultVisible: true },
+  { id: 'conservador', label: 'Conservador', defaultVisible: false },
+  { id: 'nivelOleo', label: 'Nível de Óleo', defaultVisible: false },
+  { id: 'secador', label: 'Secador', defaultVisible: false },
+  { id: 'conexoesAt', label: 'Conexões AT', defaultVisible: false },
+  { id: 'conexoesBt', label: 'Conexões BT', defaultVisible: false },
+  { id: 'tempPrimario', label: 'Temp. Primário', defaultVisible: false },
+  { id: 'tempSecundario', label: 'Temp. Secundário', defaultVisible: false },
+  { id: 'vibracao', label: 'Vibração', defaultVisible: true },
+]
+
 function getColumnsStorageUserKey() {
   if (typeof window === 'undefined') return 'anon'
   return (
@@ -2250,12 +2384,18 @@ const analysisColumnAllowed = analysisColumns.map((column) => column.id)
 const oltcAnalysisColumnsScope = 'axol.columns.report.analysis.oltc'
 const oltcAnalysisColumnDefaults = oltcAnalysisColumns.filter((column) => column.defaultVisible).map((column) => column.id)
 const oltcAnalysisColumnAllowed = oltcAnalysisColumns.map((column) => column.id)
+const routeAnalysisColumnsScope = 'axol.columns.report.analysis.route'
+const routeAnalysisColumnDefaults = routeAnalysisColumns.filter((column) => column.defaultVisible).map((column) => column.id)
+const routeAnalysisColumnAllowed = routeAnalysisColumns.map((column) => column.id)
 
 const analysisVisibleColumnIds = ref<string[]>(
   loadStoredColumnIds(analysisColumnsScope, analysisColumnDefaults, analysisColumnAllowed)
 )
 const oltcAnalysisVisibleColumnIds = ref<string[]>(
   loadStoredColumnIds(oltcAnalysisColumnsScope, oltcAnalysisColumnDefaults, oltcAnalysisColumnAllowed)
+)
+const routeAnalysisVisibleColumnIds = ref<string[]>(
+  loadStoredColumnIds(routeAnalysisColumnsScope, routeAnalysisColumnDefaults, routeAnalysisColumnAllowed)
 )
 
 const analysisVisibleColumns = computed(() =>
@@ -2304,6 +2444,9 @@ const activeAnalysisVisibleColumns = computed(() =>
     : analysisVisibleColumns.value.filter((column) =>
       activeDefaultAnalysisGroups.value.includes(column.group) && column.id !== 'tipo'
     )
+)
+const routeAnalysisVisibleColumns = computed(() =>
+  routeAnalysisColumns.filter((column) => routeAnalysisVisibleColumnIds.value.includes(column.id))
 )
 const activeAnalysisColumnsByGroup = computed(() =>
   analysisRecentTab.value === 'oltc' ? oltcAnalysisColumnsByGroup.value : analysisColumnsByGroup.value
@@ -2405,6 +2548,107 @@ function toggleAnalysisColumnsMenu() {
   analysisColumnsMenuOpen.value = !analysisColumnsMenuOpen.value
 }
 
+function toggleRouteAnalysisColumnsMenu() {
+  routeAnalysisSortMenuOpen.value = false
+  routeAnalysisColumnsMenuOpen.value = !routeAnalysisColumnsMenuOpen.value
+}
+
+function toggleRouteAnalysisSortMenu() {
+  routeAnalysisColumnsMenuOpen.value = false
+  routeAnalysisSortMenuOpen.value = !routeAnalysisSortMenuOpen.value
+}
+
+function toggleRouteAnalysisColumn(columnId: string) {
+  if (routeAnalysisVisibleColumnIds.value.includes(columnId)) {
+    if (routeAnalysisVisibleColumnIds.value.length === 1) return
+    routeAnalysisVisibleColumnIds.value = routeAnalysisVisibleColumnIds.value.filter((id) => id !== columnId)
+    return
+  }
+  routeAnalysisVisibleColumnIds.value = [...routeAnalysisVisibleColumnIds.value, columnId]
+}
+
+function resetRouteAnalysisFilters() {
+  routeAnalysisSearchQuery.value = ''
+  routeAnalysisVisibleColumnIds.value = [...routeAnalysisColumnDefaults]
+  routeAnalysisColumnsMenuOpen.value = false
+  routeAnalysisSortMenuOpen.value = false
+  routeAnalysisSortField.value = 'dataColeta'
+  routeAnalysisSortDirection.value = 'desc'
+}
+
+function openRouteAnalysisModal() {
+  routeAnalysisModalStep.value = 0
+  routeAnalysisForm.value = {
+    dataColeta: '',
+    tecnico: '',
+    operando: 'Sim',
+    acesso: 'Bom',
+    identificacao: 'Boa',
+    tempOleo: '58',
+    tempEnrolamento: '67',
+    tempAmbiente: '26',
+    limpeza: 'Boa',
+    corrosao: 'Ausência',
+    pintura: 'Boa',
+    aterramento: 'Bom',
+    vazamentos: 'Sem vazamentos',
+    conservador: 'Boas condições',
+    nivelOleo: 'Condição normal',
+    secador: 'Boas condições',
+    conexoesAt: 'Bom',
+    conexoesBt: 'Bom',
+    tempPrimario: 'Normal',
+    tempSecundario: 'Normal',
+    vibracao: 'Normal',
+  }
+  routeAnalysisModalOpen.value = true
+}
+
+function closeRouteAnalysisModal() {
+  routeAnalysisModalOpen.value = false
+}
+
+function goToPreviousRouteAnalysisStep() {
+  routeAnalysisModalStep.value = Math.max(0, routeAnalysisModalStep.value - 1)
+}
+
+function goToNextRouteAnalysisStep() {
+  routeAnalysisModalStep.value = Math.min(routeAnalysisModalTabs.length - 1, routeAnalysisModalStep.value + 1)
+}
+
+function saveRouteAnalysisModal() {
+  const date = routeAnalysisForm.value.dataColeta ? toUiDate(routeAnalysisForm.value.dataColeta) : toUiDate(new Date().toISOString())
+  manualRouteInspectionRows.value = [
+    {
+      id: `manual-route-${Date.now()}`,
+      transformerId: selectedTransformer.value?.id || '',
+      date,
+      tecnico: routeAnalysisForm.value.tecnico.trim(),
+      operando: routeAnalysisForm.value.operando,
+      acesso: routeAnalysisForm.value.acesso,
+      identificacao: routeAnalysisForm.value.identificacao,
+      tempOleo: Number(routeAnalysisForm.value.tempOleo || 0),
+      tempEnrolamento: Number(routeAnalysisForm.value.tempEnrolamento || 0),
+      tempAmbiente: Number(routeAnalysisForm.value.tempAmbiente || 0),
+      limpeza: routeAnalysisForm.value.limpeza,
+      corrosao: routeAnalysisForm.value.corrosao,
+      pintura: routeAnalysisForm.value.pintura,
+      aterramento: routeAnalysisForm.value.aterramento,
+      vazamentos: routeAnalysisForm.value.vazamentos,
+      conservador: routeAnalysisForm.value.conservador,
+      nivelOleo: routeAnalysisForm.value.nivelOleo,
+      secador: routeAnalysisForm.value.secador,
+      conexoesAt: routeAnalysisForm.value.conexoesAt,
+      conexoesBt: routeAnalysisForm.value.conexoesBt,
+      tempPrimario: routeAnalysisForm.value.tempPrimario,
+      tempSecundario: routeAnalysisForm.value.tempSecundario,
+      vibracao: routeAnalysisForm.value.vibracao,
+    },
+    ...manualRouteInspectionRows.value,
+  ]
+  routeAnalysisModalOpen.value = false
+}
+
 function toggleAnalysisSortMenu() {
   analysisColumnsMenuOpen.value = false
   analysisNewMenuOpen.value = false
@@ -2434,6 +2678,8 @@ function closeAnalysisColumnsOnOutsideClick(event: MouseEvent) {
     transformerPickerWrapRef.value?.contains(target) ||
     generateReportWrapRef.value?.contains(target) ||
     analysisColumnsWrapRef.value?.contains(target) ||
+    routeAnalysisSortWrapRef.value?.contains(target) ||
+    routeAnalysisColumnsWrapRef.value?.contains(target) ||
     analysisSortWrapRef.value?.contains(target) ||
     analysisNewWrapRef.value?.contains(target) ||
     analysisExportWrapRef.value?.contains(target) ||
@@ -2447,6 +2693,8 @@ function closeAnalysisColumnsOnOutsideClick(event: MouseEvent) {
     return
   }
   analysisColumnsMenuOpen.value = false
+  routeAnalysisSortMenuOpen.value = false
+  routeAnalysisColumnsMenuOpen.value = false
   analysisSortMenuOpen.value = false
   generateReportMenuOpen.value = false
   analysisNewMenuOpen.value = false
@@ -3356,6 +3604,14 @@ watch(
 )
 
 watch(
+  routeAnalysisVisibleColumnIds,
+  (value) => {
+    persistColumnIds(routeAnalysisColumnsScope, value)
+  },
+  { deep: true }
+)
+
+watch(
   () => route.name,
   (name) => {
     analysisRowsPerPage.value = name === 'analises-view' ? 20 : 10
@@ -3384,8 +3640,18 @@ watch(analysisSortFieldOptions, (options) => {
   }
 })
 
+watch(routeAnalysisSortFieldOptions, (options) => {
+  if (!options.some((option) => option.value === routeAnalysisSortField.value)) {
+    routeAnalysisSortField.value = 'dataColeta'
+  }
+})
+
 watch(analysisSortKind, (kind) => {
   analysisSortDirection.value = kind === 'text' ? 'asc' : 'desc'
+})
+
+watch(routeAnalysisSortKind, (kind) => {
+  routeAnalysisSortDirection.value = kind === 'text' ? 'asc' : 'desc'
 })
 
 watch(
@@ -4385,69 +4651,107 @@ watch([activeTab, selectedId], async () => {
           </button>
           <template v-if="historyConditionsOpen">
             <div v-if="isTrRotaMacro" class="history-linear-children">
-              <article v-if="activeHistoryModel.categories.length" class="history-block-card history-linear-child-card">
-                <article class="history-line-card history-line-card-wide">
-                  <div class="history-chart-host">
-                    <VueApexCharts
-                      :key="historyChartKey"
-                      type="line"
-                      height="100%"
-                      :options="historyChartOptions"
-                      :series="activeHistoryModel.series"
-                    />
-                  </div>
-                  <p class="history-mobile-range">{{ historyMobileRangeLabel }}</p>
-                </article>
-              </article>
               <article class="history-block-card history-linear-child-card">
+                <div class="history-analyses-head route-analysis-head">
+                  <div class="history-analyses-controls">
+                    <label class="history-analysis-search">
+                      <input
+                        v-model="routeAnalysisSearchQuery"
+                        type="text"
+                        placeholder="Pesquisar análise de campo"
+                        aria-label="Pesquisar análise de campo"
+                      />
+                    </label>
+                    <div ref="routeAnalysisSortWrapRef" class="history-actions-wrap">
+                      <button type="button" class="history-columns-trigger" @click="toggleRouteAnalysisSortMenu">
+                        <span>Ordenado por</span>
+                      </button>
+                      <div v-if="routeAnalysisSortMenuOpen" class="history-columns-menu history-sort-menu">
+                        <label class="history-sort-row">
+                          <span>Coluna</span>
+                          <select v-model="routeAnalysisSortField" aria-label="Ordenar análise de campo por coluna">
+                            <option
+                              v-for="option in routeAnalysisSortFieldOptions"
+                              :key="`route-sort-field-${option.value}`"
+                              :value="option.value"
+                            >
+                              {{ option.label }}
+                            </option>
+                          </select>
+                        </label>
+                        <div class="history-sort-radio-group">
+                          <label
+                            v-for="option in routeAnalysisSortDirectionOptions"
+                            :key="`route-sort-direction-${option.value}`"
+                            class="history-sort-radio"
+                          >
+                            <input v-model="routeAnalysisSortDirection" type="radio" :value="option.value" />
+                            <span>{{ option.label }}</span>
+                          </label>
+                        </div>
+                      </div>
+                    </div>
+                    <div ref="routeAnalysisColumnsWrapRef" class="history-actions-wrap">
+                      <button type="button" class="history-columns-trigger" @click="toggleRouteAnalysisColumnsMenu">
+                        <span>Colunas</span>
+                      </button>
+                      <div v-if="routeAnalysisColumnsMenuOpen" class="history-columns-menu">
+                        <label
+                          v-for="column in routeAnalysisColumns"
+                          :key="`route-column-${column.id}`"
+                          class="history-columns-option"
+                        >
+                          <input
+                            type="checkbox"
+                            :checked="routeAnalysisVisibleColumnIds.includes(column.id)"
+                            :disabled="routeAnalysisVisibleColumnIds.length === 1 && routeAnalysisVisibleColumnIds.includes(column.id)"
+                            @change="toggleRouteAnalysisColumn(column.id)"
+                          />
+                          <span>{{ column.label }}</span>
+                        </label>
+                      </div>
+                    </div>
+                    <button
+                      v-if="hasRouteAnalysisFilterChanges"
+                      type="button"
+                      class="history-columns-trigger history-clear-filter-btn"
+                      @click="resetRouteAnalysisFilters"
+                    >
+                      <span>Limpar Filtro</span>
+                    </button>
+                  </div>
+                  <div class="history-analyses-actions">
+                    <div class="history-actions-wrap">
+                      <button type="button" class="history-action-btn" @click="openRouteAnalysisModal">
+                        <span class="history-action-icon" aria-hidden="true">＋</span>
+                        Novo
+                      </button>
+                    </div>
+                  </div>
+                </div>
                 <div class="mini-table-wrap history-analyses-table-wrap">
                   <table class="table compact analysis-table route-analysis-table">
                     <thead>
                       <tr>
-                        <th class="text-center">Data Coleta</th>
-                        <th class="text-center">Operando</th>
-                        <th class="text-center">Acesso</th>
-                        <th class="text-center">Identificação</th>
-                        <th class="text-center">Temp. Óleo</th>
-                        <th class="text-center">Temp. Enrolamento</th>
-                        <th class="text-center">Temp. Ambiente</th>
-                        <th class="text-center">Limpeza</th>
-                        <th class="text-center">Corrosão</th>
-                        <th class="text-center">Pintura</th>
-                        <th class="text-center">Aterramento</th>
-                        <th class="text-center">Vazamentos</th>
-                        <th class="text-center">Conservador</th>
-                        <th class="text-center">Nível de Óleo</th>
-                        <th class="text-center">Secador</th>
-                        <th class="text-center">Conexões AT</th>
-                        <th class="text-center">Conexões BT</th>
-                        <th class="text-center">Temp. Primário</th>
-                        <th class="text-center">Temp. Secundário</th>
-                        <th class="text-center">Vibração</th>
+                        <th v-for="column in routeAnalysisVisibleColumns" :key="column.id" class="text-center">
+                          {{ column.label }}
+                        </th>
                       </tr>
                     </thead>
                     <tbody>
-                      <tr v-for="row in routeInspectionTableRows" :key="row.id">
-                        <td class="text-center">{{ row.dataColeta }}</td>
-                        <td class="text-center">{{ row.operando }}</td>
-                        <td class="text-center">{{ row.acesso }}</td>
-                        <td class="text-center">{{ row.identificacao }}</td>
-                        <td class="text-center">{{ row.tempOleo }} °C</td>
-                        <td class="text-center">{{ row.tempEnrolamento }} °C</td>
-                        <td class="text-center">{{ row.tempAmbiente }} °C</td>
-                        <td class="text-center">{{ row.limpeza }}</td>
-                        <td class="text-center">{{ row.corrosao }}</td>
-                        <td class="text-center">{{ row.pintura }}</td>
-                        <td class="text-center">{{ row.aterramento }}</td>
-                        <td class="text-center">{{ row.vazamentos }}</td>
-                        <td class="text-center">{{ row.conservador }}</td>
-                        <td class="text-center">{{ row.nivelOleo }}</td>
-                        <td class="text-center">{{ row.secador }}</td>
-                        <td class="text-center">{{ row.conexoesAt }}</td>
-                        <td class="text-center">{{ row.conexoesBt }}</td>
-                        <td class="text-center">{{ row.tempPrimario }}</td>
-                        <td class="text-center">{{ row.tempSecundario }}</td>
-                        <td class="text-center">{{ row.vibracao }}</td>
+                      <tr v-for="row in sortedRouteInspectionTableRows" :key="row.id">
+                        <td
+                          v-for="column in routeAnalysisVisibleColumns"
+                          :key="`${row.id}-${column.id}`"
+                          class="text-center"
+                        >
+                          {{ ['tempOleo', 'tempEnrolamento', 'tempAmbiente'].includes(column.id) ? `${row[column.id]} °C` : row[column.id] }}
+                        </td>
+                      </tr>
+                      <tr v-if="!sortedRouteInspectionTableRows.length">
+                        <td class="text-center" :colspan="routeAnalysisVisibleColumns.length">
+                          Nenhuma análise de campo encontrada para o filtro informado.
+                        </td>
                       </tr>
                     </tbody>
                   </table>
@@ -6376,6 +6680,303 @@ watch([activeTab, selectedId], async () => {
         </div>
       </div>
 
+      <div v-if="routeAnalysisModalOpen" class="modal-overlay" @click="closeRouteAnalysisModal">
+        <div class="modal-card analysis-modal-card route-analysis-modal-card" @click.stop>
+          <h4>Nova Análise de Campo</h4>
+          <div class="analysis-modal-tabs route-analysis-modal-tabs">
+            <button
+              v-for="(tab, index) in routeAnalysisModalTabs"
+              :key="tab"
+              type="button"
+              class="analysis-modal-tab-btn"
+              :class="{ active: routeAnalysisModalStep === index }"
+              @click="routeAnalysisModalStep = index"
+            >
+              {{ tab }}
+            </button>
+          </div>
+          <div class="analysis-form-grid">
+            <template v-if="routeAnalysisModalStep === 0">
+              <label>
+                <span>Data Coleta</span>
+                <input v-model="routeAnalysisForm.dataColeta" type="date" />
+              </label>
+              <label>
+                <span>Técnico responsável (opcional)</span>
+                <input v-model="routeAnalysisForm.tecnico" type="text" placeholder="Nome do técnico" />
+              </label>
+            </template>
+
+            <template v-else-if="routeAnalysisModalStep === 1">
+              <div class="route-analysis-inline-grid">
+                <label>
+                  <span>1.1 Operando?</span>
+                  <div class="route-modal-choice-group">
+                    <label v-for="option in routeFieldToneOptions.operando" :key="`operando-${option.label}`" class="route-modal-choice-option">
+                      <input v-model="routeAnalysisForm.operando" type="radio" name="route-operando" :value="option.label" />
+                      <span class="route-modal-choice-pill" :class="routeInspectionToneClass(option.tone)">
+                        <i class="route-modal-choice-dot"></i>
+                        {{ option.label }}
+                      </span>
+                    </label>
+                  </div>
+                </label>
+                <label>
+                  <span>1.2 Acesso</span>
+                  <div class="route-modal-choice-group">
+                    <label v-for="option in routeFieldToneOptions.acesso" :key="`acesso-${option.label}`" class="route-modal-choice-option">
+                      <input v-model="routeAnalysisForm.acesso" type="radio" name="route-acesso" :value="option.label" />
+                      <span class="route-modal-choice-pill" :class="routeInspectionToneClass(option.tone)">
+                        <i class="route-modal-choice-dot"></i>
+                        {{ option.label }}
+                      </span>
+                    </label>
+                  </div>
+                </label>
+                <label>
+                  <span>1.4 Identificação</span>
+                  <div class="route-modal-choice-group">
+                    <label v-for="option in routeFieldToneOptions.identificacao" :key="`identificacao-${option.label}`" class="route-modal-choice-option">
+                      <input v-model="routeAnalysisForm.identificacao" type="radio" name="route-identificacao" :value="option.label" />
+                      <span class="route-modal-choice-pill" :class="routeInspectionToneClass(option.tone)">
+                        <i class="route-modal-choice-dot"></i>
+                        {{ option.label }}
+                      </span>
+                    </label>
+                  </div>
+                </label>
+              </div>
+            </template>
+
+            <template v-else-if="routeAnalysisModalStep === 2">
+              <div class="route-analysis-inline-grid">
+                <label>
+                  <span>2.1 Temp. Óleo</span>
+                  <input v-model="routeAnalysisForm.tempOleo" type="number" />
+                </label>
+                <label>
+                  <span>2.2 Temp. Enrolamento</span>
+                  <input v-model="routeAnalysisForm.tempEnrolamento" type="number" />
+                </label>
+                <label>
+                  <span>2.3 Temp. Ambiente</span>
+                  <input v-model="routeAnalysisForm.tempAmbiente" type="number" />
+                </label>
+              </div>
+            </template>
+
+            <template v-else-if="routeAnalysisModalStep === 3">
+              <label>
+                <span>3.1 Limpeza</span>
+                <div class="route-modal-choice-group">
+                  <label v-for="option in routeFieldToneOptions.ternaryBasic" :key="`limpeza-${option.label}`" class="route-modal-choice-option">
+                    <input v-model="routeAnalysisForm.limpeza" type="radio" name="route-limpeza" :value="option.label" />
+                    <span class="route-modal-choice-pill" :class="routeInspectionToneClass(option.tone)">
+                      <i class="route-modal-choice-dot"></i>
+                      {{ option.label }}
+                    </span>
+                  </label>
+                </div>
+              </label>
+              <label>
+                <span>3.2 Corrosão</span>
+                <div class="route-modal-choice-group">
+                  <label v-for="option in routeFieldToneOptions.ternaryAbsence" :key="`corrosao-${option.label}`" class="route-modal-choice-option">
+                    <input v-model="routeAnalysisForm.corrosao" type="radio" name="route-corrosao" :value="option.label" />
+                    <span class="route-modal-choice-pill" :class="routeInspectionToneClass(option.tone)">
+                      <i class="route-modal-choice-dot"></i>
+                      {{ option.label }}
+                    </span>
+                  </label>
+                </div>
+              </label>
+              <label>
+                <span>3.3 Pintura</span>
+                <div class="route-modal-choice-group">
+                  <label v-for="option in routeFieldToneOptions.ternaryBasic" :key="`pintura-${option.label}`" class="route-modal-choice-option">
+                    <input v-model="routeAnalysisForm.pintura" type="radio" name="route-pintura" :value="option.label" />
+                    <span class="route-modal-choice-pill" :class="routeInspectionToneClass(option.tone)">
+                      <i class="route-modal-choice-dot"></i>
+                      {{ option.label }}
+                    </span>
+                  </label>
+                </div>
+              </label>
+              <label>
+                <span>3.4 Aterramento</span>
+                <div class="route-modal-choice-group">
+                  <label v-for="option in routeFieldToneOptions.binaryBasic" :key="`aterramento-${option.label}`" class="route-modal-choice-option">
+                    <input v-model="routeAnalysisForm.aterramento" type="radio" name="route-aterramento" :value="option.label" />
+                    <span class="route-modal-choice-pill" :class="routeInspectionToneClass(option.tone)">
+                      <i class="route-modal-choice-dot"></i>
+                      {{ option.label }}
+                    </span>
+                  </label>
+                </div>
+              </label>
+              <label>
+                <span>3.5 Vazamentos</span>
+                <div class="route-modal-choice-group">
+                  <label v-for="option in routeFieldToneOptions.vazamentos" :key="`vazamentos-${option.label}`" class="route-modal-choice-option">
+                    <input v-model="routeAnalysisForm.vazamentos" type="radio" name="route-vazamentos" :value="option.label" />
+                    <span class="route-modal-choice-pill" :class="routeInspectionToneClass(option.tone)">
+                      <i class="route-modal-choice-dot"></i>
+                      {{ option.label }}
+                    </span>
+                  </label>
+                </div>
+              </label>
+            </template>
+
+            <template v-else-if="routeAnalysisModalStep === 4">
+              <label>
+                <span>4.1 Conservador</span>
+                <div class="route-modal-choice-group">
+                  <label v-for="option in routeFieldToneOptions.conservador" :key="`conservador-${option.label}`" class="route-modal-choice-option">
+                    <input v-model="routeAnalysisForm.conservador" type="radio" name="route-conservador" :value="option.label" />
+                    <span class="route-modal-choice-pill" :class="routeInspectionToneClass(option.tone)">
+                      <i class="route-modal-choice-dot"></i>
+                      {{
+                        option.label
+                          .replace('Boas condições', 'Boas')
+                          .replace('Condições moderadas', 'Moderadas')
+                          .replace('Condição ruim', 'Ruim')
+                      }}
+                    </span>
+                  </label>
+                </div>
+              </label>
+              <label>
+                <span>4.2 Nível de Óleo</span>
+                <div class="route-modal-choice-group">
+                  <label v-for="option in routeFieldToneOptions.nivelOleo" :key="`nivel-oleo-${option.label}`" class="route-modal-choice-option">
+                    <input v-model="routeAnalysisForm.nivelOleo" type="radio" name="route-nivel-oleo" :value="option.label" />
+                    <span class="route-modal-choice-pill" :class="routeInspectionToneClass(option.tone)">
+                      <i class="route-modal-choice-dot"></i>
+                      {{
+                        option.label
+                          .replace('Condição normal', 'Normal')
+                          .replace('Condição nível máximo', 'Máximo')
+                          .replace('Condição nível mínimo', 'Mínimo')
+                      }}
+                    </span>
+                  </label>
+                </div>
+              </label>
+              <label>
+                <span>4.3 Secador</span>
+                <div class="route-modal-choice-group">
+                  <label v-for="option in routeFieldToneOptions.secador" :key="`secador-${option.label}`" class="route-modal-choice-option">
+                    <input v-model="routeAnalysisForm.secador" type="radio" name="route-secador" :value="option.label" />
+                    <span class="route-modal-choice-pill" :class="routeInspectionToneClass(option.tone)">
+                      <i class="route-modal-choice-dot"></i>
+                      {{
+                        option.label
+                          .replace('Boas condições', 'Boas')
+                          .replace('Condições ruins', 'Ruins')
+                      }}
+                    </span>
+                  </label>
+                </div>
+              </label>
+            </template>
+
+            <template v-else-if="routeAnalysisModalStep === 5">
+              <label>
+                <span>5.1 Conexões AT</span>
+                <div class="route-modal-choice-group">
+                  <label v-for="option in routeFieldToneOptions.binaryBasic" :key="`conexoes-at-${option.label}`" class="route-modal-choice-option">
+                    <input v-model="routeAnalysisForm.conexoesAt" type="radio" name="route-conexoes-at" :value="option.label" />
+                    <span class="route-modal-choice-pill" :class="routeInspectionToneClass(option.tone)">
+                      <i class="route-modal-choice-dot"></i>
+                      {{ option.label }}
+                    </span>
+                  </label>
+                </div>
+              </label>
+              <label>
+                <span>5.2 Conexões BT</span>
+                <div class="route-modal-choice-group">
+                  <label v-for="option in routeFieldToneOptions.binaryBasic" :key="`conexoes-bt-${option.label}`" class="route-modal-choice-option">
+                    <input v-model="routeAnalysisForm.conexoesBt" type="radio" name="route-conexoes-bt" :value="option.label" />
+                    <span class="route-modal-choice-pill" :class="routeInspectionToneClass(option.tone)">
+                      <i class="route-modal-choice-dot"></i>
+                      {{ option.label }}
+                    </span>
+                  </label>
+                </div>
+              </label>
+              <label>
+                <span>5.3 Temp. Primário</span>
+                <div class="route-modal-choice-group">
+                  <label v-for="option in routeFieldToneOptions.conexaoTemp" :key="`temp-primario-${option.label}`" class="route-modal-choice-option">
+                    <input v-model="routeAnalysisForm.tempPrimario" type="radio" name="route-temp-primario" :value="option.label" />
+                    <span class="route-modal-choice-pill" :class="routeInspectionToneClass(option.tone)">
+                      <i class="route-modal-choice-dot"></i>
+                      {{ option.label }}
+                    </span>
+                  </label>
+                </div>
+              </label>
+              <label>
+                <span>5.4 Temp. Secundário</span>
+                <div class="route-modal-choice-group">
+                  <label v-for="option in routeFieldToneOptions.conexaoTemp" :key="`temp-secundario-${option.label}`" class="route-modal-choice-option">
+                    <input v-model="routeAnalysisForm.tempSecundario" type="radio" name="route-temp-secundario" :value="option.label" />
+                    <span class="route-modal-choice-pill" :class="routeInspectionToneClass(option.tone)">
+                      <i class="route-modal-choice-dot"></i>
+                      {{ option.label }}
+                    </span>
+                  </label>
+                </div>
+              </label>
+            </template>
+
+            <template v-else>
+              <label>
+                <span>6.1 Vibração</span>
+                <div class="route-modal-choice-group">
+                  <label v-for="option in routeFieldToneOptions.vibracao" :key="`vibracao-${option.label}`" class="route-modal-choice-option">
+                    <input v-model="routeAnalysisForm.vibracao" type="radio" name="route-vibracao" :value="option.label" />
+                    <span class="route-modal-choice-pill" :class="routeInspectionToneClass(option.tone)">
+                      <i class="route-modal-choice-dot"></i>
+                      {{ option.label }}
+                    </span>
+                  </label>
+                </div>
+              </label>
+            </template>
+          </div>
+          <div class="modal-actions">
+            <button type="button" class="secondary-btn" @click="closeRouteAnalysisModal">Cancelar</button>
+            <button
+              v-if="routeAnalysisModalStep > 0"
+              type="button"
+              class="secondary-btn"
+              @click="goToPreviousRouteAnalysisStep"
+            >
+              Voltar
+            </button>
+            <button
+              v-if="routeAnalysisModalStep < routeAnalysisModalTabs.length - 1"
+              type="button"
+              class="primary-btn"
+              @click="goToNextRouteAnalysisStep"
+            >
+              Continuar
+            </button>
+            <button
+              v-else
+              type="button"
+              class="primary-btn"
+              @click="saveRouteAnalysisModal"
+            >
+              Salvar
+            </button>
+          </div>
+        </div>
+      </div>
+
       <div v-if="coletasModalOpen" class="modal-overlay" @click="closeColetasModal">
         <div class="modal-card" @click.stop>
           <h4>Nova Coleta</h4>
@@ -7245,14 +7846,20 @@ watch([activeTab, selectedId], async () => {
   display: grid;
   gap: 12px;
   margin-top: 10px;
+  min-width: 0;
 }
 
 .history-linear-child-card{
   padding: 12px;
+  min-width: 0;
 }
 
 .route-analysis-table{
-  min-width: 1680px;
+  min-width: 1120px;
+}
+
+.route-analysis-head{
+  padding: 0 0 8px;
 }
 
 .route-inspection-summary{
@@ -7271,6 +7878,9 @@ watch([activeTab, selectedId], async () => {
 
 .route-inspection-section h5{
   margin: 0 0 10px;
+  font-size: 14px;
+  font-weight: 700;
+  color: #123a6d;
 }
 
 .route-inspection-fields{
@@ -7290,8 +7900,8 @@ watch([activeTab, selectedId], async () => {
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
-  font-size: 11.5px;
-  font-weight: 600;
+  font-size: 12.5px;
+  font-weight: 500;
   color: rgba(15, 23, 42, 0.82);
   text-align: left;
 }
@@ -7896,6 +8506,25 @@ watch([activeTab, selectedId], async () => {
   overflow: auto;
 }
 
+.route-analysis-modal-card{
+  width: min(980px, 100%);
+  min-height: min(44vh, 560px);
+  max-height: min(82vh, 760px);
+  overflow: auto;
+  display: flex;
+  flex-direction: column;
+}
+
+.route-analysis-modal-card .analysis-form-grid{
+  flex: 1 1 auto;
+  align-content: start;
+}
+
+.route-analysis-modal-card .modal-actions{
+  margin-top: auto;
+  justify-content: flex-end;
+}
+
 .advanced-filter-modal-card{
   width: min(980px, 100%);
 }
@@ -7996,6 +8625,23 @@ watch([activeTab, selectedId], async () => {
   color: #fff;
 }
 
+.route-analysis-modal-tabs{
+  display: flex;
+  flex-wrap: nowrap;
+  width: 100%;
+  overflow-x: auto;
+  overflow-y: hidden;
+  white-space: nowrap;
+  scrollbar-width: thin;
+}
+
+.route-analysis-modal-tabs .analysis-modal-tab-btn{
+  flex: 0 0 auto;
+  white-space: nowrap;
+  font-size: 11.5px;
+  padding: 0 11px;
+}
+
 .analysis-form-title{
   margin: 4px 0 8px;
   color: #123a6d;
@@ -8015,9 +8661,9 @@ watch([activeTab, selectedId], async () => {
 }
 
 .analysis-form-grid label span{
-  font-size: 11px;
+  font-size: 12px;
   color: rgba(15, 23, 42, 0.7);
-  font-weight: 600;
+  font-weight: 700;
 }
 
 .analysis-form-grid input,
@@ -8035,6 +8681,90 @@ watch([activeTab, selectedId], async () => {
   margin-top: -2px;
   font-size: 10px;
   color: rgba(15, 23, 42, 0.58);
+}
+
+.route-modal-choice-group{
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.route-analysis-inline-grid{
+  grid-column: 1 / -1;
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 10px;
+}
+
+.route-analysis-inline-grid > label{
+  align-content: center;
+}
+
+.route-analysis-inline-grid input[type='number']{
+  max-width: 120px;
+}
+
+.route-modal-choice-option{
+  display: inline-flex;
+  margin: 0;
+  cursor: pointer;
+}
+
+.route-modal-choice-option input{
+  position: absolute;
+  opacity: 0;
+  pointer-events: none;
+}
+
+.route-modal-choice-pill{
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  min-height: 34px;
+  padding: 0 12px;
+  border-radius: 999px;
+  border: 1px solid rgba(15, 23, 42, 0.12);
+  background: rgba(248, 250, 252, 0.72);
+  color: rgba(15, 23, 42, 0.82);
+  font-size: 12px;
+  font-weight: 600;
+  transition: all 0.15s ease;
+}
+
+.route-modal-choice-dot{
+  width: 10px;
+  height: 10px;
+  border-radius: 999px;
+  background: currentColor;
+  flex: 0 0 auto;
+}
+
+.route-modal-choice-pill.route-inspection-good{
+  color: #166534;
+}
+
+.route-modal-choice-pill.route-inspection-warn{
+  color: #a16207;
+}
+
+.route-modal-choice-pill.route-inspection-bad{
+  color: #b91c1c;
+}
+
+.route-modal-choice-pill.route-inspection-neutral{
+  color: #475569;
+}
+
+.route-modal-choice-option input:checked + .route-modal-choice-pill{
+  border-color: currentColor;
+  box-shadow: 0 0 0 2px color-mix(in srgb, currentColor 16%, transparent);
+  background: color-mix(in srgb, currentColor 10%, white);
+}
+
+@media (max-width: 960px){
+  .route-analysis-inline-grid{
+    grid-template-columns: 1fr;
+  }
 }
 
 .modal-grid{
@@ -8430,14 +9160,30 @@ watch([activeTab, selectedId], async () => {
   border-radius: 10px;
   padding: 8px 8px 2px;
   overflow: hidden;
+  min-width: 0;
 }
 
 .history-chart-host :deep(.apexcharts-canvas){
+  width: 100% !important;
   max-width: 100% !important;
 }
 
 .history-chart-host :deep(svg){
+  width: 100% !important;
   max-width: 100% !important;
+}
+
+.history-chart-host :deep(.apexcharts-svg),
+.history-chart-host :deep(.apexcharts-inner),
+.history-chart-host :deep(.apexcharts-graphical){
+  width: 100% !important;
+  max-width: 100% !important;
+}
+
+.history-chart-host :deep(.apexcharts-legend){
+  justify-content: center !important;
+  flex-wrap: wrap !important;
+  row-gap: 4px;
 }
 
 .history-mobile-range{
@@ -8820,6 +9566,32 @@ watch([activeTab, selectedId], async () => {
   color: #0f172a;
   font-size: 12px;
   padding: 0 10px;
+}
+
+.history-sort-radio-group{
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  flex-wrap: wrap;
+  padding: 8px 10px;
+  border: 1px solid rgba(15, 23, 42, 0.1);
+  border-radius: 10px;
+  background: rgba(248, 250, 252, 0.7);
+}
+
+.history-sort-radio{
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  margin: 0;
+  white-space: nowrap;
+  font-size: 13px;
+  color: rgba(15, 23, 42, 0.86);
+  cursor: pointer;
+}
+
+.history-sort-radio input{
+  accent-color: #1e4e8b;
 }
 
 .history-columns-group + .history-columns-group{
