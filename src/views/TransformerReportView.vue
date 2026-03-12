@@ -1311,6 +1311,7 @@ type RouteInspectionField = {
   label: string
   type: 'choice' | 'temperature'
   value: string
+  displayValue?: string
   score: number
   unit?: string
   options?: RouteInspectionOption[]
@@ -1686,7 +1687,8 @@ function routeChoice(
   key: string,
   label: string,
   value: string,
-  options: RouteInspectionOption[]
+  options: RouteInspectionOption[],
+  displayValue?: string
 ): RouteInspectionField {
   const selected = options.find((option) => option.label === value) || options[0]
   return {
@@ -1694,6 +1696,7 @@ function routeChoice(
     label,
     type: 'choice',
     value,
+    displayValue,
     score: routeScoreByTone(selected?.tone || 'good'),
     options,
   }
@@ -1716,7 +1719,7 @@ function buildRouteInspectionSections(snapshot: Record<string, string | number>)
       title: '1. Status do transformador',
       fields: [
         routeChoice('operando', '1.1 Operando?', String(snapshot.operando), routeFieldToneOptions.operando),
-        routeChoice('acesso', '1.2 Acesso ao transformador', String(snapshot.acesso), routeFieldToneOptions.acesso),
+        routeChoice('acesso', '1.2 Acesso', String(snapshot.acesso), routeFieldToneOptions.acesso),
         routeChoice('identificacao', '1.4 Identificação', String(snapshot.identificacao), routeFieldToneOptions.identificacao),
       ],
     },
@@ -1724,41 +1727,41 @@ function buildRouteInspectionSections(snapshot: Record<string, string | number>)
       title: '2. Temperaturas',
       fields: [
         routeTemperature('tempOleo', '2.1 Temperatura do óleo', Number(snapshot.tempOleo)),
-        routeTemperature('tempEnrolamento', '2.2 Temperatura do enrolamento', Number(snapshot.tempEnrolamento)),
-        routeTemperature('tempAmbiente', '2.3 Temperatura ambiente', Number(snapshot.tempAmbiente)),
+        routeTemperature('tempEnrolamento', '2.2 Temp. do enrolamento', Number(snapshot.tempEnrolamento)),
+        routeTemperature('tempAmbiente', '2.3 Temp. ambiente', Number(snapshot.tempAmbiente)),
       ],
     },
     {
       title: '3. Sistema estrutural do transformador',
       fields: [
-        routeChoice('limpeza', '3.1 Limpeza do transformador', String(snapshot.limpeza), routeFieldToneOptions.ternaryBasic),
-        routeChoice('corrosao', '3.2 Corrosão no transformador', String(snapshot.corrosao), routeFieldToneOptions.ternaryAbsence),
-        routeChoice('pintura', '3.3 Pintura do transformador', String(snapshot.pintura), routeFieldToneOptions.ternaryBasic),
-        routeChoice('aterramento', '3.4 Aterramento do transformador', String(snapshot.aterramento), routeFieldToneOptions.binaryBasic),
-        routeChoice('vazamentos', '3.5 Vazamentos no transformador', String(snapshot.vazamentos), routeFieldToneOptions.vazamentos),
+        routeChoice('limpeza', '3.1 Limpeza', String(snapshot.limpeza), routeFieldToneOptions.ternaryBasic),
+        routeChoice('corrosao', '3.2 Corrosão', String(snapshot.corrosao), routeFieldToneOptions.ternaryAbsence),
+        routeChoice('pintura', '3.3 Pintura', String(snapshot.pintura), routeFieldToneOptions.ternaryBasic),
+        routeChoice('aterramento', '3.4 Aterramento', String(snapshot.aterramento), routeFieldToneOptions.binaryBasic),
+        routeChoice('vazamentos', '3.5 Vazamentos', String(snapshot.vazamentos), routeFieldToneOptions.vazamentos, String(snapshot.vazamentos).replace('Umidade nas juntas', 'Juntas c/ Umidade').replace('Sem vazamentos', 'Sem vazamento')),
       ],
     },
     {
       title: '4. Sistema de preservação de óleo',
       fields: [
-        routeChoice('conservador', '4.1 Conservador de óleo (tanque de expansão)', String(snapshot.conservador), routeFieldToneOptions.conservador),
-        routeChoice('nivelOleo', '4.2 Nível de óleo isolante', String(snapshot.nivelOleo), routeFieldToneOptions.nivelOleo),
-        routeChoice('secador', '4.3 Secador de ar (sílica gel)', String(snapshot.secador), routeFieldToneOptions.secador),
+        routeChoice('conservador', '4.1 Conservador de óleo', String(snapshot.conservador), routeFieldToneOptions.conservador, String(snapshot.conservador).replace('Condições moderadas', 'Moderadas').replace('Boas condições', 'Boas').replace('Condição ruim', 'Ruim')),
+        routeChoice('nivelOleo', '4.2 Nível de óleo', String(snapshot.nivelOleo), routeFieldToneOptions.nivelOleo, String(snapshot.nivelOleo).replace('Condição normal', 'Normal').replace('Condição nível máximo', 'Nível máximo').replace('Condição nível mínimo', 'Nível mínimo')),
+        routeChoice('secador', '4.3 Secador de ar', String(snapshot.secador), routeFieldToneOptions.secador, String(snapshot.secador).replace('Boas condições', 'Boas').replace('Condições ruins', 'Ruins')),
       ],
     },
     {
       title: '5. Sistema de conexão do transformador',
       fields: [
-        routeChoice('conexoesAt', '5.1 Estado das conexões de alta tensão (AT)', String(snapshot.conexoesAt), routeFieldToneOptions.binaryBasic),
-        routeChoice('conexoesBt', '5.2 Estado das conexões de baixa tensão (BT)', String(snapshot.conexoesBt), routeFieldToneOptions.binaryBasic),
-        routeChoice('tempPrimario', '5.3 Temperaturas das conexões (primário)', String(snapshot.tempPrimario), routeFieldToneOptions.conexaoTemp),
-        routeChoice('tempSecundario', '5.4 Temperaturas das conexões (secundário)', String(snapshot.tempSecundario), routeFieldToneOptions.conexaoTemp),
+        routeChoice('conexoesAt', '5.1 Conexões AT', String(snapshot.conexoesAt), routeFieldToneOptions.binaryBasic),
+        routeChoice('conexoesBt', '5.2 Conexões BT', String(snapshot.conexoesBt), routeFieldToneOptions.binaryBasic),
+        routeChoice('tempPrimario', '5.3 Temp. conexões AT', String(snapshot.tempPrimario), routeFieldToneOptions.conexaoTemp),
+        routeChoice('tempSecundario', '5.4 Temp. conexões BT', String(snapshot.tempSecundario), routeFieldToneOptions.conexaoTemp),
       ],
     },
     {
       title: '6. Sistema de ativo do transformador',
       fields: [
-        routeChoice('vibracao', '6.1 Vibração da parte ativa do transformador (núcleo e enrolamentos)', String(snapshot.vibracao), routeFieldToneOptions.vibracao),
+        routeChoice('vibracao', '6.1 Vibração da parte ativa', String(snapshot.vibracao), routeFieldToneOptions.vibracao),
       ],
     },
   ] satisfies RouteInspectionSection[]
@@ -4893,17 +4896,17 @@ watch([activeTab, selectedId], async () => {
                 <h5>{{ section.title }}</h5>
                 <div class="route-inspection-fields">
                   <div v-for="field in section.fields" :key="field.key" class="route-inspection-field">
-                    <span class="route-inspection-label">{{ field.label }}</span>
+                    <span class="route-inspection-label" :title="field.label">{{ field.label }}</span>
                     <div v-if="field.type === 'temperature'" class="route-inspection-temperature">
                       <span>{{ field.value }}</span>
                       <small>{{ field.unit }}</small>
                     </div>
-                    <div v-else class="route-inspection-status-line">
+                    <div v-else class="route-inspection-status-line" :title="field.value">
                       <span
                         class="route-inspection-status-dot"
                         :class="routeInspectionToneClass(field.options?.find((option) => option.label === field.value)?.tone || 'neutral')"
                       ></span>
-                      <strong>{{ field.value }}</strong>
+                      <strong>{{ field.displayValue || field.value }}</strong>
                     </div>
                   </div>
                 </div>
@@ -7258,13 +7261,17 @@ watch([activeTab, selectedId], async () => {
 
 .route-inspection-field{
   display: grid;
-  grid-template-columns: minmax(220px, 1.5fr) minmax(0, 1fr);
+  grid-template-columns: minmax(0, 1.55fr) auto;
   align-items: center;
   gap: 10px;
 }
 
 .route-inspection-label{
-  font-size: 12px;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-size: 11.5px;
   font-weight: 600;
   color: rgba(15, 23, 42, 0.82);
   text-align: left;
@@ -7283,6 +7290,13 @@ watch([activeTab, selectedId], async () => {
   font-size: 12px;
   color: #0f172a;
   justify-self: end;
+  white-space: nowrap;
+}
+
+.route-inspection-status-line strong{
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
 .route-inspection-status-dot{
@@ -7313,8 +7327,7 @@ watch([activeTab, selectedId], async () => {
   align-items: center;
   gap: 6px;
   width: fit-content;
-  min-width: 92px;
-  padding: 7px 12px;
+  padding: 7px 10px;
   border-radius: 10px;
   border: 1px solid rgba(30, 78, 139, 0.2);
   background: #fff;
@@ -7322,6 +7335,7 @@ watch([activeTab, selectedId], async () => {
   font-weight: 700;
   color: #0f172a;
   justify-self: end;
+  white-space: nowrap;
 }
 
 .route-inspection-temperature small{
