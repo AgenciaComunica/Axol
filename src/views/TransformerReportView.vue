@@ -2756,6 +2756,21 @@ const selectedOltcMeta = computed<BaseRow | null>(() => {
   }) || null
 })
 
+const summaryPrimaryStatusLabel = computed(() => {
+  if (activeMacroTab.value === 'TR-OLTC') return 'Status TR-OLTC'
+  if (activeMacroTab.value === 'TR-Rota') return 'Status TR-Rota'
+  return 'Status TR-Óleo'
+})
+
+const summaryPrimaryStatusValue = computed(() => {
+  if (!selectedTransformer.value) return '-'
+  if (activeMacroTab.value === 'TR-OLTC') {
+    const oltcStatus = normalizeCell(selectedOltcMeta.value?.ESTADO)
+    return oltcStatus !== '-' ? oltcStatus : selectedTransformer.value.status
+  }
+  return selectedTransformer.value.status
+})
+
 function rowMatchesSelectedTransformer(row: BaseRow) {
   if (isGlobalScopeView.value) return true
   const selected = selectedTransformer.value
@@ -4317,8 +4332,8 @@ watch([activeTab, selectedId], async () => {
           <div class="summary-title-row">
             <h3>{{ selectedTransformer.id }}</h3>
             <div class="pill-row">
-              <span class="pill" :class="statusClass(selectedTransformer.status)">
-                Status TR-Óleo: {{ selectedTransformer.status }}
+              <span class="pill" :class="statusClass(summaryPrimaryStatusValue)">
+                {{ summaryPrimaryStatusLabel }}: {{ summaryPrimaryStatusValue }}
               </span>
               <span class="pill" :class="statusClass(selectedTransformer.statusAnalyst)">
                 Status Analista: {{ selectedTransformer.statusAnalyst }}
@@ -5035,7 +5050,7 @@ watch([activeTab, selectedId], async () => {
         </article>
         <article class="tile eval-card-4" :class="{ 'eval-collapsed': !evalCardOpen['4'] }">
           <div class="eval-card-head">
-            <h4>5 - Avaliação do risco operacional do transformador</h4>
+            <h4>{{ isTrRotaMacro ? '4 - Avaliação do risco operacional do transformador' : '5 - Avaliação do risco operacional do transformador' }}</h4>
             <button type="button" class="eval-collapse-btn" @click="toggleEvalCard('4')">
               {{ evalCardOpen['4'] ? '−' : '+' }}
             </button>
@@ -5101,7 +5116,11 @@ watch([activeTab, selectedId], async () => {
           </div>
           </template>
         </article>
-        <article class="tile eval-card-5" :class="{ 'eval-collapsed': !evalCardOpen['5'] }">
+        <article
+          v-if="!isTrRotaMacro"
+          class="tile eval-card-5"
+          :class="{ 'eval-collapsed': !evalCardOpen['5'] }"
+        >
           <div class="eval-card-head">
             <h4>4 - Tratamentos no óleo isolante</h4>
             <button type="button" class="eval-collapse-btn" @click="toggleEvalCard('5')">
