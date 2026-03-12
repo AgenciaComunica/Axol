@@ -1302,6 +1302,28 @@ type OltcAnalysisColumn = {
   defaultVisible: boolean
 }
 type UnifiedAnalysisRow = Record<string, string | number> & { id: string; sortTime: number }
+type RouteInspectionOption = {
+  label: string
+  tone: 'good' | 'warn' | 'bad' | 'neutral'
+}
+type RouteInspectionField = {
+  key: string
+  label: string
+  type: 'choice' | 'temperature'
+  value: string
+  score: number
+  unit?: string
+  options?: RouteInspectionOption[]
+}
+type RouteInspectionSection = {
+  title: string
+  fields: RouteInspectionField[]
+}
+type RouteInspectionSnapshot = {
+  id: string
+  date: string
+  sections: RouteInspectionSection[]
+}
 
 const historyActiveTab = ref<HistoryChartTab>('cromatografia')
 const historyCromDisplayMode = ref<HistoryDisplayMode>('base')
@@ -1567,6 +1589,284 @@ function buildHistoryChartData(rows: BaseRow[], defs: HistorySeriesDef[], mode: 
   return { max: globalMax, categories, series, colors: defs.map((def) => def.color) }
 }
 
+const routeFieldToneOptions = {
+  operando: [
+    { label: 'Sim', tone: 'good' },
+    { label: 'Não', tone: 'neutral' },
+  ],
+  acesso: [
+    { label: 'Bom', tone: 'good' },
+    { label: 'Ruim', tone: 'warn' },
+    { label: 'Trancado', tone: 'bad' },
+  ],
+  identificacao: [
+    { label: 'Boa', tone: 'good' },
+    { label: 'Ruim', tone: 'warn' },
+    { label: 'Inexistente', tone: 'bad' },
+  ],
+  ternaryBasic: [
+    { label: 'Boa', tone: 'good' },
+    { label: 'Moderada', tone: 'warn' },
+    { label: 'Ruim', tone: 'bad' },
+  ],
+  ternaryAbsence: [
+    { label: 'Ausência', tone: 'good' },
+    { label: 'Moderada', tone: 'warn' },
+    { label: 'Elevada', tone: 'bad' },
+  ],
+  binaryBasic: [
+    { label: 'Bom', tone: 'good' },
+    { label: 'Ruim', tone: 'bad' },
+  ],
+  vazamentos: [
+    { label: 'Sem vazamentos', tone: 'good' },
+    { label: 'Umidade nas juntas', tone: 'warn' },
+    { label: 'Vazamento intenso', tone: 'bad' },
+  ],
+  conservador: [
+    { label: 'Boas condições', tone: 'good' },
+    { label: 'Condições moderadas', tone: 'warn' },
+    { label: 'Condição ruim', tone: 'bad' },
+  ],
+  nivelOleo: [
+    { label: 'Condição normal', tone: 'good' },
+    { label: 'Condição nível máximo', tone: 'warn' },
+    { label: 'Condição nível mínimo', tone: 'bad' },
+  ],
+  secador: [
+    { label: 'Boas condições', tone: 'good' },
+    { label: 'Condições ruins', tone: 'bad' },
+  ],
+  conexaoTemp: [
+    { label: 'Normal', tone: 'good' },
+    { label: 'Anormal', tone: 'bad' },
+  ],
+  vibracao: [
+    { label: 'Normal', tone: 'good' },
+    { label: 'Anormal', tone: 'bad' },
+  ],
+} as const satisfies Record<string, RouteInspectionOption[]>
+
+const routeFieldSeriesDefs: HistorySeriesDef[] = [
+  { key: 'operando', label: 'Operando', color: '#16a34a' },
+  { key: 'acesso', label: 'Acesso', color: '#f59e0b' },
+  { key: 'identificacao', label: 'Identificação', color: '#3b82f6' },
+  { key: 'tempOleo', label: 'Temp. óleo', color: '#ef4444' },
+  { key: 'tempEnrolamento', label: 'Temp. enrolamento', color: '#f97316' },
+  { key: 'tempAmbiente', label: 'Temp. ambiente', color: '#eab308' },
+  { key: 'limpeza', label: 'Limpeza', color: '#10b981' },
+  { key: 'corrosao', label: 'Corrosão', color: '#84cc16' },
+  { key: 'pintura', label: 'Pintura', color: '#22c55e' },
+  { key: 'aterramento', label: 'Aterramento', color: '#06b6d4' },
+  { key: 'vazamentos', label: 'Vazamentos', color: '#8b5cf6' },
+  { key: 'conservador', label: 'Conservador', color: '#ec4899' },
+  { key: 'nivelOleo', label: 'Nível de óleo', color: '#14b8a6' },
+  { key: 'secador', label: 'Secador', color: '#64748b' },
+  { key: 'conexoesAt', label: 'Conexões AT', color: '#0ea5e9' },
+  { key: 'conexoesBt', label: 'Conexões BT', color: '#6366f1' },
+  { key: 'tempPrimario', label: 'Temp. primário', color: '#fb7185' },
+  { key: 'tempSecundario', label: 'Temp. secundário', color: '#f43f5e' },
+  { key: 'vibracao', label: 'Vibração', color: '#dc2626' },
+]
+
+function routeScoreByTone(tone: RouteInspectionOption['tone']) {
+  if (tone === 'bad') return 3
+  if (tone === 'warn') return 2
+  if (tone === 'neutral') return 1.5
+  return 1
+}
+
+function routeTemperatureScore(value: number) {
+  if (value >= 90) return 3
+  if (value >= 70) return 2
+  return 1
+}
+
+function routeChoice(
+  key: string,
+  label: string,
+  value: string,
+  options: RouteInspectionOption[]
+): RouteInspectionField {
+  const selected = options.find((option) => option.label === value) || options[0]
+  return {
+    key,
+    label,
+    type: 'choice',
+    value,
+    score: routeScoreByTone(selected?.tone || 'good'),
+    options,
+  }
+}
+
+function routeTemperature(key: string, label: string, value: number): RouteInspectionField {
+  return {
+    key,
+    label,
+    type: 'temperature',
+    value: String(value),
+    score: routeTemperatureScore(value),
+    unit: '°C',
+  }
+}
+
+function buildRouteInspectionSections(snapshot: Record<string, string | number>) {
+  return [
+    {
+      title: '1. Status do transformador',
+      fields: [
+        routeChoice('operando', '1.1 Operando?', String(snapshot.operando), routeFieldToneOptions.operando),
+        routeChoice('acesso', '1.2 Acesso ao transformador', String(snapshot.acesso), routeFieldToneOptions.acesso),
+        routeChoice('identificacao', '1.4 Identificação', String(snapshot.identificacao), routeFieldToneOptions.identificacao),
+      ],
+    },
+    {
+      title: '2. Temperaturas',
+      fields: [
+        routeTemperature('tempOleo', '2.1 Temperatura do óleo', Number(snapshot.tempOleo)),
+        routeTemperature('tempEnrolamento', '2.2 Temperatura do enrolamento', Number(snapshot.tempEnrolamento)),
+        routeTemperature('tempAmbiente', '2.3 Temperatura ambiente', Number(snapshot.tempAmbiente)),
+      ],
+    },
+    {
+      title: '3. Sistema estrutural do transformador',
+      fields: [
+        routeChoice('limpeza', '3.1 Limpeza do transformador', String(snapshot.limpeza), routeFieldToneOptions.ternaryBasic),
+        routeChoice('corrosao', '3.2 Corrosão no transformador', String(snapshot.corrosao), routeFieldToneOptions.ternaryAbsence),
+        routeChoice('pintura', '3.3 Pintura do transformador', String(snapshot.pintura), routeFieldToneOptions.ternaryBasic),
+        routeChoice('aterramento', '3.4 Aterramento do transformador', String(snapshot.aterramento), routeFieldToneOptions.binaryBasic),
+        routeChoice('vazamentos', '3.5 Vazamentos no transformador', String(snapshot.vazamentos), routeFieldToneOptions.vazamentos),
+      ],
+    },
+    {
+      title: '4. Sistema de preservação de óleo',
+      fields: [
+        routeChoice('conservador', '4.1 Conservador de óleo (tanque de expansão)', String(snapshot.conservador), routeFieldToneOptions.conservador),
+        routeChoice('nivelOleo', '4.2 Nível de óleo isolante', String(snapshot.nivelOleo), routeFieldToneOptions.nivelOleo),
+        routeChoice('secador', '4.3 Secador de ar (sílica gel)', String(snapshot.secador), routeFieldToneOptions.secador),
+      ],
+    },
+    {
+      title: '5. Sistema de conexão do transformador',
+      fields: [
+        routeChoice('conexoesAt', '5.1 Estado das conexões de alta tensão (AT)', String(snapshot.conexoesAt), routeFieldToneOptions.binaryBasic),
+        routeChoice('conexoesBt', '5.2 Estado das conexões de baixa tensão (BT)', String(snapshot.conexoesBt), routeFieldToneOptions.binaryBasic),
+        routeChoice('tempPrimario', '5.3 Temperaturas das conexões (primário)', String(snapshot.tempPrimario), routeFieldToneOptions.conexaoTemp),
+        routeChoice('tempSecundario', '5.4 Temperaturas das conexões (secundário)', String(snapshot.tempSecundario), routeFieldToneOptions.conexaoTemp),
+      ],
+    },
+    {
+      title: '6. Sistema de ativo do transformador',
+      fields: [
+        routeChoice('vibracao', '6.1 Vibração da parte ativa do transformador (núcleo e enrolamentos)', String(snapshot.vibracao), routeFieldToneOptions.vibracao),
+      ],
+    },
+  ] satisfies RouteInspectionSection[]
+}
+
+const routeInspectionSnapshots = computed<RouteInspectionSnapshot[]>(() => {
+  if (!selectedTransformer.value) return []
+  const latestFisico = fisicoRows.value[0] || {}
+  const dates = Array.from(
+    new Set(
+      [...cromatografiasRows.value, ...fisicoRows.value]
+        .map((row) => String(row.DATA_COLETA || ''))
+        .filter(Boolean)
+    )
+  ).slice(0, 4)
+  const fallbackDates = ['12/03/2026', '18/02/2026', '08/01/2026', '19/11/2025']
+  const sourceDates = (dates.length ? dates : fallbackDates).slice(0, 4)
+  const severitySeed = normalizeStatus(selectedTransformer.value.statusAnalyst || selectedTransformer.value.status)
+  const baseSeverity = severitySeed === 'Crítico' ? 2 : severitySeed === 'Alerta' ? 1 : 0
+  return sourceDates.map((date, index) => {
+    const severity = Math.min(2, Math.max(0, baseSeverity + (index === 0 ? 0 : index > 2 ? -1 : 0)))
+    const oilTemp = Number(latestFisico.TEMP_OLEO ?? latestFisico.TEMP_AMOSTRA ?? 58) || 58
+    const windingTemp = Number(latestFisico.TEMP_ENROLAM ?? 67) || 67
+    const ambientTemp = 26 + severity + index
+    const snapshot = {
+      operando: severity === 2 && index === 0 ? 'Não' : 'Sim',
+      acesso: severity === 2 ? 'Trancado' : severity === 1 ? 'Ruim' : 'Bom',
+      identificacao: severity === 2 ? 'Inexistente' : severity === 1 ? 'Ruim' : 'Boa',
+      tempOleo: oilTemp + severity * 8 + index,
+      tempEnrolamento: windingTemp + severity * 10 + index,
+      tempAmbiente: ambientTemp,
+      limpeza: severity === 2 ? 'Ruim' : severity === 1 ? 'Moderada' : 'Boa',
+      corrosao: severity === 2 ? 'Elevada' : severity === 1 ? 'Moderada' : 'Ausência',
+      pintura: severity === 2 ? 'Ruim' : severity === 1 ? 'Moderada' : 'Boa',
+      aterramento: severity >= 1 ? 'Ruim' : 'Bom',
+      vazamentos: severity === 2 ? 'Vazamento intenso' : severity === 1 ? 'Umidade nas juntas' : 'Sem vazamentos',
+      conservador: severity === 2 ? 'Condição ruim' : severity === 1 ? 'Condições moderadas' : 'Boas condições',
+      nivelOleo: severity === 2 ? 'Condição nível mínimo' : severity === 1 ? 'Condição nível máximo' : 'Condição normal',
+      secador: severity >= 1 ? 'Condições ruins' : 'Boas condições',
+      conexoesAt: severity >= 1 ? 'Ruim' : 'Bom',
+      conexoesBt: severity >= 1 ? 'Ruim' : 'Bom',
+      tempPrimario: severity >= 1 ? 'Anormal' : 'Normal',
+      tempSecundario: severity >= 1 ? 'Anormal' : 'Normal',
+      vibracao: severity >= 1 ? 'Anormal' : 'Normal',
+    }
+    return {
+      id: `route-inspection-${date}-${index}`,
+      date,
+      sections: buildRouteInspectionSections(snapshot),
+    }
+  })
+})
+
+const latestRouteInspectionSnapshot = computed(() => routeInspectionSnapshots.value[0] || null)
+
+const routeInspectionChartModel = computed<HistoryChartData>(() => {
+  const snapshots = [...routeInspectionSnapshots.value].reverse()
+  const categories = snapshots.map((item) => item.date)
+  const scoreByKey = new Map<string, number[]>()
+  snapshots.forEach((snapshot) => {
+    snapshot.sections.forEach((section) => {
+      section.fields.forEach((field) => {
+        if (!scoreByKey.has(field.key)) scoreByKey.set(field.key, [])
+        scoreByKey.get(field.key)!.push(field.score)
+      })
+    })
+  })
+  const series = routeFieldSeriesDefs.map((def) => ({
+    name: def.label,
+    data: scoreByKey.get(def.key) || Array.from({ length: categories.length }, () => 0),
+  }))
+  return {
+    max: 3,
+    categories,
+    series,
+    colors: routeFieldSeriesDefs.map((def) => def.color),
+  }
+})
+
+const routeInspectionTableRows = computed(() =>
+  routeInspectionSnapshots.value.map((snapshot) => {
+    const fieldMap = new Map(snapshot.sections.flatMap((section) => section.fields.map((field) => [field.key, field] as const)))
+    return {
+      id: snapshot.id,
+      dataColeta: snapshot.date,
+      operando: fieldMap.get('operando')?.value || '-',
+      acesso: fieldMap.get('acesso')?.value || '-',
+      identificacao: fieldMap.get('identificacao')?.value || '-',
+      tempOleo: fieldMap.get('tempOleo')?.value || '-',
+      tempEnrolamento: fieldMap.get('tempEnrolamento')?.value || '-',
+      tempAmbiente: fieldMap.get('tempAmbiente')?.value || '-',
+      limpeza: fieldMap.get('limpeza')?.value || '-',
+      corrosao: fieldMap.get('corrosao')?.value || '-',
+      pintura: fieldMap.get('pintura')?.value || '-',
+      aterramento: fieldMap.get('aterramento')?.value || '-',
+      vazamentos: fieldMap.get('vazamentos')?.value || '-',
+      conservador: fieldMap.get('conservador')?.value || '-',
+      nivelOleo: fieldMap.get('nivelOleo')?.value || '-',
+      secador: fieldMap.get('secador')?.value || '-',
+      conexoesAt: fieldMap.get('conexoesAt')?.value || '-',
+      conexoesBt: fieldMap.get('conexoesBt')?.value || '-',
+      tempPrimario: fieldMap.get('tempPrimario')?.value || '-',
+      tempSecundario: fieldMap.get('tempSecundario')?.value || '-',
+      vibracao: fieldMap.get('vibracao')?.value || '-',
+    }
+  })
+)
+
 const historyCromMultiModel = computed(() =>
   buildHistoryChartData(cromatografiasChartRows.value, cromatografiaSeriesDefs, historyCromDisplayMode.value)
 )
@@ -1578,6 +1878,7 @@ const historyEnsaiosMultiModel = computed(() =>
 )
 
 const activeHistoryModel = computed(() => {
+  if (isTrRotaMacro.value && !isGlobalAnalisesView.value) return routeInspectionChartModel.value
   if (historyActiveTab.value === 'fisicoquimica') return historyFisicoMultiModel.value
   if (historyActiveTab.value === 'ensaiosespeciais') return historyEnsaiosMultiModel.value
   return historyCromMultiModel.value
@@ -1666,7 +1967,7 @@ const historyChartKey = computed(() => {
   return `${activeTab.value}-${historyActiveTab.value}-${mode}-${activeHistoryModel.value.series.length}-${activeHistoryModel.value.categories.length}`
 })
 
-const showHistorySwitch = computed(() => historyActiveTab.value !== 'ensaiosespeciais')
+const showHistorySwitch = computed(() => !isTrRotaMacro.value && historyActiveTab.value !== 'ensaiosespeciais')
 const historySwitchLabel = computed(() =>
   historyActiveTab.value === 'cromatografia' ? 'Histórico de Gases Combustíveis (un)' : 'Histórico (un)'
 )
@@ -3091,6 +3392,13 @@ function numericValue(row: BaseRow | null, key: string) {
   return Number.isFinite(value) ? value : 0
 }
 
+function routeInspectionToneClass(tone: RouteInspectionOption['tone']) {
+  if (tone === 'bad') return 'route-inspection-bad'
+  if (tone === 'warn') return 'route-inspection-warn'
+  if (tone === 'neutral') return 'route-inspection-neutral'
+  return 'route-inspection-good'
+}
+
 const cromatografiaConditions = computed(() => {
   const row = latestCromatografiaRow.value
   const h2 = numericValue(row, 'HIDROGENIO')
@@ -4054,11 +4362,81 @@ watch([activeTab, selectedId], async () => {
             :class="{ open: historyConditionsOpen }"
             @click="historyConditionsOpen = !historyConditionsOpen"
           >
-            <span>Análise Linear</span>
+            <span>{{ isTrRotaMacro ? 'Análise de Campo' : 'Análise Linear' }}</span>
             <i class="expandable-toggle-icon" aria-hidden="true">{{ historyConditionsOpen ? '−' : '+' }}</i>
           </button>
           <template v-if="historyConditionsOpen">
-            <div class="history-linear-children">
+            <div v-if="isTrRotaMacro" class="history-linear-children">
+              <article v-if="activeHistoryModel.categories.length" class="history-block-card history-linear-child-card">
+                <article class="history-line-card history-line-card-wide">
+                  <div class="history-chart-host">
+                    <VueApexCharts
+                      :key="historyChartKey"
+                      type="line"
+                      height="100%"
+                      :options="historyChartOptions"
+                      :series="activeHistoryModel.series"
+                    />
+                  </div>
+                  <p class="history-mobile-range">{{ historyMobileRangeLabel }}</p>
+                </article>
+              </article>
+              <article class="history-block-card history-linear-child-card">
+                <div class="mini-table-wrap history-analyses-table-wrap">
+                  <table class="table compact analysis-table route-analysis-table">
+                    <thead>
+                      <tr>
+                        <th class="text-center">Data Coleta</th>
+                        <th class="text-center">Operando</th>
+                        <th class="text-center">Acesso</th>
+                        <th class="text-center">Identificação</th>
+                        <th class="text-center">Temp. Óleo</th>
+                        <th class="text-center">Temp. Enrolamento</th>
+                        <th class="text-center">Temp. Ambiente</th>
+                        <th class="text-center">Limpeza</th>
+                        <th class="text-center">Corrosão</th>
+                        <th class="text-center">Pintura</th>
+                        <th class="text-center">Aterramento</th>
+                        <th class="text-center">Vazamentos</th>
+                        <th class="text-center">Conservador</th>
+                        <th class="text-center">Nível de Óleo</th>
+                        <th class="text-center">Secador</th>
+                        <th class="text-center">Conexões AT</th>
+                        <th class="text-center">Conexões BT</th>
+                        <th class="text-center">Temp. Primário</th>
+                        <th class="text-center">Temp. Secundário</th>
+                        <th class="text-center">Vibração</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      <tr v-for="row in routeInspectionTableRows" :key="row.id">
+                        <td class="text-center">{{ row.dataColeta }}</td>
+                        <td class="text-center">{{ row.operando }}</td>
+                        <td class="text-center">{{ row.acesso }}</td>
+                        <td class="text-center">{{ row.identificacao }}</td>
+                        <td class="text-center">{{ row.tempOleo }} °C</td>
+                        <td class="text-center">{{ row.tempEnrolamento }} °C</td>
+                        <td class="text-center">{{ row.tempAmbiente }} °C</td>
+                        <td class="text-center">{{ row.limpeza }}</td>
+                        <td class="text-center">{{ row.corrosao }}</td>
+                        <td class="text-center">{{ row.pintura }}</td>
+                        <td class="text-center">{{ row.aterramento }}</td>
+                        <td class="text-center">{{ row.vazamentos }}</td>
+                        <td class="text-center">{{ row.conservador }}</td>
+                        <td class="text-center">{{ row.nivelOleo }}</td>
+                        <td class="text-center">{{ row.secador }}</td>
+                        <td class="text-center">{{ row.conexoesAt }}</td>
+                        <td class="text-center">{{ row.conexoesBt }}</td>
+                        <td class="text-center">{{ row.tempPrimario }}</td>
+                        <td class="text-center">{{ row.tempSecundario }}</td>
+                        <td class="text-center">{{ row.vibracao }}</td>
+                      </tr>
+                    </tbody>
+                  </table>
+                </div>
+              </article>
+            </div>
+            <div v-else class="history-linear-children">
               <article class="history-block-card history-linear-child-card">
                 <table class="table history-conditions-table">
                   <thead>
@@ -4155,7 +4533,7 @@ watch([activeTab, selectedId], async () => {
             </div>
           </template>
         </article>
-        <article class="history-block-card history-analyses-card">
+        <article v-if="!isTrRotaMacro || isGlobalAnalisesView" class="history-block-card history-analyses-card">
           <button
             v-if="!isGlobalAnalisesView"
             type="button"
@@ -4505,6 +4883,34 @@ watch([activeTab, selectedId], async () => {
                 : 'Guia IEEE Std C57.104™- 2008 para a Interpretação de gases dissolvidos no óleo isolante dos transformadores'
             }}</b>
           </p>
+          <template v-if="isTrRotaMacro && latestRouteInspectionSnapshot">
+            <div class="route-inspection-summary">
+              <section
+                v-for="section in latestRouteInspectionSnapshot.sections"
+                :key="section.title"
+                class="route-inspection-section"
+              >
+                <h5>{{ section.title }}</h5>
+                <div class="route-inspection-fields">
+                  <div v-for="field in section.fields" :key="field.key" class="route-inspection-field">
+                    <span class="route-inspection-label">{{ field.label }}</span>
+                    <div v-if="field.type === 'temperature'" class="route-inspection-temperature">
+                      <span>{{ field.value }}</span>
+                      <small>{{ field.unit }}</small>
+                    </div>
+                    <div v-else class="route-inspection-status-line">
+                      <span
+                        class="route-inspection-status-dot"
+                        :class="routeInspectionToneClass(field.options?.find((option) => option.label === field.value)?.tone || 'neutral')"
+                      ></span>
+                      <strong>{{ field.value }}</strong>
+                    </div>
+                  </div>
+                </div>
+              </section>
+            </div>
+          </template>
+          <template v-else>
           <p>
             Foi desenvolvido um critério de quatro níveis para classificar os riscos aos transformadores, quando não há
             histórico de gás dissolvido, para operação contínua em vários níveis de gás combustível. O critério usa
@@ -4621,6 +5027,7 @@ watch([activeTab, selectedId], async () => {
             julgamento de engenharia e experiência com outros transformadores similares. O critério usa ambos,
             concentrações para gases separados e a concentração total de todos os gases combustíveis (TGC).
           </p>
+          </template>
           </template>
         </article>
         <article class="tile eval-card-4" :class="{ 'eval-collapsed': !evalCardOpen['4'] }">
@@ -6663,6 +7070,11 @@ watch([activeTab, selectedId], async () => {
   align-self: stretch;
 }
 
+.panel-eval .eval-card-3.eval-collapsed{
+  grid-row: 1;
+  align-self: start;
+}
+
 .panel-eval .eval-card-5{
   height: auto;
   align-self: stretch;
@@ -6815,6 +7227,122 @@ watch([activeTab, selectedId], async () => {
 
 .history-linear-child-card{
   padding: 12px;
+}
+
+.route-analysis-table{
+  min-width: 1680px;
+}
+
+.route-inspection-summary{
+  display: grid;
+  gap: 12px;
+  margin-top: 12px;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+}
+
+.route-inspection-section{
+  border: 1px solid rgba(30, 78, 139, 0.14);
+  border-radius: 12px;
+  padding: 12px;
+  background: rgba(248, 250, 252, 0.72);
+}
+
+.route-inspection-section h5{
+  margin: 0 0 10px;
+}
+
+.route-inspection-fields{
+  display: grid;
+  gap: 8px;
+}
+
+.route-inspection-field{
+  display: grid;
+  grid-template-columns: minmax(220px, 1.5fr) minmax(0, 1fr);
+  align-items: center;
+  gap: 10px;
+}
+
+.route-inspection-label{
+  font-size: 12px;
+  font-weight: 600;
+  color: rgba(15, 23, 42, 0.82);
+  text-align: left;
+}
+
+.route-inspection-status-line{
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  min-height: 32px;
+  width: fit-content;
+  padding: 6px 10px;
+  border-radius: 10px;
+  border: 1px solid rgba(30, 78, 139, 0.16);
+  background: #fff;
+  font-size: 12px;
+  color: #0f172a;
+  justify-self: end;
+}
+
+.route-inspection-status-dot{
+  width: 12px;
+  height: 12px;
+  border-radius: 999px;
+  box-shadow: 0 0 0 3px rgba(255, 255, 255, 0.92), 0 3px 8px rgba(15, 23, 42, 0.14);
+}
+
+.route-inspection-good{
+  background: #16a34a;
+}
+
+.route-inspection-warn{
+  background: #eab308;
+}
+
+.route-inspection-bad{
+  background: #ef4444;
+}
+
+.route-inspection-neutral{
+  background: #cbd5e1;
+}
+
+.route-inspection-temperature{
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  width: fit-content;
+  min-width: 92px;
+  padding: 7px 12px;
+  border-radius: 10px;
+  border: 1px solid rgba(30, 78, 139, 0.2);
+  background: #fff;
+  font-size: 13px;
+  font-weight: 700;
+  color: #0f172a;
+  justify-self: end;
+}
+
+.route-inspection-temperature small{
+  font-size: 11px;
+  color: rgba(15, 23, 42, 0.6);
+}
+
+@media (max-width: 900px){
+  .route-inspection-summary{
+    grid-template-columns: 1fr;
+  }
+
+  .route-inspection-field{
+    grid-template-columns: 1fr;
+    gap: 6px;
+  }
+
+  .route-inspection-status-line,
+  .route-inspection-temperature{
+    justify-self: start;
+  }
 }
 
 .table tbody tr:nth-child(odd){
