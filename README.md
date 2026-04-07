@@ -48,6 +48,10 @@ npm run dev
 npm run build
 ```
 
+## Documentação de integração
+
+- Backend x Frontend: `docs/BACKEND_INTEGRATION.md`
+
 ### Lint with [ESLint](https://eslint.org/)
 
 ```sh
