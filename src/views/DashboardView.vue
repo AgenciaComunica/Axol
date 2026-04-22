@@ -2654,13 +2654,41 @@ body.menu-open{
 
 @media (min-width: 901px) and (max-height: 860px){
   .kpi-stack{
-    top: 104px;
+    top: 88px;
   }
   .kpi-col{
-    gap: 12px;
-    max-height: calc(100vh - 120px);
+    gap: 8px;
+    max-height: calc(100vh - 104px);
     overflow-y: auto;
+    overflow-x: hidden;
     padding-right: 4px;
+  }
+  .kpi-col::-webkit-scrollbar{
+    width: 3px;
+  }
+  .kpi-col::-webkit-scrollbar-track{
+    background: transparent;
+  }
+  .kpi-col::-webkit-scrollbar-thumb{
+    background: rgba(15, 23, 42, 0.18);
+    border-radius: 999px;
+  }
+  .kpi-col::-webkit-scrollbar-thumb:hover{
+    background: rgba(15, 23, 42, 0.35);
+  }
+  .kpi-col{
+    scrollbar-width: thin;
+    scrollbar-color: rgba(15, 23, 42, 0.18) transparent;
+  }
+}
+
+@media (min-width: 901px) and (max-height: 680px){
+  .kpi-stack{
+    top: 72px;
+  }
+  .kpi-col{
+    gap: 6px;
+    max-height: calc(100vh - 84px);
   }
 }
 
@@ -2960,6 +2988,14 @@ body.menu-open{
   }
   .transformer-modal-media{
     min-height: 180px;
+  }
+}
+
+@media (max-width: 600px){
+  .kpi-stack{
+    grid-template-columns: 1fr;
+    top: 8px;
+    gap: 8px;
   }
 }
 </style>

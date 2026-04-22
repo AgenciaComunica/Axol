@@ -10,6 +10,10 @@ import fisicoQuimicosRaw from '@/assets/fisicoquimicos.json?raw'
 import fisicoQuimicosOltcRaw from '@/assets/fisicoquimicos_oltc.json?raw'
 import VueApexCharts from 'vue3-apexcharts'
 import type { ApexOptions } from 'apexcharts'
+import logoSiaroUrl from '@/assets/logo_siaro.png'
+import trafo3dUrl from '@/assets/Trafo_3D.svg'
+const axolQrUrl = new URL('/ArquivoExtRef/axol_qrcode.svg', import.meta.url).href
+import { generateSimpleReport, generateCompleteReport } from '@/utils/reportGenerator'
 
 type BaseRow = Record<string, unknown>
 type Transformer = {
@@ -242,15 +246,6 @@ const activeSubTabs = computed(() => {
 })
 const generateReportMenuOpen = ref(false)
 const generateReportWrapRef = ref<HTMLElement | null>(null)
-const generateReportItems = [
-  'Avaliação Completa',
-  'Histórico de Análises',
-  'Avaliações Complementares',
-  'Coletas',
-  'Tratamento de Óleo',
-  'TR-Óleo',
-]
-const generateReportSelected = ref<string[]>([...generateReportItems])
 
 const transformerOptions = computed<Transformer[]>(() => {
   const baseTransformers: Transformer[] = [
@@ -2715,18 +2710,58 @@ function toggleGenerateReportMenu() {
   generateReportMenuOpen.value = !generateReportMenuOpen.value
 }
 
-function toggleGenerateReportItem(item: string) {
-  if (generateReportSelected.value.includes(item)) {
-    if (generateReportSelected.value.length === 1) return
-    generateReportSelected.value = generateReportSelected.value.filter((value) => value !== item)
-    return
-  }
-  generateReportSelected.value = [...generateReportSelected.value, item]
-}
-
-function downloadGeneratedReport() {
-  if (!generateReportSelected.value.length) return
+function openGeneratedReport(type: 'simples' | 'completo') {
+  const trafo = selectedTransformer.value
+  if (!trafo) return
   generateReportMenuOpen.value = false
+
+  const latestCrom = latestCromatografiaRow.value
+  const latestFisico = fisicoRows.value[0] || null
+
+  const evalData = {
+    specialistStatus: specialistView.value.statusAnalyst,
+    specialistNote: specialistView.value.analystNote,
+    specialistFailureMode: specialistView.value.failureMode,
+    latestCrom: latestCrom
+      ? {
+          date: String(latestCrom.DATA_COLETA || '-'),
+          H2:   latestCrom.HIDROGENIO,
+          CH4:  latestCrom.METANO,
+          C2H2: latestCrom.ACETILENO,
+          C2H4: latestCrom.ETILENO,
+          C2H6: latestCrom.ETANO,
+          CO:   latestCrom.MONOX_CARBONO,
+          CO2:  latestCrom.DIOX_CARBONO,
+          TGC:  latestCrom.TOTAL_GASES_COMB,
+        }
+      : null,
+    latestFisico: latestFisico
+      ? {
+          date:      String(latestFisico.DATA_COLETA || '-'),
+          teor_agua: latestFisico.TEOR_AGUA,
+          rd:        latestFisico.RD,
+          tif:       latestFisico.TENSAO_INTERFACIAL,
+          ind_neutr: latestFisico['IND_NEUTRALIZACAO '],
+          fp25:      latestFisico.FATOR_POT_25,
+          fp90:      latestFisico.FATOR_POT_90,
+          fp100:     latestFisico.FATOR_POT_100,
+        }
+      : null,
+    riskProbabilities: riskProbabilities.value,
+    riskHeatmapRows: riskHeatmapRows.value.map((r) => ({ label: r.label, values: r.values })),
+  }
+
+  const logo = window.location.origin + logoSiaroUrl
+  const trafoImg = window.location.origin + trafo3dUrl
+  const html =
+    type === 'simples'
+      ? generateSimpleReport(trafo, logo, evalData)
+      : generateCompleteReport(trafo, logo, trafoImg, axolQrUrl, evalData)
+
+  const win = window.open('', '_blank')
+  if (!win) return
+  win.document.write(html)
+  win.document.close()
 }
 
 function toggleAnalysisNewMenu() {
@@ -4544,27 +4579,38 @@ watch([activeTab, selectedId], async () => {
             Localizar
           </button>
           <div ref="generateReportWrapRef" class="report-generate-wrap">
-            <button type="button" class="locate-btn" @click="toggleGenerateReportMenu">
+            <button
+              type="button"
+              class="locate-btn"
+              :disabled="!selectedTransformer || isGlobalScopeView"
+              @click="toggleGenerateReportMenu"
+            >
               <span class="history-action-icon" aria-hidden="true">⭳</span>
               Gerar Relatório
             </button>
             <div v-if="generateReportMenuOpen" class="report-generate-menu">
-              <label v-for="item in generateReportItems" :key="`report-item-${item}`" class="history-export-option">
-                <input
-                  type="checkbox"
-                  :checked="generateReportSelected.includes(item)"
-                  :disabled="generateReportSelected.length === 1 && generateReportSelected.includes(item)"
-                  @change="toggleGenerateReportItem(item)"
-                />
-                <span>{{ item }}</span>
-              </label>
+              <p class="report-generate-menu-label">Selecione o tipo de relatório</p>
               <button
                 type="button"
-                class="history-export-download-btn"
-                :disabled="!generateReportSelected.length"
-                @click="downloadGeneratedReport"
+                class="report-type-btn"
+                @click="openGeneratedReport('simples')"
               >
-                Baixar
+                <span class="report-type-icon">📄</span>
+                <span>
+                  <strong>Relatório Simples</strong><br>
+                  <small>Identificação, status e dados técnicos</small>
+                </span>
+              </button>
+              <button
+                type="button"
+                class="report-type-btn"
+                @click="openGeneratedReport('completo')"
+              >
+                <span class="report-type-icon">🔐</span>
+                <span>
+                  <strong>Relatório Completo</strong><br>
+                  <small>Com QR code, validação e dados estruturados</small>
+                </span>
               </button>
             </div>
           </div>
@@ -7230,9 +7276,60 @@ watch([activeTab, selectedId], async () => {
   border: 1px solid rgba(15, 23, 42, 0.12);
   background: #fff;
   box-shadow: 0 10px 24px rgba(15, 23, 42, 0.14);
-  padding: 8px;
+  padding: 10px;
   display: grid;
-  gap: 2px;
+  gap: 6px;
+}
+
+.report-generate-menu-label{
+  font-size: 11px;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: .07em;
+  color: rgba(15, 23, 42, .45);
+  margin: 2px 4px 6px;
+  padding: 0;
+}
+
+.report-type-btn{
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  text-align: left;
+  width: 100%;
+  padding: 12px 14px;
+  border-radius: 10px;
+  border: 1px solid rgba(15, 23, 42, .1);
+  background: #f8fafc;
+  color: #0f172a;
+  cursor: pointer;
+  transition: background 0.15s, border-color 0.15s;
+}
+
+.report-type-btn:hover{
+  background: #e8f0fe;
+  border-color: #1a3a5c;
+}
+
+.report-type-btn strong{
+  display: block;
+  font-size: 13px;
+  font-weight: 700;
+  color: #0f172a;
+}
+
+.report-type-btn small{
+  display: block;
+  font-size: 11px;
+  color: rgba(15, 23, 42, .5);
+  font-weight: 400;
+  margin-top: 1px;
+}
+
+.report-type-icon{
+  font-size: 20px;
+  flex-shrink: 0;
+  line-height: 1;
 }
 
 .selector{
