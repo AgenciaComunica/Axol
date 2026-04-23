@@ -29,7 +29,7 @@
           "ESTADO": "Normal",
           "ESTADO_TRATAMENTO": "Readição de antioxidante",
           "ESTADO_ANALISTA": "Alerta",
-          "DESCRICAO_ANALISTA": "qwerqwerqwerwqeqwe\nqweqerqwreqweqwrewe",
+          "DESCRICAO_ANALISTA": "Transformador apresenta concentração de TGC acima do limite da Condição 02 (IEEE C57.104-2008), com presença elevada de CO e CO₂ indicando degradação térmica do papel isolante.\n\nRecomenda-se intensificação do monitoramento cromatográfico com intervalo máximo de 90 dias e avaliação da curva de tendência dos gases. Caso a taxa de geração de CO ultrapasse 10 ppm/dia, acionar protocolo de inspeção presencial e avaliar necessidade de retirada de serviço para análise aprofundada do óleo isolante.",
           "MODO_FALHA": "Degradacao por pirolise do Oleo Isolante do Transformador",
           "ANALISTA": "alex.fabiano@axol.eng.br",
           "LATITUDE": "-23.600200",

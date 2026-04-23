@@ -438,117 +438,110 @@ export function generateCompleteReport(
 <title>Relatório Completo – ${escHtml(trafo.serial)}</title>
 <script type="application/ld+json">${jsonLd}<\/script>
 <style>
-  ${PRINT_RESET}
-
   /* ── Print bar ── */
   .no-print { background:#0f172a; color:#fff; padding:9px 28px; display:flex; justify-content:space-between; align-items:center; gap:12px; }
   .np-chip { background:#1e4e8b; border-radius:4px; padding:2px 9px; font-size:10px; font-weight:700; letter-spacing:.06em; text-transform:uppercase; }
   .np-btn { background:#fff; color:#0f172a; border:none; border-radius:5px; padding:6px 16px; cursor:pointer; font-size:13px; font-weight:700; }
   .np-btn:hover { background:#dbeafe; }
 
-  /* ── Page ── */
-  .page { max-width:860px; margin:0 auto; background:#fff; }
+  /* ── Layout: screen=block, print=table ── */
+  .rpt { display:block; max-width:860px; margin:0 auto; background:#fff; }
+  .rpt thead, .rpt tbody, .rpt tfoot, .rpt tr, .rpt td { display:block; padding:0; }
+
+  /* ── Stripes ── */
+  .stripe-top    { height:16px; background:#1a3a5c; -webkit-print-color-adjust:exact; print-color-adjust:exact; }
+  .stripe-bottom { height:16px; background:#F5B800; -webkit-print-color-adjust:exact; print-color-adjust:exact; }
 
   /* ── Header band ── */
-  .hband { background:#fff; color:#0f172a; padding:0; border-bottom:2px solid #e2e8f0; }
-  .hband-top { padding:20px 36px 16px; display:flex; align-items:center; gap:16px; border-bottom:1px solid #e2e8f0; }
-  .hb-logo { height:52px; object-fit:contain; }
+  .hband { background:#fff; border-bottom:2px solid #e2e8f0; }
+  .hband-top { padding:16px 36px; display:flex; align-items:center; gap:16px; border-bottom:1px solid #e2e8f0; }
+  .hb-logo { height:48px; object-fit:contain; }
   .hband-top-text { flex:1; }
   .hb-eyebrow { font-size:9px; letter-spacing:.1em; text-transform:uppercase; color:#94a3b8; margin-bottom:3px; }
   .hb-title { font-size:20px; font-weight:800; color:#0f172a; margin:0; line-height:1.2; }
-  .hb-sub { font-size:10px; color:#94a3b8; margin-top:3px; }
-  .hband-body { display:grid; grid-template-columns:230px 1fr; gap:0; min-height:220px; }
+  .hband-body { display:grid; grid-template-columns:230px 1fr; min-height:220px; }
   .hb-trafo { display:flex; align-items:center; justify-content:center; padding:20px; border-right:1px solid #e2e8f0; background:#f8fafc; }
   .hb-trafo img { height:185px; width:auto; object-fit:contain; opacity:.85; }
   .hb-info { padding:20px 28px; display:grid; grid-template-columns:1fr 1fr 1fr 1fr; gap:14px 20px; align-content:center; }
   .hb-mi-label { font-size:9px; text-transform:uppercase; letter-spacing:.07em; color:#94a3b8; font-weight:700; }
   .hb-mi-value { font-size:11px; font-weight:700; color:#0f172a; margin-top:2px; }
+  /* meta info do relatório (direita do header) */
+  .hb-meta { display:flex; flex-direction:column; align-items:flex-end; gap:3px; flex-shrink:0; }
+  .hb-meta-lbl  { font-size:9px; text-transform:uppercase; letter-spacing:.07em; color:#94a3b8; font-weight:700; }
+  .hb-meta-id   { font-size:11px; font-weight:800; color:#0f172a; font-family:monospace; letter-spacing:.04em; }
+  .hb-meta-date { font-size:9px; color:#64748b; }
 
   /* ── Status bar ── */
   .sbar { background:#f8fafc; border-bottom:1px solid #e2e8f0; padding:14px 36px; display:flex; align-items:center; justify-content:space-between; gap:20px; }
   .sbar-main { display:flex; align-items:center; gap:14px; }
-  .sbar-accent { width:4px; height:44px; border-radius:999px; background:#1e4e8b; flex-shrink:0; }
-  .sbar-label { font-size:10px; text-transform:uppercase; letter-spacing:.08em; color:#64748b; font-weight:700; }
+  .sbar-accent { width:4px; height:44px; border-radius:999px; background:#1e4e8b; flex-shrink:0; -webkit-print-color-adjust:exact; print-color-adjust:exact; }
+  .sbar-label  { font-size:10px; text-transform:uppercase; letter-spacing:.08em; color:#64748b; font-weight:700; }
   .sbar-status { font-size:24px; font-weight:800; color:${sFg}; line-height:1.1; }
   .sbar-analyst { font-size:11px; color:#94a3b8; margin-top:2px; }
   .sbar-badges { display:flex; gap:8px; flex-wrap:wrap; }
   .badge { display:inline-flex; align-items:center; gap:5px; padding:4px 12px; border-radius:999px; font-size:12px; font-weight:700; }
   .badge-dot { width:6px; height:6px; border-radius:50%; background:currentColor; flex-shrink:0; }
 
-  /* ── Validity strip ── */
-  .vstrip { border-bottom:1px solid #e2e8f0; padding:10px 36px; display:flex; align-items:center; gap:20px; flex-wrap:wrap; }
-  .vstrip-field {}
-  .vf-label { font-size:9px; text-transform:uppercase; letter-spacing:.07em; color:#94a3b8; font-weight:700; }
-  .vf-value { font-size:12px; font-weight:700; color:#0f172a; margin-top:1px; }
-  .vf-value.id { color:#1e4e8b; font-family:monospace; letter-spacing:.04em; }
-  .vstrip-sep { width:1px; height:26px; background:#e2e8f0; }
-  .vstrip-url { font-size:10px; color:#94a3b8; margin-left:auto; }
-
   /* ── Content ── */
   .content { padding:28px 36px; }
-
-  /* ── Section head ── */
   .sec-head { display:flex; align-items:center; gap:7px; font-size:10px; font-weight:700; text-transform:uppercase; letter-spacing:.1em; color:#64748b; margin:26px 0 14px; padding-bottom:6px; border-bottom:1px solid #e2e8f0; }
   .sec-head:first-child { margin-top:0; }
-  .sec-head::before { content:''; width:3px; height:12px; border-radius:2px; background:#1e4e8b; display:block; flex-shrink:0; }
+  .sec-head::before { content:''; width:3px; height:12px; border-radius:2px; background:#1e4e8b; display:block; flex-shrink:0; -webkit-print-color-adjust:exact; print-color-adjust:exact; }
   .sec-num { background:#0f172a; color:#fff; border-radius:3px; padding:1px 6px; font-size:9px; font-weight:800; letter-spacing:.04em; }
-
-  /* ── KV grid ── */
   .kv-grid { display:grid; grid-template-columns:repeat(4,1fr); gap:10px; margin-bottom:4px; }
   .kv-card { background:#f8fafc; border:1px solid #e2e8f0; border-radius:7px; padding:10px 12px; }
   .kv-label { font-size:10px; color:#94a3b8; font-weight:700; text-transform:uppercase; letter-spacing:.05em; }
   .kv-value { font-size:16px; font-weight:800; color:#0f172a; margin-top:3px; }
-
-  /* ── Two column ── */
   .two-col { display:grid; grid-template-columns:1fr 1fr; gap:32px; }
-
-  /* ── Tables ── */
   table { width:100%; border-collapse:collapse; }
   .tc-label { color:#64748b; padding:6px 12px 6px 0; font-size:12px; vertical-align:top; border-bottom:1px solid #f1f5f9; width:42%; }
-  .tc-val { color:#0f172a; font-weight:600; padding:6px 0; font-size:12px; vertical-align:top; border-bottom:1px solid #f1f5f9; }
-  .tc-cond { padding:6px 0; vertical-align:top; border-bottom:1px solid #f1f5f9; }
+  .tc-val   { color:#0f172a; font-weight:600; padding:6px 0; font-size:12px; vertical-align:top; border-bottom:1px solid #f1f5f9; }
+  .tc-cond  { padding:6px 0; vertical-align:top; border-bottom:1px solid #f1f5f9; }
   .tc-empty { color:#94a3b8; font-style:italic; font-size:11px; padding:8px 0; }
-  .cpill { display:inline-block; padding:2px 8px; border-radius:4px; font-size:11px; font-weight:700; }
-
-  /* ── Risk bars ── */
+  .cpill    { display:inline-block; padding:2px 8px; border-radius:4px; font-size:11px; font-weight:700; }
   .risk-row { display:flex; align-items:center; gap:10px; margin-bottom:7px; }
   .risk-lbl { font-size:11px; color:#64748b; width:120px; flex-shrink:0; }
   .risk-track { flex:1; background:#f1f5f9; border-radius:999px; height:10px; overflow:hidden; }
-  .risk-fill { height:100%; border-radius:999px; }
-  .risk-num { font-size:12px; font-weight:800; width:48px; text-align:right; flex-shrink:0; }
-
-  /* ── Note box ── */
+  .risk-fill  { height:100%; border-radius:999px; }
+  .risk-num   { font-size:12px; font-weight:800; width:48px; text-align:right; flex-shrink:0; }
   .note-box { background:#f8fafc; border-left:3px solid #1e4e8b; padding:10px 14px; font-size:12px; color:#334155; white-space:pre-wrap; border-radius:2px; margin-top:8px; line-height:1.6; }
-
-  /* ── Machine data ── */
-  .mdata-wrap { border-top:1px dashed #e2e8f0; margin:0 36px; padding:10px 0 16px; }
+  .mdata-wrap  { border-top:1px dashed #e2e8f0; margin:0 36px; padding:10px 0 16px; }
   .mdata-label { font-size:9px; text-transform:uppercase; letter-spacing:.08em; color:#cbd5e1; margin-bottom:3px; font-weight:700; }
-  .mdata-raw { font-family:monospace; font-size:9px; color:#cbd5e1; word-break:break-all; line-height:1.4; }
+  .mdata-raw   { font-family:monospace; font-size:9px; color:#cbd5e1; word-break:break-all; line-height:1.4; }
 
-  /* ── Validity strip ── */
-  .vstrip { border-bottom:1px solid #e2e8f0; padding:10px 36px; display:flex; align-items:center; gap:20px; flex-wrap:wrap; }
-  .vstrip-field {}
-  .vf-label { font-size:9px; text-transform:uppercase; letter-spacing:.07em; color:#94a3b8; font-weight:700; }
-  .vf-value { font-size:12px; font-weight:700; color:#0f172a; margin-top:1px; }
-  .vf-value.id { color:#1e4e8b; font-family:monospace; letter-spacing:.04em; }
-  .vstrip-sep { width:1px; height:26px; background:#e2e8f0; }
-  .vstrip-url { font-size:10px; color:#94a3b8; margin-left:auto; }
   /* ── Footer ── */
-  .doc-footer { border-top:1px solid #e2e8f0; }
-  .doc-footer-main { padding:14px 36px; display:flex; align-items:center; justify-content:space-between; gap:20px; border-bottom:1px dashed #e2e8f0; }
-  .doc-footer-logo { height:54px; object-fit:contain; opacity:.8; }
-  .doc-footer-qr-right { display:flex; flex-direction:column; align-items:flex-end; gap:6px; }
-  .doc-footer-qr-img { width:68px; height:68px; object-fit:contain; display:block; }
-  .doc-footer-qr-link { font-size:9px; color:#94a3b8; text-align:right; font-family:monospace; white-space:nowrap; line-height:1.5; }
-  .doc-footer-info { padding:9px 36px; display:flex; justify-content:space-between; font-size:10px; color:#94a3b8; background:#f8fafc; }
-  .doc-footer-info strong { color:#64748b; }
+  .doc-footer { border-top:2px solid #e2e8f0; }
+  .df-main { display:flex; align-items:flex-start; gap:20px; padding:12px 36px 10px; }
+  .df-col { display:flex; flex-direction:column; gap:3px; flex-shrink:0; }
+  .df-col-grow { flex:1; }
+  .df-logo { height:32px; object-fit:contain; opacity:.8; margin-bottom:3px; }
+  .df-text { font-size:10px; color:#94a3b8; white-space:nowrap; }
+  .df-text strong { color:#64748b; }
+  .df-qr-col { display:flex; flex-direction:column; align-items:flex-end; gap:4px; flex-shrink:0; }
+  .df-qr-img  { width:52px; height:52px; object-fit:contain; display:block; }
+  .df-qr-link { font-size:8px; color:#94a3b8; font-family:monospace; white-space:nowrap; }
 
+  /* ── Print ── */
   @media print {
     body { background:#fff; }
-    .sbar-accent { -webkit-print-color-adjust:exact; print-color-adjust:exact; }
-    .risk-fill { -webkit-print-color-adjust:exact; print-color-adjust:exact; }
-    .cpill { -webkit-print-color-adjust:exact; print-color-adjust:exact; }
-    .badge { -webkit-print-color-adjust:exact; print-color-adjust:exact; }
+    .no-print { display:none !important; }
+    /* Ativa semântica de tabela para header/footer repetido */
+    .rpt { display:table; width:100%; max-width:none; margin:0; border-collapse:collapse; }
+    .rpt thead { display:table-header-group; }
+    .rpt tbody { display:table-row-group; }
+    .rpt tfoot { display:table-footer-group; }
+    .rpt tr    { display:table-row; }
+    .rpt td    { display:table-cell; padding:0; vertical-align:top; }
+    .hband-body { display:none !important; }
+    /* Evita quebra dentro de blocos */
+    .sec-head, .kv-grid, .kv-card, .two-col, .sbar, .note-box, .risk-row {
+      page-break-inside:avoid; break-inside:avoid;
+    }
+    /* Cores */
+    .sbar-accent, .sec-head::before, .risk-fill, .cpill, .badge,
+    .stripe-top, .stripe-bottom, .kv-card, .note-box {
+      -webkit-print-color-adjust:exact; print-color-adjust:exact;
+    }
   }
 </style>
 </head>
@@ -561,139 +554,134 @@ export function generateCompleteReport(
   <button class="np-btn" onclick="window.print()">&#9113; Salvar como PDF</button>
 </div>
 
-<div class="page">
+<table class="rpt">
 
-  <!-- HEADER BAND -->
-  <div class="hband">
+  <!-- THEAD: repete no topo de cada página -->
+  <thead><tr><td>
+    <div class="stripe-top"></div>
     <div class="hband-top">
       <img class="hb-logo" src="${logoUrl}" alt="SIARO" />
       <div class="hband-top-text">
         <div class="hb-eyebrow">Sistema SIARO — Axol Engenharia</div>
         <h1 class="hb-title">Relatório Técnico de Transformador</h1>
-        <p class="hb-sub">Emitido em ${fmt(now)} &bull; Válido até ${expiryStr}</p>
       </div>
-      <div style="flex-shrink:0;display:flex;flex-direction:column;align-items:flex-end;gap:5px">
-        <img src="${qrUrl}" alt="QR Code" style="width:60px;height:60px;object-fit:contain;display:block" />
-        <span style="font-size:8px;color:#94a3b8;font-family:monospace;white-space:nowrap">${escHtml(validationUrl)}</span>
-      </div>
-    </div>
-    <div class="hband-body">
-      <div class="hb-trafo">
-        <img src="${trafoImgUrl}" alt="Transformador" />
-      </div>
-      <div class="hb-info">
-        <div class="hb-mi"><div class="hb-mi-label">Serial</div><div class="hb-mi-value">${escHtml(trafo.serial)}</div></div>
-        <div class="hb-mi"><div class="hb-mi-label">TAG</div><div class="hb-mi-value">${escHtml(trafo.tag)}</div></div>
-        <div class="hb-mi"><div class="hb-mi-label">Subestação</div><div class="hb-mi-value">${escHtml(trafo.substation)}</div></div>
-        <div class="hb-mi"><div class="hb-mi-label">Unidade</div><div class="hb-mi-value">${escHtml(trafo.unit)}</div></div>
-        <div class="hb-mi"><div class="hb-mi-label">Potência</div><div class="hb-mi-value">${escHtml(trafo.power)}</div></div>
-        <div class="hb-mi"><div class="hb-mi-label">Tensão</div><div class="hb-mi-value">${escHtml(trafo.voltage)}</div></div>
-        <div class="hb-mi"><div class="hb-mi-label">Fabricante</div><div class="hb-mi-value">${escHtml(trafo.manufacturer)}</div></div>
-        <div class="hb-mi"><div class="hb-mi-label">Ano Fabricação</div><div class="hb-mi-value">${escHtml(trafo.year)}</div></div>
-        <div class="hb-mi"><div class="hb-mi-label">Tipo</div><div class="hb-mi-value">${escHtml(trafo.equipment)}</div></div>
-        <div class="hb-mi"><div class="hb-mi-label">Comutador</div><div class="hb-mi-value">${escHtml(trafo.commutator)}</div></div>
-        <div class="hb-mi"><div class="hb-mi-label">Óleo/Fluido</div><div class="hb-mi-value">${escHtml(trafo.oilFluid)}</div></div>
-        <div class="hb-mi"><div class="hb-mi-label">Volume (L)</div><div class="hb-mi-value">${escHtml(trafo.volume)}</div></div>
-        <div class="hb-mi"><div class="hb-mi-label">Refrigeração</div><div class="hb-mi-value">${escHtml(trafo.refrigeration)}</div></div>
-        <div class="hb-mi"><div class="hb-mi-label">Carregamento</div><div class="hb-mi-value">${escHtml(trafo.load)}%</div></div>
-        <div class="hb-mi"><div class="hb-mi-label">Em Operação</div><div class="hb-mi-value">${escHtml(trafo.operating)}</div></div>
-        <div class="hb-mi"><div class="hb-mi-label">Selado</div><div class="hb-mi-value">${escHtml(trafo.sealed)}</div></div>
+      <div class="hb-meta">
+        <div class="hb-meta-lbl">Relatório</div>
+        <div class="hb-meta-id">${escHtml(reportId)}</div>
+        <div class="hb-meta-date">Emitido em ${fmt(now)}</div>
+        <div class="hb-meta-date">Válido até ${expiryStr}</div>
       </div>
     </div>
-  </div>
+  </td></tr></thead>
 
-  <!-- STATUS BAR -->
-  <div class="sbar">
-    <div class="sbar-main">
-      <div class="sbar-accent"></div>
-      <div>
-        <div class="sbar-label">Avaliação do Analista</div>
-        <div class="sbar-status">${escHtml(ev.specialistStatus)}</div>
-        <div class="sbar-analyst">${escHtml(trafo.analyst)}</div>
-      </div>
-    </div>
-    <div class="sbar-badges">
-      <span class="badge" style="color:${statusColor(trafo.status)};background:${statusBg(trafo.status)}">
-        <span class="badge-dot"></span>Sistema: ${escHtml(trafo.status)}
-      </span>
-      <span class="badge" style="color:${sFg};background:${sBg}">
-        <span class="badge-dot"></span>Analista: ${escHtml(ev.specialistStatus)}
-      </span>
-    </div>
-  </div>
-
-
-  <div class="content">
-
-    <!-- CARD 1 – Resultado das Avaliações -->
-    <div class="sec-head"><span class="sec-num">1</span>Resultado das Avaliações</div>
-    <div class="kv-grid">
-      <div class="kv-card"><div class="kv-label">Status Sistema</div><div class="kv-value" style="font-size:14px;color:${statusColor(trafo.status)}">${escHtml(trafo.status)}</div></div>
-      <div class="kv-card"><div class="kv-label">Status Analista</div><div class="kv-value" style="font-size:14px;color:${sFg}">${escHtml(ev.specialistStatus)}</div></div>
-      <div class="kv-card"><div class="kv-label">Estado do Óleo</div><div class="kv-value" style="font-size:13px">${escHtml(trafo.oilStatus)}</div></div>
-      ${crom ? `<div class="kv-card"><div class="kv-label">Condição TGC (IEEE)</div><div class="kv-value" style="font-size:14px;color:${condColor(ieeeCondition(crom.TGC,'TGC'))}">${ieeeCondition(crom.TGC,'TGC')}</div></div>` : ''}
-    </div>
-
-    <!-- CARD 2 – Avaliação do Especialista -->
-    <div class="sec-head"><span class="sec-num">2</span>Avaliação do Especialista</div>
-    <table>
-      <tr><td class="tc-label">Status</td><td class="tc-val"><span class="badge" style="color:${sFg};background:${sBg}">${escHtml(ev.specialistStatus)}</span></td></tr>
-      <tr><td class="tc-label">Modo de falha</td><td class="tc-val">${escHtml(ev.specialistFailureMode)}</td></tr>
-    </table>
-    ${ev.specialistNote && ev.specialistNote !== 'Sem observações registradas.' ? `<div class="note-box">${escHtml(ev.specialistNote)}</div>` : ''}
-
-    <!-- CARD 3 & 4 – Coleta + Físico-Químico (duas colunas) -->
-    <div class="two-col" style="margin-top:24px">
-      <div>
-        <div class="sec-head"><span class="sec-num">3</span>Última Coleta${crom ? ` — ${escHtml(crom.date)}` : ''}</div>
-        <table>
-          <tr>
-            <td class="tc-label" style="font-weight:700;color:#475569">Gás</td>
-            <td class="tc-val" style="font-weight:700;color:#475569">Valor</td>
-            <td class="tc-cond" style="font-weight:700;color:#475569;font-size:11px;padding:6px 0;border-bottom:1px solid #f1f5f9">IEEE</td>
-          </tr>
-          ${gasTableRows}
-        </table>
-      </div>
-      <div>
-        <div class="sec-head"><span class="sec-num">4</span>Tratamentos no Óleo${fisico ? ` — ${escHtml(fisico.date)}` : ''}</div>
-        <table>${fisicoTableRows}</table>
+  <!-- TBODY: conteúdo (antes do tfoot = ordem correta na tela) -->
+  <tbody><tr><td>
+    <!-- hband-body: specs + imagem, visível na tela, oculto no print -->
+    <div class="hband">
+      <div class="hband-body">
+        <div class="hb-trafo"><img src="${trafoImgUrl}" alt="Transformador" /></div>
+        <div class="hb-info">
+          <div class="hb-mi"><div class="hb-mi-label">Serial</div><div class="hb-mi-value">${escHtml(trafo.serial)}</div></div>
+          <div class="hb-mi"><div class="hb-mi-label">TAG</div><div class="hb-mi-value">${escHtml(trafo.tag)}</div></div>
+          <div class="hb-mi"><div class="hb-mi-label">Subestação</div><div class="hb-mi-value">${escHtml(trafo.substation)}</div></div>
+          <div class="hb-mi"><div class="hb-mi-label">Unidade</div><div class="hb-mi-value">${escHtml(trafo.unit)}</div></div>
+          <div class="hb-mi"><div class="hb-mi-label">Potência</div><div class="hb-mi-value">${escHtml(trafo.power)}</div></div>
+          <div class="hb-mi"><div class="hb-mi-label">Tensão</div><div class="hb-mi-value">${escHtml(trafo.voltage)}</div></div>
+          <div class="hb-mi"><div class="hb-mi-label">Fabricante</div><div class="hb-mi-value">${escHtml(trafo.manufacturer)}</div></div>
+          <div class="hb-mi"><div class="hb-mi-label">Ano Fabricação</div><div class="hb-mi-value">${escHtml(trafo.year)}</div></div>
+          <div class="hb-mi"><div class="hb-mi-label">Tipo</div><div class="hb-mi-value">${escHtml(trafo.equipment)}</div></div>
+          <div class="hb-mi"><div class="hb-mi-label">Comutador</div><div class="hb-mi-value">${escHtml(trafo.commutator)}</div></div>
+          <div class="hb-mi"><div class="hb-mi-label">Óleo/Fluido</div><div class="hb-mi-value">${escHtml(trafo.oilFluid)}</div></div>
+          <div class="hb-mi"><div class="hb-mi-label">Volume (L)</div><div class="hb-mi-value">${escHtml(trafo.volume)}</div></div>
+          <div class="hb-mi"><div class="hb-mi-label">Refrigeração</div><div class="hb-mi-value">${escHtml(trafo.refrigeration)}</div></div>
+          <div class="hb-mi"><div class="hb-mi-label">Carregamento</div><div class="hb-mi-value">${escHtml(trafo.load)}%</div></div>
+          <div class="hb-mi"><div class="hb-mi-label">Em Operação</div><div class="hb-mi-value">${escHtml(trafo.operating)}</div></div>
+          <div class="hb-mi"><div class="hb-mi-label">Selado</div><div class="hb-mi-value">${escHtml(trafo.sealed)}</div></div>
+        </div>
       </div>
     </div>
 
-    <!-- CARD 5 – Risco Operacional -->
-    <div class="sec-head"><span class="sec-num">5</span>Avaliação do Risco Operacional</div>
-    <p style="font-size:11px;color:#64748b;margin:0 0 12px">Probabilidade (%) de operação em cada nível de risco para o próximo ano:</p>
-    ${riskDonuts}
-    ${heatmapTableCompleto}
-
-
-  </div>
-
-  <!-- MACHINE DATA (discreto) -->
-  <div class="mdata-wrap">
-    <div class="mdata-label">Dados de integração (machine-readable JSON)</div>
-    <div class="mdata-raw">${escHtml(machineJson)}</div>
-  </div>
-
-  <!-- FOOTER -->
-  <div class="doc-footer">
-    <div class="doc-footer-main">
-      <img class="doc-footer-logo" src="${logoUrl}" alt="SIARO" />
-      <div class="doc-footer-qr-right">
-        <img class="doc-footer-qr-img" src="${qrUrl}" alt="QR Code de validação" />
-        <div class="doc-footer-qr-link">${escHtml(validationUrl)}</div>
+    <!-- STATUS BAR -->
+    <div class="sbar">
+      <div class="sbar-main">
+        <div class="sbar-accent"></div>
+        <div>
+          <div class="sbar-label">Avaliação do Analista</div>
+          <div class="sbar-status">${escHtml(ev.specialistStatus)}</div>
+          <div class="sbar-analyst">${escHtml(trafo.analyst)}</div>
+        </div>
+      </div>
+      <div class="sbar-badges">
+        <span class="badge" style="color:${statusColor(trafo.status)};background:${statusBg(trafo.status)}"><span class="badge-dot"></span>Sistema: ${escHtml(trafo.status)}</span>
+        <span class="badge" style="color:${sFg};background:${sBg}"><span class="badge-dot"></span>Analista: ${escHtml(ev.specialistStatus)}</span>
       </div>
     </div>
-    <div class="doc-footer-info">
-      <span><strong>SIARO</strong> &copy; ${now.getFullYear()} &ndash; Axol Engenharia</span>
-      <span>Relatório <strong>${escHtml(reportId)}</strong></span>
-      <span>Analista: <strong>${escHtml(trafo.analyst)}</strong> &middot; Válido até ${expiryStr}</span>
+
+    <div class="content">
+      <div class="sec-head"><span class="sec-num">1</span>Resultado das Avaliações</div>
+      <div class="kv-grid">
+        <div class="kv-card"><div class="kv-label">Status Sistema</div><div class="kv-value" style="font-size:14px;color:${statusColor(trafo.status)}">${escHtml(trafo.status)}</div></div>
+        <div class="kv-card"><div class="kv-label">Status Analista</div><div class="kv-value" style="font-size:14px;color:${sFg}">${escHtml(ev.specialistStatus)}</div></div>
+        <div class="kv-card"><div class="kv-label">Estado do Óleo</div><div class="kv-value" style="font-size:13px">${escHtml(trafo.oilStatus)}</div></div>
+        ${crom ? `<div class="kv-card"><div class="kv-label">Condição TGC (IEEE)</div><div class="kv-value" style="font-size:14px;color:${condColor(ieeeCondition(crom.TGC,'TGC'))}">${ieeeCondition(crom.TGC,'TGC')}</div></div>` : ''}
+      </div>
+
+      <div class="sec-head"><span class="sec-num">2</span>Avaliação do Especialista</div>
+      <table>
+        <tr><td class="tc-label">Status</td><td class="tc-val"><span class="badge" style="color:${sFg};background:${sBg}">${escHtml(ev.specialistStatus)}</span></td></tr>
+        <tr><td class="tc-label">Modo de falha</td><td class="tc-val">${escHtml(ev.specialistFailureMode)}</td></tr>
+      </table>
+      ${ev.specialistNote && ev.specialistNote !== 'Sem observações registradas.' ? `<div class="note-box">${escHtml(ev.specialistNote)}</div>` : ''}
+
+      <div class="two-col" style="margin-top:24px">
+        <div>
+          <div class="sec-head"><span class="sec-num">3</span>Última Coleta${crom ? ` — ${escHtml(crom.date)}` : ''}</div>
+          <table>
+            <tr><td class="tc-label" style="font-weight:700;color:#475569">Gás</td><td class="tc-val" style="font-weight:700;color:#475569">Valor</td><td class="tc-cond" style="font-weight:700;color:#475569;font-size:11px;padding:6px 0;border-bottom:1px solid #f1f5f9">IEEE</td></tr>
+            ${gasTableRows}
+          </table>
+        </div>
+        <div>
+          <div class="sec-head"><span class="sec-num">4</span>Tratamentos no Óleo${fisico ? ` — ${escHtml(fisico.date)}` : ''}</div>
+          <table>${fisicoTableRows}</table>
+        </div>
+      </div>
+
+      <div class="sec-head"><span class="sec-num">5</span>Avaliação do Risco Operacional</div>
+      <p style="font-size:11px;color:#64748b;margin:0 0 12px">Probabilidade (%) de operação em cada nível de risco para o próximo ano:</p>
+      ${riskDonuts}
+      ${heatmapTableCompleto}
     </div>
-  </div>
 
-</div>
+    <div class="mdata-wrap">
+      <div class="mdata-label">Dados de integração (machine-readable JSON)</div>
+      <div class="mdata-raw">${escHtml(machineJson)}</div>
+    </div>
+  </td></tr></tbody>
 
+  <!-- TFOOT: repete no rodapé de cada página -->
+  <tfoot><tr><td>
+    <div class="doc-footer">
+      <div class="df-main">
+        <div class="df-col">
+          <img class="df-logo" src="${logoUrl}" alt="SIARO" />
+          <span class="df-text"><strong>SIARO</strong> &copy; ${now.getFullYear()} &ndash; Axol Engenharia</span>
+        </div>
+        <div class="df-col df-col-grow">
+          <span class="df-text">Relatório <strong>${escHtml(reportId)}</strong></span>
+          <span class="df-text">Analista: <strong>${escHtml(trafo.analyst)}</strong></span>
+          <span class="df-text">Válido até ${expiryStr}</span>
+        </div>
+        <div class="df-qr-col">
+          <img class="df-qr-img" src="${qrUrl}" alt="QR" />
+          <div class="df-qr-link">${escHtml(validationUrl)}</div>
+        </div>
+      </div>
+    </div>
+    <div class="stripe-bottom"></div>
+  </td></tr></tfoot>
+
+</table>
 </body>
 </html>`
 }
