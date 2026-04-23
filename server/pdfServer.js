@@ -1,0 +1,270 @@
+import fs from 'node:fs/promises'
+import http from 'node:http'
+import path from 'node:path'
+import { URL } from 'node:url'
+
+import puppeteer from 'puppeteer'
+
+const PORT = Number(process.env.PDF_PORT || 3001)
+const HOST = process.env.PDF_HOST || '127.0.0.1'
+const PUBLIC_DIR = path.resolve(process.cwd(), 'public')
+
+function escapeHtml(value = '') {
+  return String(value)
+    .replace(/&/g, '&amp;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;')
+    .replace(/"/g, '&quot;')
+    .replace(/'/g, '&#39;')
+}
+
+function readJson(req) {
+  return new Promise((resolve, reject) => {
+    const chunks = []
+    let size = 0
+
+    req.on('data', (chunk) => {
+      size += chunk.length
+      if (size > 20 * 1024 * 1024) {
+        reject(new Error('Payload excede o limite de 20MB'))
+        req.destroy()
+        return
+      }
+      chunks.push(chunk)
+    })
+
+    req.on('end', () => {
+      try {
+        const raw = Buffer.concat(chunks).toString('utf8')
+        resolve(raw ? JSON.parse(raw) : {})
+      } catch {
+        reject(new Error('JSON inválido'))
+      }
+    })
+
+    req.on('error', reject)
+  })
+}
+
+function readMeta(html, name) {
+  const pattern = new RegExp(
+    `<meta[^>]+name=["']${name}["'][^>]+content=["']([^"']*)["'][^>]*>`,
+    'i',
+  )
+  return pattern.exec(html)?.[1] || ''
+}
+
+function getMimeType(filePath) {
+  const ext = path.extname(filePath).toLowerCase()
+  if (ext === '.png') return 'image/png'
+  if (ext === '.jpg' || ext === '.jpeg') return 'image/jpeg'
+  if (ext === '.webp') return 'image/webp'
+  if (ext === '.svg') return 'image/svg+xml'
+  return 'application/octet-stream'
+}
+
+async function resolveTemplateAsset(assetUrl) {
+  if (!assetUrl) return ''
+
+  if (assetUrl.startsWith('data:')) {
+    return assetUrl
+  }
+
+  try {
+    const parsed = new URL(assetUrl)
+    const pathname = decodeURIComponent(parsed.pathname)
+    const relativePath = pathname.startsWith('/') ? pathname.slice(1) : pathname
+    const filePath = path.resolve(PUBLIC_DIR, relativePath)
+
+    if (!filePath.startsWith(PUBLIC_DIR + path.sep) && filePath !== PUBLIC_DIR) {
+      return ''
+    }
+
+    const buffer = await fs.readFile(filePath)
+    const mimeType = getMimeType(filePath)
+    return `data:${mimeType};base64,${buffer.toString('base64')}`
+  } catch {
+    return ''
+  }
+}
+
+function buildHeaderTemplate({ logoUrl, eyebrow, title, reportId, issuedAtLabel, expiryLabel }) {
+  const logo = logoUrl
+    ? `<img src="${escapeHtml(logoUrl)}" alt="Logo" style="height:24px; max-width:90px; object-fit:contain; display:block;" />`
+    : `<span style="font-weight:700; color:#0f172a;">SIARO - Axol Engenharia</span>`
+
+  return `
+    <div style="width:100%; font-size:10px; color:#0f172a; font-family:Arial, sans-serif;">
+      <div style="height:16px; background:#1a3a5c; -webkit-print-color-adjust:exact; print-color-adjust:exact;"></div>
+      <div style="padding:10px 20px 0;">
+        <div style="border-bottom:1px solid #cbd5e1; padding-bottom:8px;">
+        <div style="display:flex; justify-content:space-between; align-items:flex-start; gap:12px;">
+          <div style="display:flex; align-items:flex-start; gap:10px;">
+            ${logo}
+            <div>
+              <div style="font-size:8px; text-transform:uppercase; letter-spacing:.08em; color:#64748b;">${escapeHtml(eyebrow || 'Sistema SIARO - Axol Engenharia')}</div>
+              <div style="font-size:16px; line-height:1.2; font-weight:700; margin-top:2px;">${escapeHtml(title || 'Relatório Técnico')}</div>
+            </div>
+          </div>
+          <div style="text-align:right;">
+            <div style="font-size:8px; text-transform:uppercase; letter-spacing:.08em; color:#64748b;">Relatório</div>
+            <div style="font-size:11px; font-family:monospace; font-weight:700; margin-top:2px;">${escapeHtml(reportId || '-')}</div>
+            <div style="font-size:9px; color:#64748b; margin-top:2px;">Emitido em ${escapeHtml(issuedAtLabel || '')}</div>
+            <div style="font-size:9px; color:#64748b; margin-top:1px;">${escapeHtml(expiryLabel || '')}</div>
+          </div>
+        </div>
+      </div>
+      </div>
+    </div>
+  `
+}
+
+function buildFooterTemplate({ validationUrl, qrUrl }) {
+  const validation = validationUrl
+    ? `<div style="font-size:8px; color:#64748b; margin-top:2px;">${escapeHtml(validationUrl)}</div>`
+    : ''
+  const qr = qrUrl
+    ? `<img src="${escapeHtml(qrUrl)}" alt="QR" style="height:36px; width:36px; object-fit:contain; display:block;" />`
+    : ''
+
+  return `
+    <div style="width:100%; font-size:9px; color:#475569; font-family:Arial, sans-serif;">
+      <div style="padding:0 20px 6px;">
+        <div style="border-top:1px solid #cbd5e1; padding-top:6px; display:flex; align-items:center; justify-content:space-between; gap:12px;">
+        <div style="width:44px; display:flex; justify-content:flex-start;">
+          ${qr}
+        </div>
+        <div style="flex:1; text-align:center;">
+          <div>SIARO - Axol Engenharia</div>
+          ${validation}
+        </div>
+        <div style="width:120px; text-align:right; font-size:8px;">
+          Pagina <span class="pageNumber"></span> de <span class="totalPages"></span>
+        </div>
+      </div>
+      </div>
+      <div style="height:16px; background:#F5B800; -webkit-print-color-adjust:exact; print-color-adjust:exact;"></div>
+    </div>
+  `
+}
+
+let browserPromise
+
+function getBrowser() {
+  if (!browserPromise) {
+    browserPromise = puppeteer.launch({
+      headless: true,
+      executablePath: process.env.PUPPETEER_EXECUTABLE_PATH || undefined,
+      args: ['--no-sandbox', '--disable-setuid-sandbox'],
+    })
+  }
+
+  return browserPromise
+}
+
+const server = http.createServer(async (req, res) => {
+  res.setHeader('Access-Control-Allow-Origin', '*')
+  res.setHeader('Access-Control-Allow-Methods', 'POST, OPTIONS')
+  res.setHeader('Access-Control-Allow-Headers', 'Content-Type')
+
+  if (req.method === 'OPTIONS') {
+    res.writeHead(204)
+    res.end()
+    return
+  }
+
+  const url = new URL(req.url || '/', `http://${req.headers.host || 'localhost'}`)
+
+  if (req.method === 'POST' && url.pathname === '/generate-pdf') {
+    try {
+      const body = await readJson(req)
+      const html = typeof body.html === 'string' ? body.html : ''
+
+      if (!html.trim()) {
+        res.writeHead(400, { 'Content-Type': 'text/plain; charset=utf-8' })
+        res.end('Campo "html" é obrigatório.')
+        return
+      }
+
+      const browser = await getBrowser()
+      const page = await browser.newPage()
+
+      try {
+        await page.setViewport({ width: 1240, height: 1754, deviceScaleFactor: 1 })
+        await page.setContent(html, { waitUntil: 'networkidle0' })
+        await page.emulateMediaType('screen')
+
+        const title = readMeta(html, 'report-title')
+        const eyebrow = readMeta(html, 'report-eyebrow')
+        const reportId = readMeta(html, 'report-id')
+        const issuedAtLabel = readMeta(html, 'report-issued-label')
+        const expiryLabel = readMeta(html, 'report-expiry-label')
+        const logoUrl = readMeta(html, 'report-logo-url')
+        const validationUrl = readMeta(html, 'report-validation-url')
+        const qrUrl = readMeta(html, 'report-qr-url')
+        const embeddedLogoUrl = await resolveTemplateAsset(logoUrl)
+        const embeddedQrUrl = await resolveTemplateAsset(qrUrl)
+
+        const pdf = await page.pdf({
+          format: 'A4',
+          printBackground: true,
+          displayHeaderFooter: true,
+          margin: {
+            top: '100px',
+            bottom: '100px',
+            left: '20px',
+            right: '20px',
+          },
+          headerTemplate: buildHeaderTemplate({
+            logoUrl: embeddedLogoUrl || logoUrl,
+            eyebrow,
+            title,
+            reportId,
+            issuedAtLabel,
+            expiryLabel,
+          }),
+          footerTemplate: buildFooterTemplate({ validationUrl, qrUrl: embeddedQrUrl || qrUrl }),
+        })
+
+        res.writeHead(200, {
+          'Content-Type': 'application/pdf',
+          'Content-Disposition': `attachment; filename="${reportId || 'relatorio'}.pdf"`,
+          'Content-Length': String(pdf.length),
+        })
+        res.end(pdf)
+      } finally {
+        await page.close()
+      }
+    } catch (error) {
+      const message = error instanceof Error ? error.message : 'Erro ao gerar PDF'
+      res.writeHead(500, { 'Content-Type': 'text/plain; charset=utf-8' })
+      res.end(message)
+    }
+    return
+  }
+
+  if (req.method === 'GET' && url.pathname === '/health') {
+    res.writeHead(200, { 'Content-Type': 'application/json; charset=utf-8' })
+    res.end(JSON.stringify({ ok: true }))
+    return
+  }
+
+  res.writeHead(404, { 'Content-Type': 'text/plain; charset=utf-8' })
+  res.end('Not found')
+})
+
+server.listen(PORT, HOST, () => {
+  console.log(`PDF server listening on http://${HOST}:${PORT}`)
+})
+
+async function shutdown() {
+  server.close()
+  if (browserPromise) {
+    const browser = await browserPromise
+    await browser.close()
+  }
+  process.exit(0)
+}
+
+process.on('SIGINT', shutdown)
+process.on('SIGTERM', shutdown)

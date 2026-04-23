@@ -104,17 +104,75 @@ function escHtml(s: string): string {
 function escAttr(s: string): string {
   return String(s).replace(/"/g, '&quot;').replace(/'/g, '&#39;')
 }
-function escJs(s: string): string {
-  return String(s).replace(/\\/g, '\\\\').replace(/'/g, "\\'").replace(/"/g, '\\"')
+
+function sanitizeFileName(value: string): string {
+  return value
+    .normalize('NFD')
+    .replace(/[\u0300-\u036f]/g, '')
+    .replace(/[^a-zA-Z0-9-_]+/g, '-')
+    .replace(/-+/g, '-')
+    .replace(/^-|-$/g, '')
+    .toLowerCase()
+}
+
+function reportMetaTags(params: {
+  reportId: string
+  title: string
+  issuedAtIso: string
+  issuedAtLabel: string
+  logoUrl: string
+  eyebrow?: string
+  expiryLabel?: string
+  validationUrl?: string
+  qrUrl?: string
+}): string {
+  const { reportId, title, issuedAtIso, issuedAtLabel, logoUrl, eyebrow, expiryLabel, validationUrl, qrUrl } = params
+
+  return `
+<meta name="report-id" content="${escAttr(reportId)}">
+<meta name="report-title" content="${escAttr(title)}">
+<meta name="report-issued" content="${escAttr(issuedAtIso)}">
+<meta name="report-issued-label" content="${escAttr(issuedAtLabel)}">
+<meta name="report-logo-url" content="${escAttr(logoUrl)}">
+${eyebrow ? `<meta name="report-eyebrow" content="${escAttr(eyebrow)}">` : ''}
+${expiryLabel ? `<meta name="report-expiry-label" content="${escAttr(expiryLabel)}">` : ''}
+${validationUrl ? `<meta name="report-validation-url" content="${escAttr(validationUrl)}">` : ''}
+${qrUrl ? `<meta name="report-qr-url" content="${escAttr(qrUrl)}">` : ''}`.trim()
+}
+
+export async function downloadPdfFromHtml(
+  html: string,
+  fileName = 'relatorio.pdf',
+  endpoint = '/generate-pdf',
+): Promise<void> {
+  const response = await fetch(endpoint, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ html }),
+  })
+
+  if (!response.ok) {
+    const message = await response.text()
+    throw new Error(message || 'Falha ao gerar PDF')
+  }
+
+  const blob = await response.blob()
+  const url = window.URL.createObjectURL(blob)
+  const anchor = document.createElement('a')
+  anchor.href = url
+  const normalizedName = sanitizeFileName(fileName) || 'relatorio'
+  anchor.download = normalizedName.endsWith('.pdf') ? normalizedName : `${normalizedName}.pdf`
+  document.body.appendChild(anchor)
+  anchor.click()
+  anchor.remove()
+  window.URL.revokeObjectURL(url)
 }
 
 // ─── CSS shared ─────────────────────────────────────────────────────────────
 
 const PRINT_RESET = `
   *, *::before, *::after { box-sizing: border-box; }
-  @page { size: A4; margin: 14mm 16mm; }
   body { font-family: 'Segoe UI', Arial, sans-serif; color: #0f172a; margin: 0; padding: 0; background: #fff; font-size: 13px; line-height: 1.55; }
-  @media print { .no-print { display: none !important; } }
 `
 
 // ─── RELATÓRIO SIMPLES ──────────────────────────────────────────────────────
@@ -125,6 +183,10 @@ export function generateSimpleReport(
   ev: ReportEvalData,
 ): string {
   const now = new Date()
+  const reportId = generateId(trafo.id)
+  const issuedAtLabel = fmt(now)
+  const title = 'Relatório de Transformador'
+  const validationUrl = `https://siaro.axol.eng.br/validar/${reportId}`
 
   const crom = ev.latestCrom
   const fisico = ev.latestFisico
@@ -192,11 +254,17 @@ export function generateSimpleReport(
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width,initial-scale=1.0">
+${reportMetaTags({
+  reportId,
+  title,
+  issuedAtIso: now.toISOString(),
+  issuedAtLabel,
+  logoUrl,
+  validationUrl,
+})}
 <title>Relatório – ${escHtml(trafo.serial)}</title>
 <style>
   ${PRINT_RESET}
-  .no-print { background:#0f172a; color:#fff; padding:8px 24px; display:flex; justify-content:space-between; align-items:center; }
-  .no-print button { background:#fff; color:#0f172a; border:none; border-radius:4px; padding:5px 14px; cursor:pointer; font-size:13px; font-weight:700; }
   .page { max-width:660px; margin:0 auto; padding:32px 24px; }
   .header { display:flex; align-items:center; gap:14px; margin-bottom:20px; padding-bottom:14px; border-bottom:1px solid #e2e8f0; }
   .logo { height:38px; object-fit:contain; }
@@ -210,21 +278,20 @@ export function generateSimpleReport(
   .td-v { color:#0f172a; font-weight:600; padding:5px 0; vertical-align:top; border-bottom:1px solid #f1f5f9; }
   .td-empty { color:#94a3b8; font-style:italic; padding:8px 0; font-size:11px; }
   .note-box { background:#f8fafc; border-left:3px solid #1e4e8b; padding:8px 12px; font-size:12px; color:#334155; white-space:pre-wrap; border-radius:2px; }
-  .footer { margin-top:32px; padding-top:10px; border-top:1px solid #e2e8f0; display:flex; justify-content:space-between; font-size:10px; color:#94a3b8; }
+  .meta-strip { margin-top:20px; display:flex; gap:12px; flex-wrap:wrap; }
+  .meta-card { background:#f8fafc; border:1px solid #e2e8f0; border-radius:6px; padding:10px 12px; min-width:180px; }
+  .meta-card-label { font-size:10px; text-transform:uppercase; color:#94a3b8; font-weight:700; letter-spacing:.05em; }
+  .meta-card-value { font-size:12px; color:#0f172a; font-weight:700; margin-top:2px; word-break:break-word; }
 </style>
 </head>
 <body>
-<div class="no-print">
-  <span style="font-size:12px;opacity:.75">Relatório — ${escHtml(trafo.serial)} · ${escHtml(trafo.substation)}</span>
-  <button onclick="window.print()">&#9113; Salvar como PDF</button>
-</div>
 <div class="page">
 
   <div class="header">
     <img class="logo" src="${logoUrl}" alt="SIARO" />
     <div>
-      <h1>Relatório de Transformador</h1>
-      <p>Emitido em ${fmt(now)} &bull; SIARO – Axol Engenharia</p>
+      <h1>${title}</h1>
+      <p>Emitido em ${issuedAtLabel} &bull; SIARO – Axol Engenharia</p>
     </div>
   </div>
 
@@ -277,9 +344,19 @@ export function generateSimpleReport(
     ${heatmapTableSimples}
   </div>
 
-  <div class="footer">
-    <span>ID: ${escHtml(trafo.id)}</span>
-    <span>SIARO © ${now.getFullYear()} – Axol Engenharia</span>
+  <div class="meta-strip">
+    <div class="meta-card">
+      <div class="meta-card-label">Relatório</div>
+      <div class="meta-card-value">${escHtml(reportId)}</div>
+    </div>
+    <div class="meta-card">
+      <div class="meta-card-label">Transformador</div>
+      <div class="meta-card-value">${escHtml(trafo.serial)}</div>
+    </div>
+    <div class="meta-card">
+      <div class="meta-card-label">Validação</div>
+      <div class="meta-card-value">${escHtml(validationUrl)}</div>
+    </div>
   </div>
 </div>
 </body>
@@ -300,6 +377,9 @@ export function generateCompleteReport(
   const validationUrl = `https://siaro.axol.eng.br/validar/${reportId}`
   const expiryDate = new Date(now.getTime() + 30 * 24 * 60 * 60 * 1000)
   const expiryStr = expiryDate.toLocaleDateString('pt-BR')
+  const issuedAtLabel = fmt(now)
+  const title = 'Relatório Técnico de Transformador'
+  const eyebrow = 'Sistema SIARO - Axol Engenharia'
 
   const sFg = statusColor(ev.specialistStatus)
   const sBg = statusBg(ev.specialistStatus)
@@ -341,16 +421,6 @@ export function generateCompleteReport(
        <tr><td class="tc-label">F. Pot. 90ºC</td><td class="tc-val">${fmtVal(fisico.fp90)}</td></tr>
        <tr><td class="tc-label">F. Pot. 100ºC</td><td class="tc-val">${fmtVal(fisico.fp100)}</td></tr>`
     : `<tr><td colspan="2" class="tc-empty">Sem dados físico-químicos</td></tr>`
-
-  const riskBars = risk.map((pct, i) =>
-    `<div class="risk-row">
-      <span class="risk-lbl">${RISK_LABELS[i]}</span>
-      <div class="risk-track">
-        <div class="risk-fill" style="width:${pct}%;background:${RISK_COLORS[i]}"></div>
-      </div>
-      <span class="risk-num" style="color:${pct > 0 ? RISK_COLORS[i] : '#94a3b8'}">${pct.toFixed(2)}%</span>
-    </div>`
-  ).join('')
 
   // Donut charts — SVG inline (circumference ≈ 100 with r=15.9)
   const riskDonuts = `<div style="display:flex;gap:12px;align-items:flex-end;flex-wrap:wrap;margin-bottom:4px">
@@ -429,6 +499,17 @@ export function generateCompleteReport(
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width,initial-scale=1.0">
+${reportMetaTags({
+  reportId,
+  title,
+  issuedAtIso: now.toISOString(),
+  issuedAtLabel,
+  logoUrl,
+  eyebrow,
+  expiryLabel: `Válido até ${expiryStr}`,
+  validationUrl,
+  qrUrl,
+})}
 <meta name="report-id" content="${escAttr(reportId)}">
 <meta name="report-issued" content="${now.toISOString()}">
 <meta name="report-expires" content="${expiryDate.toISOString()}">
@@ -436,17 +517,13 @@ export function generateCompleteReport(
 <meta name="transformer-serial" content="${escAttr(trafo.serial)}">
 <meta name="transformer-status" content="${escAttr(ev.specialistStatus)}">
 <title>Relatório Completo – ${escHtml(trafo.serial)}</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap" rel="stylesheet">
 <script type="application/ld+json">${jsonLd}<\/script>
 <style>
-  /* ── Print bar ── */
-  .no-print { background:#0f172a; color:#fff; padding:9px 28px; display:flex; justify-content:space-between; align-items:center; gap:12px; }
-  .np-chip { background:#1e4e8b; border-radius:4px; padding:2px 9px; font-size:10px; font-weight:700; letter-spacing:.06em; text-transform:uppercase; }
-  .np-btn { background:#fff; color:#0f172a; border:none; border-radius:5px; padding:6px 16px; cursor:pointer; font-size:13px; font-weight:700; }
-  .np-btn:hover { background:#dbeafe; }
-
-  /* ── Layout: screen=block, print=table ── */
-  .rpt { display:block; max-width:860px; margin:0 auto; background:#fff; }
-  .rpt thead, .rpt tbody, .rpt tfoot, .rpt tr, .rpt td { display:block; padding:0; }
+  *, *::before, *::after { box-sizing: border-box; }
+  body { font-family: 'Inter', 'Segoe UI', Arial, sans-serif; color: #0f172a; margin: 0; padding: 0; background: #fff; font-size: 13px; line-height: 1.55; }
+  .rpt { max-width:860px; margin:0 auto; background:#fff; }
 
   /* ── Stripes ── */
   .stripe-top    { height:16px; background:#1a3a5c; -webkit-print-color-adjust:exact; print-color-adjust:exact; }
@@ -454,22 +531,13 @@ export function generateCompleteReport(
 
   /* ── Header band ── */
   .hband { background:#fff; border-bottom:2px solid #e2e8f0; }
-  .hband-top { padding:16px 36px; display:flex; align-items:center; gap:16px; border-bottom:1px solid #e2e8f0; }
   .hb-logo { height:48px; object-fit:contain; }
-  .hband-top-text { flex:1; }
-  .hb-eyebrow { font-size:9px; letter-spacing:.1em; text-transform:uppercase; color:#94a3b8; margin-bottom:3px; }
-  .hb-title { font-size:20px; font-weight:800; color:#0f172a; margin:0; line-height:1.2; }
   .hband-body { display:grid; grid-template-columns:230px 1fr; min-height:220px; }
   .hb-trafo { display:flex; align-items:center; justify-content:center; padding:20px; border-right:1px solid #e2e8f0; background:#f8fafc; }
   .hb-trafo img { height:185px; width:auto; object-fit:contain; opacity:.85; }
   .hb-info { padding:20px 28px; display:grid; grid-template-columns:1fr 1fr 1fr 1fr; gap:14px 20px; align-content:center; }
   .hb-mi-label { font-size:9px; text-transform:uppercase; letter-spacing:.07em; color:#94a3b8; font-weight:700; }
   .hb-mi-value { font-size:11px; font-weight:700; color:#0f172a; margin-top:2px; }
-  /* meta info do relatório (direita do header) */
-  .hb-meta { display:flex; flex-direction:column; align-items:flex-end; gap:3px; flex-shrink:0; }
-  .hb-meta-lbl  { font-size:9px; text-transform:uppercase; letter-spacing:.07em; color:#94a3b8; font-weight:700; }
-  .hb-meta-id   { font-size:11px; font-weight:800; color:#0f172a; font-family:monospace; letter-spacing:.04em; }
-  .hb-meta-date { font-size:9px; color:#64748b; }
 
   /* ── Status bar ── */
   .sbar { background:#f8fafc; border-bottom:1px solid #e2e8f0; padding:14px 36px; display:flex; align-items:center; justify-content:space-between; gap:20px; }
@@ -499,7 +567,7 @@ export function generateCompleteReport(
   .tc-cond  { padding:6px 0; vertical-align:top; border-bottom:1px solid #f1f5f9; }
   .tc-empty { color:#94a3b8; font-style:italic; font-size:11px; padding:8px 0; }
   .cpill    { display:inline-block; padding:2px 8px; border-radius:4px; font-size:11px; font-weight:700; }
-  .risk-row { display:flex; align-items:center; gap:10px; margin-bottom:7px; }
+  .risk-row { display:flex; align-items:center; gap:10px; margin-bottom:7px;break-inside: avoid; page-break-inside: avoid; }
   .risk-lbl { font-size:11px; color:#64748b; width:120px; flex-shrink:0; }
   .risk-track { flex:1; background:#f1f5f9; border-radius:999px; height:10px; overflow:hidden; }
   .risk-fill  { height:100%; border-radius:999px; }
@@ -508,75 +576,10 @@ export function generateCompleteReport(
   .mdata-wrap  { border-top:1px dashed #e2e8f0; margin:0 36px; padding:10px 0 16px; }
   .mdata-label { font-size:9px; text-transform:uppercase; letter-spacing:.08em; color:#cbd5e1; margin-bottom:3px; font-weight:700; }
   .mdata-raw   { font-family:monospace; font-size:9px; color:#cbd5e1; word-break:break-all; line-height:1.4; }
-
-  /* ── Footer ── */
-  .doc-footer { border-top:2px solid #e2e8f0; }
-  .df-main { display:flex; align-items:flex-start; gap:20px; padding:12px 36px 10px; }
-  .df-col { display:flex; flex-direction:column; gap:3px; flex-shrink:0; }
-  .df-col-grow { flex:1; }
-  .df-logo { height:32px; object-fit:contain; opacity:.8; margin-bottom:3px; }
-  .df-text { font-size:10px; color:#94a3b8; white-space:nowrap; }
-  .df-text strong { color:#64748b; }
-  .df-qr-col { display:flex; flex-direction:column; align-items:flex-end; gap:4px; flex-shrink:0; }
-  .df-qr-img  { width:52px; height:52px; object-fit:contain; display:block; }
-  .df-qr-link { font-size:8px; color:#94a3b8; font-family:monospace; white-space:nowrap; }
-
-  /* ── Print ── */
-  @media print {
-    body { background:#fff; }
-    .no-print { display:none !important; }
-    /* Ativa semântica de tabela para header/footer repetido */
-    .rpt { display:table; width:100%; max-width:none; margin:0; border-collapse:collapse; }
-    .rpt thead { display:table-header-group; }
-    .rpt tbody { display:table-row-group; }
-    .rpt tfoot { display:table-footer-group; }
-    .rpt tr    { display:table-row; }
-    .rpt td    { display:table-cell; padding:0; vertical-align:top; }
-    .hband-body { display:none !important; }
-    /* Evita quebra dentro de blocos */
-    .sec-head, .kv-grid, .kv-card, .two-col, .sbar, .note-box, .risk-row {
-      page-break-inside:avoid; break-inside:avoid;
-    }
-    /* Cores */
-    .sbar-accent, .sec-head::before, .risk-fill, .cpill, .badge,
-    .stripe-top, .stripe-bottom, .kv-card, .note-box {
-      -webkit-print-color-adjust:exact; print-color-adjust:exact;
-    }
-  }
 </style>
 </head>
 <body>
-<div class="no-print">
-  <div style="display:flex;align-items:center;gap:10px;font-size:12px">
-    <span class="np-chip">Relatório Completo</span>
-    <span>${escHtml(trafo.serial)} — ${escHtml(trafo.substation)}</span>
-  </div>
-  <button class="np-btn" onclick="window.print()">&#9113; Salvar como PDF</button>
-</div>
-
-<table class="rpt">
-
-  <!-- THEAD: repete no topo de cada página -->
-  <thead><tr><td>
-    <div class="stripe-top"></div>
-    <div class="hband-top">
-      <img class="hb-logo" src="${logoUrl}" alt="SIARO" />
-      <div class="hband-top-text">
-        <div class="hb-eyebrow">Sistema SIARO — Axol Engenharia</div>
-        <h1 class="hb-title">Relatório Técnico de Transformador</h1>
-      </div>
-      <div class="hb-meta">
-        <div class="hb-meta-lbl">Relatório</div>
-        <div class="hb-meta-id">${escHtml(reportId)}</div>
-        <div class="hb-meta-date">Emitido em ${fmt(now)}</div>
-        <div class="hb-meta-date">Válido até ${expiryStr}</div>
-      </div>
-    </div>
-  </td></tr></thead>
-
-  <!-- TBODY: conteúdo (antes do tfoot = ordem correta na tela) -->
-  <tbody><tr><td>
-    <!-- hband-body: specs + imagem, visível na tela, oculto no print -->
+<div class="rpt">
     <div class="hband">
       <div class="hband-body">
         <div class="hb-trafo"><img src="${trafoImgUrl}" alt="Transformador" /></div>
@@ -657,31 +660,7 @@ export function generateCompleteReport(
       <div class="mdata-label">Dados de integração (machine-readable JSON)</div>
       <div class="mdata-raw">${escHtml(machineJson)}</div>
     </div>
-  </td></tr></tbody>
-
-  <!-- TFOOT: repete no rodapé de cada página -->
-  <tfoot><tr><td>
-    <div class="doc-footer">
-      <div class="df-main">
-        <div class="df-col">
-          <img class="df-logo" src="${logoUrl}" alt="SIARO" />
-          <span class="df-text"><strong>SIARO</strong> &copy; ${now.getFullYear()} &ndash; Axol Engenharia</span>
-        </div>
-        <div class="df-col df-col-grow">
-          <span class="df-text">Relatório <strong>${escHtml(reportId)}</strong></span>
-          <span class="df-text">Analista: <strong>${escHtml(trafo.analyst)}</strong></span>
-          <span class="df-text">Válido até ${expiryStr}</span>
-        </div>
-        <div class="df-qr-col">
-          <img class="df-qr-img" src="${qrUrl}" alt="QR" />
-          <div class="df-qr-link">${escHtml(validationUrl)}</div>
-        </div>
-      </div>
-    </div>
-    <div class="stripe-bottom"></div>
-  </td></tr></tfoot>
-
-</table>
+</div>
 </body>
 </html>`
 }

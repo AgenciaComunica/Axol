@@ -10,10 +10,12 @@ import fisicoQuimicosRaw from '@/assets/fisicoquimicos.json?raw'
 import fisicoQuimicosOltcRaw from '@/assets/fisicoquimicos_oltc.json?raw'
 import VueApexCharts from 'vue3-apexcharts'
 import type { ApexOptions } from 'apexcharts'
-import logoSiaroUrl from '@/assets/logo_siaro.png'
 import trafo3dUrl from '@/assets/Trafo_3D.svg'
-const axolQrUrl = new URL('/ArquivoExtRef/axol_qrcode.svg', import.meta.url).href
-import { generateSimpleReport, generateCompleteReport } from '@/utils/reportGenerator'
+import {
+  downloadPdfFromHtml,
+  generateCompleteReport,
+  generateSimpleReport,
+} from '@/utils/reportGenerator'
 
 type BaseRow = Record<string, unknown>
 type Transformer = {
@@ -2710,7 +2712,7 @@ function toggleGenerateReportMenu() {
   generateReportMenuOpen.value = !generateReportMenuOpen.value
 }
 
-function openGeneratedReport(type: 'simples' | 'completo') {
+async function openGeneratedReport(type: 'simples' | 'completo') {
   const trafo = selectedTransformer.value
   if (!trafo) return
   generateReportMenuOpen.value = false
@@ -2751,17 +2753,21 @@ function openGeneratedReport(type: 'simples' | 'completo') {
     riskHeatmapRows: riskHeatmapRows.value.map((r) => ({ label: r.label, values: r.values })),
   }
 
-  const logo = window.location.origin + logoSiaroUrl
+  const logo = `${window.location.origin}/pdf-assets/logo_siaro.png`
   const trafoImg = window.location.origin + trafo3dUrl
+  const axolQrUrl = `${window.location.origin}/pdf-assets/axol_qrcode.svg`
   const html =
     type === 'simples'
       ? generateSimpleReport(trafo, logo, evalData)
       : generateCompleteReport(trafo, logo, trafoImg, axolQrUrl, evalData)
+  const fileName = `relatorio-${type}-${trafo.serial || trafo.id}`
 
-  const win = window.open('', '_blank')
-  if (!win) return
-  win.document.write(html)
-  win.document.close()
+  try {
+    await downloadPdfFromHtml(html, fileName)
+  } catch (error) {
+    console.error('Erro ao gerar PDF', error)
+    window.alert('Nao foi possivel gerar o PDF. Verifique se o servico Node do Puppeteer esta em execucao.')
+  }
 }
 
 function toggleAnalysisNewMenu() {
