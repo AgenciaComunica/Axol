@@ -125,8 +125,9 @@ function reportMetaTags(params: {
   expiryLabel?: string
   validationUrl?: string
   qrUrl?: string
+  analyst?: string
 }): string {
-  const { reportId, title, issuedAtIso, issuedAtLabel, logoUrl, eyebrow, expiryLabel, validationUrl, qrUrl } = params
+  const { reportId, title, issuedAtIso, issuedAtLabel, logoUrl, eyebrow, expiryLabel, validationUrl, qrUrl, analyst } = params
 
   return `
 <meta name="report-id" content="${escAttr(reportId)}">
@@ -137,7 +138,8 @@ function reportMetaTags(params: {
 ${eyebrow ? `<meta name="report-eyebrow" content="${escAttr(eyebrow)}">` : ''}
 ${expiryLabel ? `<meta name="report-expiry-label" content="${escAttr(expiryLabel)}">` : ''}
 ${validationUrl ? `<meta name="report-validation-url" content="${escAttr(validationUrl)}">` : ''}
-${qrUrl ? `<meta name="report-qr-url" content="${escAttr(qrUrl)}">` : ''}`.trim()
+${qrUrl ? `<meta name="report-qr-url" content="${escAttr(qrUrl)}">` : ''}
+${analyst ? `<meta name="report-analyst" content="${escAttr(analyst)}">` : ''}`.trim()
 }
 
 export async function downloadPdfFromHtml(
@@ -509,6 +511,7 @@ ${reportMetaTags({
   expiryLabel: `Válido até ${expiryStr}`,
   validationUrl,
   qrUrl,
+  analyst: trafo.analyst,
 })}
 <meta name="report-id" content="${escAttr(reportId)}">
 <meta name="report-issued" content="${now.toISOString()}">
@@ -522,8 +525,11 @@ ${reportMetaTags({
 <script type="application/ld+json">${jsonLd}<\/script>
 <style>
   *, *::before, *::after { box-sizing: border-box; }
-  body { font-family: 'Inter', 'Segoe UI', Arial, sans-serif; color: #0f172a; margin: 0; padding: 0; background: #fff; font-size: 13px; line-height: 1.55; }
-  .rpt { max-width:860px; margin:0 auto; background:#fff; }
+  body { font-family: 'Inter', 'Segoe UI', Arial, sans-serif; color: #0f172a; margin: 0; padding: 0; background: transparent; font-size: 13px; line-height: 1.55; }
+  .rpt { max-width:860px; margin:0 auto; background:transparent; position:relative; }
+  .watermark { position:fixed; inset:0; display:flex; align-items:center; justify-content:center; pointer-events:none; z-index:0; }
+  .watermark img { width:420px; max-width:62vw; opacity:.06; object-fit:contain; }
+  .rpt > * { position:relative; z-index:1; }
 
   /* ── Stripes ── */
   .stripe-top    { height:16px; background:#1a3a5c; -webkit-print-color-adjust:exact; print-color-adjust:exact; }
@@ -579,6 +585,9 @@ ${reportMetaTags({
 </style>
 </head>
 <body>
+<div class="watermark">
+  <img src="${logoUrl}" alt="" />
+</div>
 <div class="rpt">
     <div class="hband">
       <div class="hband-body">

@@ -90,23 +90,23 @@ async function resolveTemplateAsset(assetUrl) {
 
 function buildHeaderTemplate({ logoUrl, eyebrow, title, reportId, issuedAtLabel, expiryLabel }) {
   const logo = logoUrl
-    ? `<img src="${escapeHtml(logoUrl)}" alt="Logo" style="height:24px; max-width:90px; object-fit:contain; display:block;" />`
+    ? `<img src="${escapeHtml(logoUrl)}" alt="Logo" style="height:60px; max-width:132px; object-fit:contain; object-position:left center; display:block;" />`
     : `<span style="font-weight:700; color:#0f172a;">SIARO - Axol Engenharia</span>`
 
   return `
     <div style="width:100%; font-size:10px; color:#0f172a; font-family:Arial, sans-serif;">
-      <div style="height:16px; background:#1a3a5c; -webkit-print-color-adjust:exact; print-color-adjust:exact;"></div>
-      <div style="padding:10px 20px 0;">
-        <div style="border-bottom:1px solid #cbd5e1; padding-bottom:8px;">
-        <div style="display:flex; justify-content:space-between; align-items:flex-start; gap:12px;">
-          <div style="display:flex; align-items:flex-start; gap:10px;">
+      <div style="height:20px; background:#1a3a5c; -webkit-print-color-adjust:exact; print-color-adjust:exact;"></div>
+      <div style="padding:6px 20px 0;">
+        <div style="border-bottom:1px solid #cbd5e1; padding-bottom:6px;">
+        <div style="display:flex; align-items:center; gap:12px;">
+          <div style="width:132px; display:flex; align-items:center; justify-content:flex-start; flex-shrink:0;">
             ${logo}
-            <div>
-              <div style="font-size:8px; text-transform:uppercase; letter-spacing:.08em; color:#64748b;">${escapeHtml(eyebrow || 'Sistema SIARO - Axol Engenharia')}</div>
-              <div style="font-size:16px; line-height:1.2; font-weight:700; margin-top:2px;">${escapeHtml(title || 'Relatório Técnico')}</div>
-            </div>
           </div>
-          <div style="text-align:right;">
+          <div style="flex:1; text-align:center; min-width:0;">
+            <div style="font-size:8px; text-transform:uppercase; letter-spacing:.08em; color:#64748b;">${escapeHtml(eyebrow || 'Sistema SIARO - Axol Engenharia')}</div>
+            <div style="font-size:16px; line-height:1.2; font-weight:700; margin-top:2px;">${escapeHtml(title || 'Relatório Técnico')}</div>
+          </div>
+          <div style="width:180px; text-align:right; flex-shrink:0;">
             <div style="font-size:8px; text-transform:uppercase; letter-spacing:.08em; color:#64748b;">Relatório</div>
             <div style="font-size:11px; font-family:monospace; font-weight:700; margin-top:2px;">${escapeHtml(reportId || '-')}</div>
             <div style="font-size:9px; color:#64748b; margin-top:2px;">Emitido em ${escapeHtml(issuedAtLabel || '')}</div>
@@ -119,9 +119,12 @@ function buildHeaderTemplate({ logoUrl, eyebrow, title, reportId, issuedAtLabel,
   `
 }
 
-function buildFooterTemplate({ validationUrl, qrUrl }) {
+function buildFooterTemplate({ validationUrl, qrUrl, analyst }) {
   const validation = validationUrl
     ? `<div style="font-size:8px; color:#64748b; margin-top:2px;">${escapeHtml(validationUrl)}</div>`
+    : ''
+  const analystLine = analyst
+    ? `<div style="font-size:8px; color:#64748b; margin-top:2px;">Analista: ${escapeHtml(analyst)}</div>`
     : ''
   const qr = qrUrl
     ? `<img src="${escapeHtml(qrUrl)}" alt="QR" style="height:36px; width:36px; object-fit:contain; display:block;" />`
@@ -129,13 +132,14 @@ function buildFooterTemplate({ validationUrl, qrUrl }) {
 
   return `
     <div style="width:100%; font-size:9px; color:#475569; font-family:Arial, sans-serif;">
-      <div style="padding:0 20px 6px;">
-        <div style="border-top:1px solid #cbd5e1; padding-top:6px; display:flex; align-items:center; justify-content:space-between; gap:12px;">
+      <div style="padding:0 20px 4px;">
+        <div style="border-top:1px solid #cbd5e1; padding-top:4px; display:flex; align-items:center; justify-content:space-between; gap:12px;">
         <div style="width:44px; display:flex; justify-content:flex-start;">
           ${qr}
         </div>
         <div style="flex:1; text-align:center;">
           <div>SIARO - Axol Engenharia</div>
+          ${analystLine}
           ${validation}
         </div>
         <div style="width:120px; text-align:right; font-size:8px;">
@@ -143,7 +147,7 @@ function buildFooterTemplate({ validationUrl, qrUrl }) {
         </div>
       </div>
       </div>
-      <div style="height:16px; background:#F5B800; -webkit-print-color-adjust:exact; print-color-adjust:exact;"></div>
+      <div style="height:20px; background:#F5B800; -webkit-print-color-adjust:exact; print-color-adjust:exact;"></div>
     </div>
   `
 }
@@ -202,6 +206,7 @@ const server = http.createServer(async (req, res) => {
         const logoUrl = readMeta(html, 'report-logo-url')
         const validationUrl = readMeta(html, 'report-validation-url')
         const qrUrl = readMeta(html, 'report-qr-url')
+        const analyst = readMeta(html, 'report-analyst')
         const embeddedLogoUrl = await resolveTemplateAsset(logoUrl)
         const embeddedQrUrl = await resolveTemplateAsset(qrUrl)
 
@@ -210,8 +215,8 @@ const server = http.createServer(async (req, res) => {
           printBackground: true,
           displayHeaderFooter: true,
           margin: {
-            top: '100px',
-            bottom: '100px',
+            top: '124px',
+            bottom: '84px',
             left: '20px',
             right: '20px',
           },
@@ -223,7 +228,11 @@ const server = http.createServer(async (req, res) => {
             issuedAtLabel,
             expiryLabel,
           }),
-          footerTemplate: buildFooterTemplate({ validationUrl, qrUrl: embeddedQrUrl || qrUrl }),
+          footerTemplate: buildFooterTemplate({
+            validationUrl,
+            qrUrl: embeddedQrUrl || qrUrl,
+            analyst,
+          }),
         })
 
         res.writeHead(200, {
