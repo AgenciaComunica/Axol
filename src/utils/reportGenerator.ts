@@ -558,6 +558,7 @@ ${reportMetaTags({
 
   /* ── Content ── */
   .content { padding:28px 36px; }
+  .pdf-card { break-inside:avoid; page-break-inside:avoid; }
   .sec-head { display:flex; align-items:center; gap:7px; font-size:10px; font-weight:700; text-transform:uppercase; letter-spacing:.1em; color:#64748b; margin:26px 0 14px; padding-bottom:6px; border-bottom:1px solid #e2e8f0; }
   .sec-head:first-child { margin-top:0; }
   .sec-head::before { content:''; width:3px; height:12px; border-radius:2px; background:#1e4e8b; display:block; flex-shrink:0; -webkit-print-color-adjust:exact; print-color-adjust:exact; }
@@ -567,6 +568,7 @@ ${reportMetaTags({
   .kv-label { font-size:10px; color:#94a3b8; font-weight:700; text-transform:uppercase; letter-spacing:.05em; }
   .kv-value { font-size:16px; font-weight:800; color:#0f172a; margin-top:3px; }
   .two-col { display:grid; grid-template-columns:1fr 1fr; gap:32px; }
+  .two-col > .pdf-card { min-width:0; }
   table { width:100%; border-collapse:collapse; }
   .tc-label { color:#64748b; padding:6px 12px 6px 0; font-size:12px; vertical-align:top; border-bottom:1px solid #f1f5f9; width:42%; }
   .tc-val   { color:#0f172a; font-weight:600; padding:6px 0; font-size:12px; vertical-align:top; border-bottom:1px solid #f1f5f9; }
@@ -630,39 +632,45 @@ ${reportMetaTags({
     </div>
 
     <div class="content">
-      <div class="sec-head"><span class="sec-num">1</span>Resultado das Avaliações</div>
-      <div class="kv-grid">
-        <div class="kv-card"><div class="kv-label">Status Sistema</div><div class="kv-value" style="font-size:14px;color:${statusColor(trafo.status)}">${escHtml(trafo.status)}</div></div>
-        <div class="kv-card"><div class="kv-label">Status Analista</div><div class="kv-value" style="font-size:14px;color:${sFg}">${escHtml(ev.specialistStatus)}</div></div>
-        <div class="kv-card"><div class="kv-label">Estado do Óleo</div><div class="kv-value" style="font-size:13px">${escHtml(trafo.oilStatus)}</div></div>
-        ${crom ? `<div class="kv-card"><div class="kv-label">Condição TGC (IEEE)</div><div class="kv-value" style="font-size:14px;color:${condColor(ieeeCondition(crom.TGC,'TGC'))}">${ieeeCondition(crom.TGC,'TGC')}</div></div>` : ''}
+      <div class="pdf-card">
+        <div class="sec-head"><span class="sec-num">1</span>Resultado das Avaliações</div>
+        <div class="kv-grid">
+          <div class="kv-card"><div class="kv-label">Status Sistema</div><div class="kv-value" style="font-size:14px;color:${statusColor(trafo.status)}">${escHtml(trafo.status)}</div></div>
+          <div class="kv-card"><div class="kv-label">Status Analista</div><div class="kv-value" style="font-size:14px;color:${sFg}">${escHtml(ev.specialistStatus)}</div></div>
+          <div class="kv-card"><div class="kv-label">Estado do Óleo</div><div class="kv-value" style="font-size:13px">${escHtml(trafo.oilStatus)}</div></div>
+          ${crom ? `<div class="kv-card"><div class="kv-label">Condição TGC (IEEE)</div><div class="kv-value" style="font-size:14px;color:${condColor(ieeeCondition(crom.TGC,'TGC'))}">${ieeeCondition(crom.TGC,'TGC')}</div></div>` : ''}
+        </div>
       </div>
 
-      <div class="sec-head"><span class="sec-num">2</span>Avaliação do Especialista</div>
-      <table>
-        <tr><td class="tc-label">Status</td><td class="tc-val"><span class="badge" style="color:${sFg};background:${sBg}">${escHtml(ev.specialistStatus)}</span></td></tr>
-        <tr><td class="tc-label">Modo de falha</td><td class="tc-val">${escHtml(ev.specialistFailureMode)}</td></tr>
-      </table>
-      ${ev.specialistNote && ev.specialistNote !== 'Sem observações registradas.' ? `<div class="note-box">${escHtml(ev.specialistNote)}</div>` : ''}
+      <div class="pdf-card">
+        <div class="sec-head"><span class="sec-num">2</span>Avaliação do Especialista</div>
+        <table>
+          <tr><td class="tc-label">Status</td><td class="tc-val"><span class="badge" style="color:${sFg};background:${sBg}">${escHtml(ev.specialistStatus)}</span></td></tr>
+          <tr><td class="tc-label">Modo de falha</td><td class="tc-val">${escHtml(ev.specialistFailureMode)}</td></tr>
+        </table>
+        ${ev.specialistNote && ev.specialistNote !== 'Sem observações registradas.' ? `<div class="note-box">${escHtml(ev.specialistNote)}</div>` : ''}
+      </div>
 
       <div class="two-col" style="margin-top:24px">
-        <div>
+        <div class="pdf-card">
           <div class="sec-head"><span class="sec-num">3</span>Última Coleta${crom ? ` — ${escHtml(crom.date)}` : ''}</div>
           <table>
             <tr><td class="tc-label" style="font-weight:700;color:#475569">Gás</td><td class="tc-val" style="font-weight:700;color:#475569">Valor</td><td class="tc-cond" style="font-weight:700;color:#475569;font-size:11px;padding:6px 0;border-bottom:1px solid #f1f5f9">IEEE</td></tr>
             ${gasTableRows}
           </table>
         </div>
-        <div>
+        <div class="pdf-card">
           <div class="sec-head"><span class="sec-num">4</span>Tratamentos no Óleo${fisico ? ` — ${escHtml(fisico.date)}` : ''}</div>
           <table>${fisicoTableRows}</table>
         </div>
       </div>
 
-      <div class="sec-head"><span class="sec-num">5</span>Avaliação do Risco Operacional</div>
-      <p style="font-size:11px;color:#64748b;margin:0 0 12px">Probabilidade (%) de operação em cada nível de risco para o próximo ano:</p>
-      ${riskDonuts}
-      ${heatmapTableCompleto}
+      <div class="pdf-card">
+        <div class="sec-head"><span class="sec-num">5</span>Avaliação do Risco Operacional</div>
+        <p style="font-size:11px;color:#64748b;margin:0 0 12px">Probabilidade (%) de operação em cada nível de risco para o próximo ano:</p>
+        ${riskDonuts}
+        ${heatmapTableCompleto}
+      </div>
     </div>
 
     <div class="mdata-wrap">
