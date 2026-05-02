@@ -1,3 +1,8 @@
-version https://git-lfs.github.com/spec/v1
-oid sha256:97a068d7fe400d784c59db963dac18f618c466ea84b683bc662fb15e8b430679
-size 522
+{
+  "editor.formatOnSave": true,
+  "editor.defaultFormatter": "esbenp.prettier-vscode",
+  "editor.codeActionsOnSave": {
+    "source.fixAll.eslint": "explicit"
+  },
+  "files.eol": "\n"
+}
