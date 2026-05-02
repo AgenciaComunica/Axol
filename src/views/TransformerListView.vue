@@ -3,6 +3,11 @@ import { computed, onBeforeUnmount, onMounted, ref, watch } from 'vue'
 import { useRouter } from 'vue-router'
 import SideMenu from '@/components/SideMenu.vue'
 import AppHeader from '@/components/AppHeader.vue'
+import StatusPill from '@/components/StatusPill.vue'
+import TablePagination from '@/components/TablePagination.vue'
+import TransformerEditModal from '@/components/TransformerEditModal.vue'
+import AdvancedFilterModal from '@/components/AdvancedFilterModal.vue'
+import { normalizeStatus, statusTone, pickWorstStatus } from '@/composables/useStatusUtils'
 import transformersData from '@/assets/transformadores.json'
 
 const router = useRouter()
@@ -150,41 +155,6 @@ const baseTransformers: TableTransformer[] = [
     levels: makeLevels('2CTMTR01-MG-A05'),
   },
 ]
-
-const statusRank: Record<string, number> = { Normal: 1, Alerta: 2, Critico: 3 }
-const statusLabelMap: Record<keyof typeof statusRank, string> = {
-  Normal: 'Normal',
-  Alerta: 'Alerta',
-  Critico: 'Crítico',
-}
-
-function normalizeStatus(raw?: string) {
-  if (!raw) return 'Normal'
-  const value = raw
-    .toLowerCase()
-    .normalize('NFD')
-    .replace(/[\u0300-\u036f]/g, '')
-  if (value.includes('crit')) return 'Critico'
-  if (value.includes('alert') || value.includes('manut') || value.includes('reclass')) return 'Alerta'
-  if (value.includes('oper')) return 'Normal'
-  if (value.includes('ainda')) return 'Alerta'
-  return 'Normal'
-}
-
-function pickWorstStatus(primary?: string, secondary?: string) {
-  const primaryNorm = normalizeStatus(primary) as keyof typeof statusRank
-  const secondaryNorm = normalizeStatus(secondary) as keyof typeof statusRank
-  const worst = statusRank[secondaryNorm] > statusRank[primaryNorm] ? secondaryNorm : primaryNorm
-  return statusLabelMap[worst] || 'Normal'
-}
-
-function statusTone(status?: string) {
-  if (status && status.toLowerCase().includes('pend')) return 'tone-neutral'
-  const normalized = normalizeStatus(status)
-  if (normalized === 'Critico') return 'tone-danger'
-  if (normalized === 'Alerta') return 'tone-warning'
-  return 'tone-normal'
-}
 
 type TableTransformer = {
   id: string
@@ -1121,10 +1091,10 @@ watch(
                   </button>
                 </template>
                 <template v-else-if="col.id === 'statusTr'">
-                  <span class="status-pill" :class="statusTone(item.statusTr)">{{ item.statusTr }}</span>
+                  <StatusPill :status="item.statusTr" />
                 </template>
                 <template v-else-if="col.id === 'analystStatus'">
-                  <span class="status-pill" :class="statusTone(item.analystStatus)">{{ item.analystStatus || '-' }}</span>
+                  <StatusPill :status="item.analystStatus" />
                 </template>
                 <template v-else-if="col.id === 'n1'">
                   <span class="level-pill" :class="levelClass(item, 'N1')" :style="levelStyle(item, 'N1')">
@@ -1190,24 +1160,15 @@ watch(
         </table>
       </div>
 
-      <div class="table-pagination">
-        <label class="rows-per-page">
-          <span>Itens por página</span>
-          <select v-model.number="rowsPerPage">
-            <option v-for="size in rowsPerPageOptions" :key="`rows-${size}`" :value="size">
-              {{ size }}
-            </option>
-          </select>
-        </label>
-        <span class="page-range">{{ pageRangeLabel }}</span>
-        <button type="button" class="page-btn" :disabled="page <= 1" @click="goToPreviousPage">
-          Anterior
-        </button>
-        <span class="page-current">Página {{ page }} de {{ totalPages }}</span>
-        <button type="button" class="page-btn" :disabled="page >= totalPages" @click="goToNextPage">
-          Próxima
-        </button>
-      </div>
+      <TablePagination
+        :page="page"
+        :total-pages="totalPages"
+        :rows-per-page="rowsPerPage"
+        :rows-per-page-options="rowsPerPageOptions"
+        :page-range-label="pageRangeLabel"
+        @update:page="page = $event"
+        @update:rows-per-page="rowsPerPage = $event"
+      />
     </section>
 
     <section class="mobile-cards">
@@ -1217,7 +1178,7 @@ watch(
             <strong>{{ item.tag || 'Sem TAG' }}</strong>
             <span>{{ item.serial || item.id }}</span>
           </div>
-          <span class="status-pill" :class="statusTone(item.status)">{{ item.status }}</span>
+          <StatusPill :status="item.status" />
         </div>
         <div class="card-body">
           <div>
@@ -1240,109 +1201,24 @@ watch(
       </article>
     </section>
 
-    <div v-if="editModalOpen" class="modal-overlay" @click="closeEditModal">
-      <div class="modal-card" @click.stop>
-        <h4>Editar Transformador</h4>
-        <div class="modal-grid">
-          <label>
-            <span>Serial</span>
-            <input v-model="editForm.serial" type="text" />
-          </label>
-          <label>
-            <span>TAG</span>
-            <input v-model="editForm.tag" type="text" />
-          </label>
-          <label class="full">
-            <span>Subestação</span>
-            <input v-model="editForm.substation" type="text" />
-          </label>
-          <label>
-            <span>Unidade</span>
-            <input v-model="editForm.unit" type="text" />
-          </label>
-          <label>
-            <span>Potência</span>
-            <input v-model="editForm.power" type="text" />
-          </label>
-          <label>
-            <span>Tensão</span>
-            <input v-model="editForm.voltage" type="text" />
-          </label>
-          <label>
-            <span>Fabricante</span>
-            <input v-model="editForm.manufacturer" type="text" />
-          </label>
-          <label>
-            <span>Ano</span>
-            <input v-model="editForm.year" type="text" />
-          </label>
-          <label>
-            <span>Latitude</span>
-            <input v-model="editForm.latitude" type="text" />
-          </label>
-          <label>
-            <span>Longitude</span>
-            <input v-model="editForm.longitude" type="text" />
-          </label>
-        </div>
-        <div class="modal-actions">
-          <button type="button" class="modal-btn secondary" @click="closeEditModal">Cancelar</button>
-          <button type="button" class="modal-btn primary" @click="saveEditModal">Salvar</button>
-        </div>
-      </div>
-    </div>
+    <TransformerEditModal
+      v-if="editModalOpen"
+      :form="editForm"
+      @close="closeEditModal"
+      @save="saveEditModal"
+    />
 
-    <div v-if="advancedFilterModalOpen" class="modal-overlay" @click="closeAdvancedFilterModal">
-      <div class="modal-card advanced-filter-modal" @click.stop>
-        <h4>Filtro Avançado</h4>
-        <div class="advanced-filter-rules">
-          <div v-for="(rule, index) in advancedRulesDraft" :key="`advanced-rule-${rule.id}`" class="advanced-filter-row">
-            <select v-if="index > 0" v-model="rule.connector" aria-label="Operador lógico">
-              <option value="AND">E</option>
-              <option value="OR">OU</option>
-            </select>
-            <span v-else class="advanced-filter-first">SE</span>
-            <select v-model="rule.field" aria-label="Campo">
-              <option v-for="option in advancedFieldOptions" :key="`advanced-field-${option.value}`" :value="option.value">
-                {{ option.label }}
-              </option>
-            </select>
-            <select v-model="rule.operator" aria-label="Operador">
-              <option value="=">==</option>
-              <option value="!=">!=</option>
-              <option value=">">&gt;</option>
-              <option value="<">&lt;</option>
-              <option value=">=">&gt;=</option>
-              <option value="<=">&lt;=</option>
-            </select>
-            <select
-              v-if="getAdvancedFieldValueOptions(rule.field).length"
-              v-model="rule.value"
-              aria-label="Valor da expressão"
-            >
-              <option value="">Selecione</option>
-              <option
-                v-for="option in getAdvancedFieldValueOptions(rule.field)"
-                :key="`advanced-value-${rule.id}-${option}`"
-                :value="option"
-              >
-                {{ option }}
-              </option>
-            </select>
-            <input v-else v-model="rule.value" type="text" placeholder="Valor" aria-label="Valor da expressão" />
-            <button type="button" class="advanced-filter-remove" @click="removeAdvancedRule(rule.id)">Remover</button>
-          </div>
-        </div>
-        <div class="advanced-filter-footer">
-          <button type="button" class="modal-btn secondary" @click="addAdvancedRule">+ Condição</button>
-          <div class="advanced-filter-footer-right">
-            <button type="button" class="modal-btn secondary" @click="clearAdvancedFilterDraft">Limpar</button>
-            <button type="button" class="modal-btn secondary" @click="closeAdvancedFilterModal">Cancelar</button>
-            <button type="button" class="modal-btn primary" @click="applyAdvancedFilter">Aplicar</button>
-          </div>
-        </div>
-      </div>
-    </div>
+    <AdvancedFilterModal
+      v-if="advancedFilterModalOpen"
+      :rules="advancedRulesDraft"
+      :field-options="advancedFieldOptions"
+      :get-field-value-options="getAdvancedFieldValueOptions"
+      @close="closeAdvancedFilterModal"
+      @apply="applyAdvancedFilter"
+      @clear="clearAdvancedFilterDraft"
+      @add-rule="addAdvancedRule"
+      @remove-rule="removeAdvancedRule"
+    />
   </div>
 </template>
 
@@ -1931,209 +1807,8 @@ watch(
   color: #b45309;
 }
 
-.table-pagination{
-  margin-top: 12px;
-  padding: 8px 6px 6px;
-  display: flex;
-  align-items: center;
-  justify-content: flex-end;
-  gap: 10px;
-  flex-wrap: wrap;
-}
-
-.rows-per-page{
-  display: inline-flex;
-  align-items: center;
-  gap: 8px;
-}
-
-.rows-per-page span{
-  font-size: 11px;
-  font-weight: 600;
-  color: rgba(15, 23, 42, 0.72);
-}
-
-.rows-per-page select{
-  height: 30px;
-  border-radius: 8px;
-  border: 1px solid rgba(15, 23, 42, 0.14);
-  background: #fff;
-  color: rgba(15, 23, 42, 0.8);
-  font-size: 12px;
-  padding: 0 8px;
-}
-
-.page-range,
-.page-current{
-  font-size: 12px;
-  color: rgba(15, 23, 42, 0.75);
-}
-
-.page-btn{
-  height: 30px;
-  border-radius: 8px;
-  border: 1px solid rgba(15, 23, 42, 0.12);
-  background: rgba(255, 255, 255, 0.9);
-  color: rgba(15, 23, 42, 0.82);
-  font-size: 12px;
-  font-weight: 600;
-  padding: 0 10px;
-  cursor: pointer;
-}
-
-.page-btn:disabled{
-  opacity: 0.5;
-  cursor: not-allowed;
-}
-
 .mobile-cards{
   display: none;
-}
-
-.modal-overlay{
-  position: fixed;
-  inset: 0;
-  background: rgba(15, 23, 42, 0.52);
-  z-index: 80;
-  display: grid;
-  place-items: center;
-  padding: 20px;
-}
-
-.modal-card{
-  width: min(760px, 100%);
-  border-radius: 16px;
-  border: 1px solid rgba(15, 23, 42, 0.12);
-  background: #fff;
-  box-shadow: 0 24px 50px rgba(15, 23, 42, 0.2);
-  padding: 16px;
-}
-
-.modal-card h4{
-  margin: 0 0 12px;
-}
-
-.modal-grid{
-  display: grid;
-  grid-template-columns: repeat(2, minmax(0, 1fr));
-  gap: 10px;
-}
-
-.modal-grid label{
-  display: grid;
-  gap: 6px;
-}
-
-.modal-grid label span{
-  font-size: 12px;
-  color: rgba(15, 23, 42, 0.72);
-  font-weight: 600;
-}
-
-.modal-grid input{
-  height: 36px;
-  border-radius: 10px;
-  border: 1px solid rgba(15, 23, 42, 0.14);
-  padding: 0 10px;
-  font-size: 13px;
-}
-
-.modal-grid .full{
-  grid-column: 1 / -1;
-}
-
-.modal-actions{
-  margin-top: 14px;
-  display: inline-flex;
-  gap: 8px;
-}
-
-.modal-btn{
-  height: 34px;
-  border-radius: 999px;
-  border: 1px solid transparent;
-  padding: 0 14px;
-  font-size: 12px;
-  font-weight: 700;
-  cursor: pointer;
-}
-
-.modal-btn.secondary{
-  background: rgba(15, 23, 42, 0.06);
-  color: rgba(15, 23, 42, 0.8);
-  border-color: rgba(15, 23, 42, 0.12);
-}
-
-.modal-btn.primary{
-  background: #1e4e8b;
-  color: #fff;
-}
-
-.advanced-filter-modal{
-  width: min(980px, 100%);
-}
-
-.advanced-filter-rules{
-  display: grid;
-  gap: 10px;
-  max-height: min(52vh, 440px);
-  overflow: auto;
-  padding-right: 4px;
-}
-
-.advanced-filter-row{
-  display: grid;
-  grid-template-columns: 92px minmax(170px, 1fr) 90px minmax(180px, 1fr) auto;
-  gap: 8px;
-  align-items: center;
-}
-
-.advanced-filter-row select,
-.advanced-filter-row input{
-  height: 36px;
-  border-radius: 10px;
-  border: 1px solid rgba(15, 23, 42, 0.14);
-  padding: 0 10px;
-  font-size: 13px;
-  color: rgba(15, 23, 42, 0.84);
-  background: #fff;
-}
-
-.advanced-filter-first{
-  height: 36px;
-  border-radius: 10px;
-  border: 1px dashed rgba(15, 23, 42, 0.2);
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  font-size: 12px;
-  font-weight: 700;
-  color: rgba(15, 23, 42, 0.65);
-}
-
-.advanced-filter-remove{
-  height: 36px;
-  border-radius: 10px;
-  border: 1px solid rgba(220, 38, 38, 0.35);
-  background: rgba(220, 38, 38, 0.08);
-  color: #b91c1c;
-  font-size: 12px;
-  font-weight: 700;
-  padding: 0 10px;
-  cursor: pointer;
-}
-
-.advanced-filter-footer{
-  margin-top: 14px;
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: 10px;
-}
-
-.advanced-filter-footer-right{
-  display: inline-flex;
-  gap: 8px;
 }
 
 @media (max-width: 900px){

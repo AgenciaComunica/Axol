@@ -3,6 +3,7 @@ import { computed, nextTick, onMounted, onUnmounted, ref, watch } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import SideMenu from '@/components/SideMenu.vue'
 import AppHeader from '@/components/AppHeader.vue'
+import TransformerPickerDropdown from '@/components/TransformerPickerDropdown.vue'
 import transformersData from '@/assets/transformadores.json'
 import oltcData from '@/assets/oltc.json'
 import cromatografiasRaw from '@/assets/cromatografias.json?raw'
@@ -4491,75 +4492,24 @@ watch([activeTab, selectedId], async () => {
 
     <section class="report-shell">
       <div v-if="!isGlobalScopeView" class="report-toolbar">
-        <div v-if="!isGlobalScopeView" ref="transformerPickerWrapRef" class="selector">
-          <label for="trafo-picker-trigger">Selecionar transformador</label>
-          <button
-            id="trafo-picker-trigger"
-            ref="transformerPickerTriggerRef"
-            type="button"
-            class="transformer-picker-trigger"
-            :aria-expanded="transformerPickerOpen ? 'true' : 'false'"
-            aria-haspopup="listbox"
-            @click="toggleTransformerPicker"
-            @keydown.down.prevent="openTransformerPicker"
-          >
-            <span class="transformer-picker-trigger-label">{{ selectedTransformerLabel }}</span>
-            <i aria-hidden="true">{{ transformerPickerOpen ? '▴' : '▾' }}</i>
-          </button>
-          <div
-            v-if="transformerPickerOpen"
-            ref="transformerPickerMenuRef"
-            class="transformer-picker-menu"
-            @keydown="handleTransformerPickerKeydown"
-          >
-            <div class="transformer-picker-search-wrap">
-              <input
-                ref="transformerPickerSearchRef"
-                v-model="transformerPickerSearch"
-                type="text"
-                class="transformer-picker-search"
-                placeholder="Buscar subestação ou transformador..."
-                aria-label="Buscar subestação ou transformador"
-                @keydown.down.prevent="moveTransformerPickerFocus(1)"
-                @keydown.up.prevent="moveTransformerPickerFocus(-1)"
-              />
-            </div>
-            <div class="transformer-picker-list" role="listbox" aria-label="Transformadores por subestação">
-              <template v-for="entry in transformerPickerEntries" :key="entry.key">
-                <button
-                  v-if="entry.kind === 'group'"
-                  type="button"
-                  class="transformer-picker-group"
-                  :data-trafo-index="entry.index"
-                  :aria-expanded="isTransformerGroupExpanded(entry.group) ? 'true' : 'false'"
-                  @click="toggleTransformerGroup(entry.group.substation)"
-                >
-                  <span class="transformer-picker-group-main">
-                    <i class="transformer-picker-caret" aria-hidden="true">
-                      {{ isTransformerGroupExpanded(entry.group) ? '−' : '+' }}
-                    </i>
-                    {{ entry.group.substation }}
-                  </span>
-                  <small>{{ visibleTransformerItems(entry.group).length }}</small>
-                </button>
-                <button
-                  v-else
-                  type="button"
-                  class="transformer-picker-item"
-                  :class="{ active: entry.item.id === selectedId }"
-                  :data-trafo-index="entry.index"
-                  @click="selectTransformerFromPicker(entry.item)"
-                >
-                  <span>{{ entry.item.id }}</span>
-                  <small>{{ entry.item.serial }}</small>
-                </button>
-              </template>
-              <div v-if="!transformerPickerEntries.length" class="transformer-picker-empty">
-                Nenhum transformador encontrado.
-              </div>
-            </div>
-          </div>
-        </div>
+        <TransformerPickerDropdown
+          v-if="!isGlobalScopeView"
+          ref="transformerPickerWrapRef"
+          :entries="transformerPickerEntries"
+          :selected-id="selectedId"
+          :selected-label="selectedTransformerLabel"
+          :open="transformerPickerOpen"
+          :search="transformerPickerSearch"
+          :is-group-expanded="isTransformerGroupExpanded"
+          :visible-items="visibleTransformerItems"
+          @toggle="toggleTransformerPicker"
+          @open-picker="openTransformerPicker"
+          @update:search="transformerPickerSearch = $event"
+          @keydown="handleTransformerPickerKeydown"
+          @search-keydown="moveTransformerPickerFocus($event === 'down' ? 1 : -1)"
+          @select-item="selectTransformerFromPicker"
+          @toggle-group="toggleTransformerGroup"
+        />
         <nav class="macro-tabs" aria-label="Tipo de relatório">
           <button
             v-for="macro in macroTabs"
