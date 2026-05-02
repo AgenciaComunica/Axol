@@ -8,6 +8,7 @@
   },
   "scripts": {
     "dev": "vite",
+    "dev:pdf": "node server/pdfServer.js",
     "build": "run-p type-check \"build-only {@}\" --",
     "preview": "vite preview",
     "build-only": "vite build && cp dist/index.html dist/404.html",
@@ -21,6 +22,7 @@
     "apexcharts": "^5.3.6",
     "maplibre-gl": "^5.16.0",
     "pinia": "^3.0.4",
+    "puppeteer": "^24.42.0",
     "three": "^0.182.0",
     "vue": "^3.5.26",
     "vue-router": "^4.6.4",

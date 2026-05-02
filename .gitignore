@@ -126,6 +126,9 @@ dist
 .vscode-test
 .json
 
+# VSCode workspace settings (machine-specific)
+.vscode/
+
 # yarn v3
 .pnp.*
 .yarn/*

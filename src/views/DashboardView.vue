@@ -4,7 +4,9 @@ import { useRoute, useRouter } from 'vue-router'
 import SideMenu from '@/components/SideMenu.vue'
 import GoogleMapBase from '@/components/GoogleMapBase.vue'
 import KpiCard from '@/components/KpiCard.vue'
+import MapSearchBar from '@/components/MapSearchBar.vue'
 import { usePrototypeScopeStore, type MapItem } from '@/stores/prototypeScope'
+import { normalizeStatus, pickWorstStatus, getWorstStatusLabel, formatStatus, statusRank } from '@/composables/useStatusUtils'
 import transformersData from '@/assets/transformadores.json'
 type StateSelect = { name: string; sigla: string; value: number; transformers?: any[] }
 type KpiRow = {
@@ -199,42 +201,6 @@ const regionByState: Record<string, string> = {
   RS: 'S',
   SC: 'S',
 }
-const statusRank: Record<string, number> = { Normal: 1, Alerta: 2, Critico: 3 }
-const statusLabelMap: Record<keyof typeof statusRank, string> = {
-  Normal: 'Normal',
-  Alerta: 'Alerta',
-  Critico: 'Crítico',
-}
-
-function normalizeStatus(raw?: string) {
-  if (!raw) return 'Normal'
-  const value = raw
-    .toLowerCase()
-    .normalize('NFD')
-    .replace(/[\u0300-\u036f]/g, '')
-  if (value.includes('crit')) return 'Critico'
-  if (value.includes('alert') || value.includes('manut') || value.includes('reclass')) return 'Alerta'
-  if (value.includes('oper')) return 'Normal'
-  if (value.includes('ainda')) return 'Alerta'
-  return 'Normal'
-}
-
-function formatStatus(raw?: string) {
-  const normalized = normalizeStatus(raw) as keyof typeof statusRank
-  return statusLabelMap[normalized] || 'Normal'
-}
-
-function pickWorstStatus(primary?: string, secondary?: string) {
-  const primaryNorm = normalizeStatus(primary) as keyof typeof statusRank
-  const secondaryNorm = normalizeStatus(secondary) as keyof typeof statusRank
-  const worst = statusRank[secondaryNorm] > statusRank[primaryNorm] ? secondaryNorm : primaryNorm
-  return statusLabelMap[worst]
-}
-
-function getWorstStatusLabel(item: { status?: string; analystStatus?: string }) {
-  return pickWorstStatus(item.status, item.analystStatus)
-}
-
 function parseNumeric(value?: string) {
   if (!value) return 0
   const cleaned = value.replace(/[^\d.,-]/g, '').replace(',', '.')
@@ -1845,38 +1811,19 @@ watch(
       <div class="brand-header" :class="{ hidden: isLogoHidden }">
         <img src="@/assets/logo_siaro.png" alt="Siaro" class="brand-logo" />
       </div>
-      <div class="search-under-logo">
-        <div class="search-wrap">
-          <form class="search-bar" @submit.prevent="handleSearch">
-            <div class="search-input-wrap">
-              <input
-                v-model="searchQuery"
-                ref="searchInputRef"
-                type="search"
-                placeholder="Pesquisar endereço"
-                aria-label="Pesquisar endereço"
-                @focus="searchSuggestOpen = searchSuggestions.length > 0"
-                @blur="handleSearchBlur"
-              />
-              <div v-if="searchSuggestOpen" class="search-suggest">
-                <div
-                  v-for="suggestion in searchSuggestions"
-                  :key="suggestion.label"
-                  class="search-suggest-item"
-                  @mousedown.prevent="handleSuggestSelect(suggestion)"
-                >
-                  {{ suggestion.label }}
-                </div>
-                <div v-if="searchSuggestLoading" class="search-suggest-loading">Carregando...</div>
-              </div>
-            </div>
-            <button type="submit" :disabled="searchLoading || !mapsReady">
-              {{ !mapsReady ? 'Carregando...' : searchLoading ? 'Buscando...' : 'Buscar' }}
-            </button>
-          </form>
-          <span v-if="searchError" class="search-error">{{ searchError }}</span>
-        </div>
-      </div>
+      <MapSearchBar
+        v-model="searchQuery"
+        :loading="searchLoading"
+        :ready="mapsReady"
+        :error="searchError"
+        :suggestions="searchSuggestions"
+        :suggest-open="searchSuggestOpen"
+        :suggest-loading="searchSuggestLoading"
+        @update:suggest-open="searchSuggestOpen = $event"
+        @submit="handleSearch"
+        @blur="handleSearchBlur"
+        @select-suggestion="handleSuggestSelect"
+      />
 
       <section ref="mapShellRef" class="map-shell" @mousemove="handleMapMouseMove" @mouseleave="handleMapMouseLeave">
         <div class="kpi-stack">
@@ -2654,13 +2601,41 @@ body.menu-open{
 
 @media (min-width: 901px) and (max-height: 860px){
   .kpi-stack{
-    top: 104px;
+    top: 88px;
   }
   .kpi-col{
-    gap: 12px;
-    max-height: calc(100vh - 120px);
+    gap: 8px;
+    max-height: calc(100vh - 104px);
     overflow-y: auto;
+    overflow-x: hidden;
     padding-right: 4px;
+  }
+  .kpi-col::-webkit-scrollbar{
+    width: 3px;
+  }
+  .kpi-col::-webkit-scrollbar-track{
+    background: transparent;
+  }
+  .kpi-col::-webkit-scrollbar-thumb{
+    background: rgba(15, 23, 42, 0.18);
+    border-radius: 999px;
+  }
+  .kpi-col::-webkit-scrollbar-thumb:hover{
+    background: rgba(15, 23, 42, 0.35);
+  }
+  .kpi-col{
+    scrollbar-width: thin;
+    scrollbar-color: rgba(15, 23, 42, 0.18) transparent;
+  }
+}
+
+@media (min-width: 901px) and (max-height: 680px){
+  .kpi-stack{
+    top: 72px;
+  }
+  .kpi-col{
+    gap: 6px;
+    max-height: calc(100vh - 84px);
   }
 }
 
@@ -2960,6 +2935,14 @@ body.menu-open{
   }
   .transformer-modal-media{
     min-height: 180px;
+  }
+}
+
+@media (max-width: 600px){
+  .kpi-stack{
+    grid-template-columns: 1fr;
+    top: 8px;
+    gap: 8px;
   }
 }
 </style>
