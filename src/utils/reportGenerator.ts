@@ -613,6 +613,7 @@ ${reportMetaTags({
   /* ── Content ── */
   .content { padding:28px 36px; }
   .pdf-card { break-inside:avoid; page-break-inside:avoid; }
+  .pdf-card + .pdf-card { margin-top:24px; }
   .sec-head { display:flex; align-items:center; gap:7px; font-size:10px; font-weight:700; text-transform:uppercase; letter-spacing:.1em; color:#64748b; margin:26px 0 14px; padding-bottom:6px; border-bottom:1px solid #e2e8f0; }
   .sec-head:first-child { margin-top:0; }
   .sec-head::before { content:''; width:3px; height:12px; border-radius:2px; background:#1e4e8b; display:block; flex-shrink:0; -webkit-print-color-adjust:exact; print-color-adjust:exact; }
