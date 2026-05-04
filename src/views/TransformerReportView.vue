@@ -15,8 +15,8 @@ import trafo3dUrl from '@/assets/Trafo_3D.svg'
 import {
   downloadPdfFromHtml,
   generateCompleteReport,
-  generateSimpleReport,
 } from '@/utils/reportGenerator'
+import type { ReportSectionName, ReportSupplementalSection } from '@/utils/reportGenerator'
 
 type BaseRow = Record<string, unknown>
 type Transformer = {
@@ -106,6 +106,17 @@ type AdvancedFilterRule = {
   operator: AdvancedOperator
   value: string
   connector: AdvancedConnector
+}
+type SharedReportRecord = {
+  id: string
+  html: string
+  pdfHtml?: string
+  fileName: string
+  transformerId: string
+  sections: ReportSectionName[]
+  createdAt: string
+  expiresAt: string
+  status: 'active' | 'revoked'
 }
 
 const route = useRoute()
@@ -249,6 +260,23 @@ const activeSubTabs = computed(() => {
 })
 const generateReportMenuOpen = ref(false)
 const generateReportWrapRef = ref<HTMLElement | null>(null)
+const reportSectionSelections = ref<ReportSectionName[]>(['Avaliação Completa'])
+const reportPreviewOpen = ref(false)
+const reportPreviewHtml = ref('')
+const reportPreviewFileName = ref('')
+const reportPreviewGenerating = ref(false)
+const reportShareGenerating = ref(false)
+const reportShareLink = ref('')
+const reportShareCopied = ref(false)
+const sharedReportHtml = ref('')
+const sharedReportPdfHtml = ref('')
+const sharedReportAccessState = ref<'ready' | 'missing' | 'expired' | 'revoked'>('ready')
+const sharedReportTitle = ref('Comprovante do Relatório')
+const sharedReportId = ref('')
+const sharedReportExporting = ref(false)
+const sharedReportRevoking = ref(false)
+const reportShareError = ref('')
+const reportShareModalOpen = ref(false)
 
 const transformerOptions = computed<Transformer[]>(() => {
   const baseTransformers: Transformer[] = [
@@ -533,6 +561,9 @@ watch(
     if (!allowed.includes(activeTab.value)) {
       activeTab.value = allowed[0]!
     }
+    reportSectionSelections.value = reportSectionSelections.value.filter((section) =>
+      allowed.includes(section as ReportTab)
+    )
   },
   { immediate: true }
 )
@@ -2713,10 +2744,82 @@ function toggleGenerateReportMenu() {
   generateReportMenuOpen.value = !generateReportMenuOpen.value
 }
 
-async function openGeneratedReport(type: 'simples' | 'completo') {
+const selectedReportSections = computed(() =>
+  activeSubTabs.value.filter((tab) => reportSectionSelections.value.includes(tab.value as ReportSectionName))
+)
+
+const canGenerateReportFile = computed(() => reportSectionSelections.value.length > 0)
+const isSharedReportView = computed(() => typeof route.query.sharedReport === 'string' && !!route.query.sharedReport)
+const sharedReportStorageKey = 'axol.sharedReports.v1'
+const sharedReportAccessMessage = computed(() => {
+  if (sharedReportAccessState.value === 'expired') return 'Este link expirou e não pode mais exibir dados do relatório.'
+  if (sharedReportAccessState.value === 'revoked') return 'Este link foi invalidado e o acesso foi bloqueado.'
+  return 'Este link dummy usa armazenamento local do navegador. Quando o backend estiver integrado, o mesmo fluxo poderá buscar o HTML salvo por ID.'
+})
+
+function toggleReportSectionSelection(section: ReportSectionName) {
+  if (reportSectionSelections.value.includes(section)) {
+    reportSectionSelections.value = reportSectionSelections.value.filter((item) => item !== section)
+    return
+  }
+  reportSectionSelections.value = [...reportSectionSelections.value, section]
+}
+
+function reportTableRows<T extends Record<string, unknown>>(
+  rows: T[],
+  columns: { id: string; label: string }[],
+  limit = 20,
+) {
+  return rows.slice(0, limit).map((row) => columns.map((column) => normalizeCell(row[column.id])))
+}
+
+function buildReportSupplementalSections(): ReportSupplementalSection[] {
+  const analysisColumns = activeAnalysisVisibleColumns.value.map((column) => ({ id: column.id, label: column.label }))
+  const coletasColumns = [
+    { id: 'transformador', label: 'Transformador' },
+    { id: 'status', label: 'Status' },
+    { id: 'dataColeta', label: 'Data Coleta' },
+    { id: 'subestacao', label: 'Subestação' },
+    { id: 'tipoAnalise', label: 'Tipo de Análise' },
+    { id: 'faltamDias', label: 'Faltam Dia(s)' },
+  ]
+  const treatmentColumnsForReport = treatmentVisibleColumns.value.map((column) => ({ id: column.id, label: column.label }))
+
+  return [
+    {
+      key: 'Histórico de Análises',
+      title: isTrRotaMacro.value ? 'Análise de Campo' : 'Histórico de Análises',
+      description: 'Registros exibidos conforme filtros e ordenação atuais da aba.',
+      columns: analysisColumns.map((column) => column.label),
+      rows: reportTableRows(sortedUnifiedAnalysisRows.value as Record<string, unknown>[], analysisColumns),
+    },
+    {
+      key: 'Avaliações Complementares',
+      title: 'Avaliações Complementares',
+      description: 'Resumo das variáveis fora das faixas estabelecidas por nível de risco.',
+      columns: ['Variável', 'N1', 'N2', 'N3', 'N4', 'N5'],
+      rows: riskHeatmapRows.value.map((row) => [row.label, ...row.values.map((value) => `${value.toFixed(2)}%`)]),
+    },
+    {
+      key: 'Coletas',
+      title: 'Coletas',
+      description: 'Agenda e registros de coletas conforme visão atual.',
+      columns: coletasColumns.map((column) => column.label),
+      rows: reportTableRows(coletasSortedRows.value as unknown as Record<string, unknown>[], coletasColumns),
+    },
+    {
+      key: 'Tratamento de Óleo',
+      title: 'Tratamento de Óleo',
+      description: 'Dados de tratamento do óleo isolante conforme colunas visíveis.',
+      columns: treatmentColumnsForReport.map((column) => column.label),
+      rows: reportTableRows(treatmentFilteredRows.value as Record<string, unknown>[], treatmentColumnsForReport),
+    },
+  ]
+}
+
+function buildGeneratedReportHtml() {
   const trafo = selectedTransformer.value
-  if (!trafo) return
-  generateReportMenuOpen.value = false
+  if (!trafo || !canGenerateReportFile.value) return ''
 
   const latestCrom = latestCromatografiaRow.value
   const latestFisico = fisicoRows.value[0] || null
@@ -2757,18 +2860,264 @@ async function openGeneratedReport(type: 'simples' | 'completo') {
   const logo = `${window.location.origin}/pdf-assets/logo_siaro.png`
   const trafoImg = window.location.origin + trafo3dUrl
   const axolQrUrl = `${window.location.origin}/pdf-assets/axol_qrcode.svg`
-  const html =
-    type === 'simples'
-      ? generateSimpleReport(trafo, logo, evalData)
-      : generateCompleteReport(trafo, logo, trafoImg, axolQrUrl, evalData)
-  const fileName = `relatorio-${type}-${trafo.serial || trafo.id}`
+  return generateCompleteReport(trafo, logo, trafoImg, axolQrUrl, evalData, {
+    sections: reportSectionSelections.value,
+    supplementalSections: buildReportSupplementalSections(),
+  })
+}
 
+function readReportMeta(html: string, name: string) {
+  const pattern = new RegExp(`<meta[^>]+name=["']${name}["'][^>]+content=["']([^"']*)["'][^>]*>`, 'i')
+  return pattern.exec(html)?.[1] || ''
+}
+
+function escapeSharedReportHtml(value = '') {
+  return String(value)
+    .replace(/&/g, '&amp;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;')
+    .replace(/"/g, '&quot;')
+    .replace(/'/g, '&#39;')
+}
+
+function buildSharedReportHeaderFooter(html: string) {
+  const title = readReportMeta(html, 'report-title') || 'Relatório Técnico'
+  const eyebrow = readReportMeta(html, 'report-eyebrow') || 'Sistema SIARO - Axol Engenharia'
+  const reportId = readReportMeta(html, 'report-id') || '-'
+  const issuedAtLabel = readReportMeta(html, 'report-issued-label') || ''
+  const expiryLabel = readReportMeta(html, 'report-expiry-label') || ''
+  const logoUrl = readReportMeta(html, 'report-logo-url')
+  const validationUrl = readReportMeta(html, 'report-validation-url')
+  const qrUrl = readReportMeta(html, 'report-qr-url')
+  const analyst = readReportMeta(html, 'report-analyst')
+  const logo = logoUrl
+    ? `<img src="${escapeSharedReportHtml(logoUrl)}" alt="Logo" style="height:60px;max-width:132px;object-fit:contain;object-position:left center;display:block;" />`
+    : `<span style="font-weight:700;color:#0f172a;">SIARO - Axol Engenharia</span>`
+  const qr = qrUrl
+    ? `<img src="${escapeSharedReportHtml(qrUrl)}" alt="QR" style="height:36px;width:36px;object-fit:contain;display:block;" />`
+    : ''
+
+  return {
+    header: `
+      <div class="shared-pdf-header">
+        <div style="height:20px;background:#1a3a5c;-webkit-print-color-adjust:exact;print-color-adjust:exact;"></div>
+        <div style="padding:6px 20px 0;">
+          <div style="border-bottom:1px solid #cbd5e1;padding-bottom:6px;">
+            <div style="display:flex;align-items:center;gap:12px;">
+              <div style="width:132px;display:flex;align-items:center;justify-content:flex-start;flex-shrink:0;">${logo}</div>
+              <div style="flex:1;text-align:center;min-width:0;">
+                <div style="font-size:8px;text-transform:uppercase;letter-spacing:.08em;color:#64748b;">${escapeSharedReportHtml(eyebrow)}</div>
+                <div style="font-size:16px;line-height:1.2;font-weight:700;margin-top:2px;">${escapeSharedReportHtml(title)}</div>
+              </div>
+              <div style="width:180px;text-align:right;flex-shrink:0;">
+                <div style="font-size:8px;text-transform:uppercase;letter-spacing:.08em;color:#64748b;">Relatório</div>
+                <div style="font-size:11px;font-family:monospace;font-weight:700;margin-top:2px;">${escapeSharedReportHtml(reportId)}</div>
+                <div style="font-size:9px;color:#64748b;margin-top:2px;">Emitido em ${escapeSharedReportHtml(issuedAtLabel)}</div>
+                <div style="font-size:9px;color:#64748b;margin-top:1px;">${escapeSharedReportHtml(expiryLabel)}</div>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+    `,
+    footer: `
+      <div class="shared-pdf-footer">
+        <div style="padding:0 20px 4px;">
+          <div style="border-top:1px solid #cbd5e1;padding-top:4px;display:flex;align-items:center;justify-content:space-between;gap:12px;">
+            <div style="width:44px;display:flex;justify-content:flex-start;">${qr}</div>
+            <div style="flex:1;text-align:center;">
+              <div>SIARO - Axol Engenharia</div>
+              ${analyst ? `<div style="font-size:8px;color:#64748b;margin-top:2px;">Analista: ${escapeSharedReportHtml(analyst)}</div>` : ''}
+              ${validationUrl ? `<div style="font-size:8px;color:#64748b;margin-top:2px;">${escapeSharedReportHtml(validationUrl)}</div>` : ''}
+            </div>
+            <div style="width:120px;text-align:right;font-size:8px;">Documento compartilhado</div>
+          </div>
+        </div>
+        <div style="height:20px;background:#F5B800;-webkit-print-color-adjust:exact;print-color-adjust:exact;"></div>
+      </div>
+    `,
+  }
+}
+
+function buildShareableReportHtml(html: string) {
+  const parts = buildSharedReportHeaderFooter(html)
+  const style = `
+    <style>
+      .shared-pdf-header,.shared-pdf-footer{max-width:860px;margin:0 auto;background:#fff;color:#0f172a;font-family:Arial,sans-serif;font-size:10px;}
+      .shared-pdf-header{margin-bottom:18px;}
+      .shared-pdf-footer{margin-top:24px;font-size:9px;color:#475569;}
+    </style>
+  `
+  return html
+    .replace('</head>', `${style}</head>`)
+    .replace('<body>', `<body>${parts.header}`)
+    .replace('</body>', `${parts.footer}</body>`)
+}
+
+function readSharedReportRecords(): Record<string, SharedReportRecord> {
+  if (typeof window === 'undefined') return {}
   try {
-    await downloadPdfFromHtml(html, fileName)
+    return JSON.parse(window.localStorage.getItem(sharedReportStorageKey) || '{}') as Record<string, SharedReportRecord>
+  } catch {
+    return {}
+  }
+}
+
+function writeSharedReportRecords(records: Record<string, SharedReportRecord>) {
+  if (typeof window === 'undefined') return
+  window.localStorage.setItem(sharedReportStorageKey, JSON.stringify(records))
+}
+
+async function persistSharedReportForLink(record: SharedReportRecord): Promise<string> {
+  const records = readSharedReportRecords()
+  records[record.id] = record
+  writeSharedReportRecords(records)
+  return `${window.location.origin}${window.location.pathname}?sharedReport=${encodeURIComponent(record.id)}`
+}
+
+function loadSharedReportFromLink(id: string) {
+  const record = readSharedReportRecords()[id]
+  sharedReportId.value = id
+  sharedReportHtml.value = ''
+  sharedReportPdfHtml.value = ''
+  sharedReportTitle.value = record?.fileName || 'Comprovante do Relatório'
+
+  if (!record) {
+    sharedReportAccessState.value = 'missing'
+    return
+  }
+  if (record.status === 'revoked') {
+    sharedReportAccessState.value = 'revoked'
+    return
+  }
+  if (new Date(record.expiresAt).getTime() <= Date.now()) {
+    sharedReportAccessState.value = 'expired'
+    return
+  }
+
+  sharedReportHtml.value = record.html
+  sharedReportPdfHtml.value = record.pdfHtml || record.html
+  sharedReportAccessState.value = 'ready'
+}
+
+watch(
+  () => route.query.sharedReport,
+  (value) => {
+    if (typeof value === 'string' && value) {
+      loadSharedReportFromLink(value)
+      return
+    }
+    sharedReportHtml.value = ''
+    sharedReportPdfHtml.value = ''
+    sharedReportId.value = ''
+    sharedReportAccessState.value = 'ready'
+  },
+  { immediate: true }
+)
+
+function openGeneratedReportPreview() {
+  const trafo = selectedTransformer.value
+  const html = buildGeneratedReportHtml()
+  if (!trafo || !html) return
+
+  generateReportMenuOpen.value = false
+  reportPreviewHtml.value = html
+  reportPreviewFileName.value = `relatorio-${trafo.serial || trafo.id}-${reportSectionSelections.value.length}-abas`
+  reportShareLink.value = ''
+  reportShareCopied.value = false
+  reportShareError.value = ''
+  reportShareModalOpen.value = false
+  reportPreviewOpen.value = true
+}
+
+function closeGeneratedReportPreview() {
+  if (reportPreviewGenerating.value) return
+  reportPreviewOpen.value = false
+}
+
+async function downloadGeneratedReportPreview() {
+  if (!reportPreviewHtml.value || reportPreviewGenerating.value) return
+  reportPreviewGenerating.value = true
+  try {
+    await downloadPdfFromHtml(reportPreviewHtml.value, reportPreviewFileName.value || 'relatorio')
+    reportPreviewOpen.value = false
   } catch (error) {
     console.error('Erro ao gerar PDF', error)
     window.alert('Nao foi possivel gerar o PDF. Verifique se o servico Node do Puppeteer esta em execucao.')
+  } finally {
+    reportPreviewGenerating.value = false
   }
+}
+
+async function shareGeneratedReportLink() {
+  const trafo = selectedTransformer.value
+  if (!trafo || !reportPreviewHtml.value || reportShareGenerating.value) return
+  reportShareGenerating.value = true
+  reportShareCopied.value = false
+  reportShareError.value = ''
+
+  try {
+    const id = `report-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 8)}`
+    const expiresAt = new Date(Date.now() + 7 * 24 * 60 * 60 * 1000).toISOString()
+    reportShareLink.value = await persistSharedReportForLink({
+      id,
+      html: buildShareableReportHtml(reportPreviewHtml.value),
+      pdfHtml: reportPreviewHtml.value,
+      fileName: reportPreviewFileName.value || 'relatorio',
+      transformerId: trafo.id,
+      sections: [...reportSectionSelections.value],
+      createdAt: new Date().toISOString(),
+      expiresAt,
+      status: 'active',
+    })
+    reportShareModalOpen.value = true
+  } catch (error) {
+    console.error('Erro ao compartilhar relatório', error)
+    reportShareError.value = 'Não foi possível gerar o link de compartilhamento.'
+  } finally {
+    reportShareGenerating.value = false
+  }
+}
+
+async function copyReportShareLink() {
+  if (!reportShareLink.value || typeof window === 'undefined') return
+  try {
+    await window.navigator.clipboard?.writeText(reportShareLink.value)
+    reportShareCopied.value = true
+  } catch {
+    reportShareCopied.value = false
+  }
+}
+
+async function exportSharedReportPdf() {
+  const html = sharedReportPdfHtml.value || sharedReportHtml.value
+  if (!html || sharedReportExporting.value) return
+  sharedReportExporting.value = true
+  try {
+    await downloadPdfFromHtml(html, sharedReportTitle.value || 'relatorio-compartilhado')
+  } catch (error) {
+    console.error('Erro ao gerar PDF compartilhado', error)
+    window.alert('Nao foi possivel gerar o PDF do link compartilhado. Verifique se o servico Node do Puppeteer esta em execucao.')
+  } finally {
+    sharedReportExporting.value = false
+  }
+}
+
+function closeReportShareModal() {
+  reportShareModalOpen.value = false
+}
+
+function revokeSharedReportLink() {
+  if (!sharedReportId.value || sharedReportRevoking.value) return
+  sharedReportRevoking.value = true
+  const records = readSharedReportRecords()
+  const record = records[sharedReportId.value]
+  if (record) {
+    records[sharedReportId.value] = { ...record, status: 'revoked' }
+    writeSharedReportRecords(records)
+  }
+  loadSharedReportFromLink(sharedReportId.value)
+  sharedReportRevoking.value = false
 }
 
 function toggleAnalysisNewMenu() {
@@ -4480,17 +4829,47 @@ watch([activeTab, selectedId], async () => {
 </script>
 
 <template>
-  <div class="report-view">
-    <SideMenu />
-    <AppHeader
-      :eyebrow="pageEyebrow"
-      :title="pageTitle"
-      :subtitle="pageSubtitle"
-      :secondaryAction="{ label: 'Start Óleo', onClick: () => {} }"
-      :action="{ label: 'Voltar ao Painel', onClick: () => router.push({ name: 'dashboard' }) }"
-    />
+  <div class="report-view" :class="{ 'shared-report-mode': isSharedReportView }">
+    <template v-if="isSharedReportView">
+      <div class="shared-report-view">
+        <div v-if="sharedReportAccessState !== 'ready'" class="shared-report-empty">
+          <h3>Comprovante indisponível</h3>
+          <p>{{ sharedReportAccessMessage }}</p>
+        </div>
+        <template v-else>
+          <div class="shared-report-toolbar">
+            <div>
+              <p>Link compartilhado</p>
+              <h3>{{ sharedReportTitle }}</h3>
+            </div>
+            <div class="shared-report-actions">
+              <button type="button" class="secondary-btn" :disabled="sharedReportRevoking" @click="revokeSharedReportLink">
+                {{ sharedReportRevoking ? 'Invalidando...' : 'Invalidar link' }}
+              </button>
+              <button type="button" class="primary-btn" :disabled="sharedReportExporting" @click="exportSharedReportPdf">
+                {{ sharedReportExporting ? 'Gerando...' : 'Exportar PDF' }}
+              </button>
+            </div>
+          </div>
+          <iframe
+            class="shared-report-iframe"
+            :srcdoc="sharedReportHtml"
+            :title="sharedReportTitle"
+          ></iframe>
+        </template>
+      </div>
+    </template>
+    <template v-else>
+      <SideMenu />
+      <AppHeader
+        :eyebrow="pageEyebrow"
+        :title="pageTitle"
+        :subtitle="pageSubtitle"
+        :secondaryAction="{ label: 'Start Óleo', onClick: () => {} }"
+        :action="{ label: 'Voltar ao Painel', onClick: () => router.push({ name: 'dashboard' }) }"
+      />
 
-    <section class="report-shell">
+      <section class="report-shell">
       <div v-if="!isGlobalScopeView" class="report-toolbar">
         <TransformerPickerDropdown
           v-if="!isGlobalScopeView"
@@ -4542,31 +4921,34 @@ watch([activeTab, selectedId], async () => {
               @click="toggleGenerateReportMenu"
             >
               <span class="history-action-icon" aria-hidden="true">⭳</span>
-              Gerar Relatório
+              Comprovante
             </button>
             <div v-if="generateReportMenuOpen" class="report-generate-menu">
-              <p class="report-generate-menu-label">Selecione o tipo de relatório</p>
+              <p class="report-generate-menu-label">Escolha as abas do relatório</p>
+              <label
+                v-for="tab in activeSubTabs"
+                :key="`report-section-${tab.value}`"
+                class="report-section-option"
+              >
+                <input
+                  type="checkbox"
+                  :checked="reportSectionSelections.includes(tab.value)"
+                  @change="toggleReportSectionSelection(tab.value)"
+                />
+                <span>{{ tab.label }}</span>
+              </label>
               <button
                 type="button"
-                class="report-type-btn"
-                @click="openGeneratedReport('simples')"
+                class="report-generate-file-btn"
+                :disabled="!canGenerateReportFile"
+                @click="openGeneratedReportPreview"
               >
-                <span class="report-type-icon">📄</span>
-                <span>
-                  <strong>Relatório Simples</strong><br>
-                  <small>Identificação, status e dados técnicos</small>
-                </span>
-              </button>
-              <button
-                type="button"
-                class="report-type-btn"
-                @click="openGeneratedReport('completo')"
-              >
-                <span class="report-type-icon">🔐</span>
-                <span>
-                  <strong>Relatório Completo</strong><br>
-                  <small>Com QR code, validação e dados estruturados</small>
-                </span>
+                <svg class="report-generate-file-icon" viewBox="0 0 24 24" aria-hidden="true">
+                  <path d="M15 3h6v6"></path>
+                  <path d="M10 14 21 3"></path>
+                  <path d="M18 13v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h6"></path>
+                </svg>
+                Gerar Comprovante
               </button>
             </div>
           </div>
@@ -7152,7 +7534,58 @@ watch([activeTab, selectedId], async () => {
           <div v-else class="summary-viewer-fallback">Visualização indisponível para este transformador.</div>
         </div>
       </div>
-    </section>
+
+      <div v-if="reportPreviewOpen" class="report-preview-overlay" @click.self="closeGeneratedReportPreview">
+        <div class="report-preview-modal">
+          <div class="report-preview-head">
+            <div>
+              <p>Preview HTML</p>
+              <h4>Comprovante do Relatório</h4>
+              <span>{{ selectedReportSections.map((section) => section.label).join(', ') }}</span>
+              <p v-if="reportShareError" class="report-share-error">{{ reportShareError }}</p>
+            </div>
+            <div class="report-preview-actions">
+              <button type="button" class="secondary-btn" :disabled="reportPreviewGenerating" @click="closeGeneratedReportPreview">Cancelar</button>
+              <button type="button" class="secondary-btn" :disabled="reportShareGenerating || reportPreviewGenerating" @click="shareGeneratedReportLink">
+                {{ reportShareGenerating ? 'Compartilhando...' : 'Compartilhar link' }}
+              </button>
+              <button type="button" class="primary-btn" :disabled="reportPreviewGenerating" @click="downloadGeneratedReportPreview">
+                {{ reportPreviewGenerating ? 'Gerando...' : 'Exportar PDF' }}
+              </button>
+            </div>
+          </div>
+          <iframe
+            class="report-preview-iframe"
+            :srcdoc="reportPreviewHtml"
+            title="Preview HTML do relatório"
+          ></iframe>
+        </div>
+      </div>
+
+      <div v-if="reportShareModalOpen" class="report-share-overlay" @click.self="closeReportShareModal">
+        <div class="report-share-modal">
+          <div class="report-share-modal-head">
+            <div>
+              <p>Compartilhar link</p>
+              <h4>Comprovante do Relatório</h4>
+            </div>
+            <button type="button" class="report-share-close" aria-label="Fechar compartilhamento" @click="closeReportShareModal">×</button>
+          </div>
+          <label class="report-share-link-field">
+            <span>Link de acesso</span>
+            <input :value="reportShareLink" type="text" readonly aria-label="Link compartilhável do comprovante" />
+          </label>
+          <p class="report-share-note">Link dummy salvo localmente, válido por 7 dias ou até ser invalidado.</p>
+          <div class="report-share-modal-actions">
+            <button type="button" class="secondary-btn" @click="closeReportShareModal">Fechar</button>
+            <button type="button" class="primary-btn" @click="copyReportShareLink">
+              {{ reportShareCopied ? 'Copiado' : 'Copiar link' }}
+            </button>
+          </div>
+        </div>
+      </div>
+      </section>
+    </template>
   </div>
 </template>
 
@@ -7163,6 +7596,82 @@ watch([activeTab, selectedId], async () => {
   padding: 32px 32px 60px 96px;
   color: #0f172a;
   overflow-x: hidden;
+}
+
+.report-view.shared-report-mode{
+  padding: 0;
+  background: #f8fafc;
+}
+
+.shared-report-view{
+  min-height: 100vh;
+  background: #f8fafc;
+  display: grid;
+  grid-template-rows: auto 1fr;
+}
+
+.shared-report-iframe{
+  width: 100%;
+  min-height: calc(100vh - 66px);
+  border: 0;
+  background: #fff;
+  display: block;
+}
+
+.shared-report-toolbar{
+  min-height: 66px;
+  padding: 10px 16px;
+  background: #fff;
+  border-bottom: 1px solid rgba(15, 23, 42, 0.1);
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+}
+
+.shared-report-toolbar p{
+  margin: 0;
+  font-size: 11px;
+  font-weight: 800;
+  letter-spacing: .08em;
+  text-transform: uppercase;
+  color: rgba(15, 23, 42, .46);
+}
+
+.shared-report-toolbar h3{
+  margin: 2px 0 0;
+  font-size: 15px;
+  color: #0f172a;
+}
+
+.shared-report-actions{
+  display: inline-flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+
+.shared-report-empty{
+  min-height: 100vh;
+  display: grid;
+  place-content: center;
+  gap: 8px;
+  padding: 24px;
+  text-align: center;
+  color: #0f172a;
+}
+
+.shared-report-empty h3{
+  margin: 0;
+  font-size: 18px;
+}
+
+.shared-report-empty p{
+  margin: 0;
+  max-width: 520px;
+  font-size: 13px;
+  color: rgba(15, 23, 42, 0.62);
 }
 
 .report-shell{
@@ -7227,14 +7736,16 @@ watch([activeTab, selectedId], async () => {
   right: 0;
   top: calc(100% + 6px);
   z-index: 40;
-  width: min(320px, 88vw);
+  width: min(260px, 88vw);
+  max-height: 360px;
+  overflow: auto;
   border-radius: 12px;
   border: 1px solid rgba(15, 23, 42, 0.12);
   background: #fff;
   box-shadow: 0 10px 24px rgba(15, 23, 42, 0.14);
-  padding: 10px;
+  padding: 8px;
   display: grid;
-  gap: 6px;
+  gap: 4px;
 }
 
 .report-generate-menu-label{
@@ -7247,45 +7758,74 @@ watch([activeTab, selectedId], async () => {
   padding: 0;
 }
 
-.report-type-btn{
+.report-section-option{
   display: flex;
   align-items: center;
-  gap: 12px;
-  text-align: left;
-  width: 100%;
-  padding: 12px 14px;
-  border-radius: 10px;
-  border: 1px solid rgba(15, 23, 42, .1);
-  background: #f8fafc;
-  color: #0f172a;
+  gap: 8px;
+  font-size: 12px;
+  color: rgba(15, 23, 42, 0.82);
+  padding: 4px 2px;
   cursor: pointer;
-  transition: background 0.15s, border-color 0.15s;
+  min-width: 0;
 }
 
-.report-type-btn:hover{
-  background: #e8f0fe;
-  border-color: #1a3a5c;
+.report-section-option:hover{
+  color: #1e4e8b;
 }
 
-.report-type-btn strong{
-  display: block;
-  font-size: 13px;
-  font-weight: 700;
-  color: #0f172a;
-}
-
-.report-type-btn small{
-  display: block;
-  font-size: 11px;
-  color: rgba(15, 23, 42, .5);
-  font-weight: 400;
-  margin-top: 1px;
-}
-
-.report-type-icon{
-  font-size: 20px;
+.report-section-option input{
+  width: 14px;
+  height: 14px;
+  accent-color: #1e4e8b;
+  cursor: pointer;
   flex-shrink: 0;
-  line-height: 1;
+}
+
+.report-section-option span{
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.report-generate-file-btn{
+  margin-top: 4px;
+  height: 30px;
+  padding: 0 10px;
+  border: 1px solid #1e4e8b;
+  border-radius: 10px;
+  background: #1e4e8b;
+  color: #fff;
+  font-size: 12px;
+  font-weight: 700;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  cursor: pointer;
+  box-shadow: 0 6px 14px rgba(30, 78, 139, 0.2);
+}
+
+.report-generate-file-btn:hover:not(:disabled){
+  background: #173f70;
+  border-color: #173f70;
+}
+
+.report-generate-file-btn:disabled{
+  opacity: .5;
+  cursor: not-allowed;
+  box-shadow: none;
+}
+
+.report-generate-file-icon{
+  width: 13px;
+  height: 13px;
+  fill: none;
+  stroke: currentColor;
+  stroke-width: 2;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+  flex-shrink: 0;
 }
 
 .selector{
@@ -7612,6 +8152,183 @@ watch([activeTab, selectedId], async () => {
   height: 100%;
   border: 0;
   display: block;
+}
+
+.report-preview-overlay{
+  position: fixed;
+  inset: 0;
+  z-index: 90;
+  background: rgba(15, 23, 42, 0.58);
+  backdrop-filter: blur(4px);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 28px;
+}
+
+.report-preview-modal{
+  width: min(1120px, 96vw);
+  height: min(860px, 92vh);
+  border-radius: 12px;
+  background: #f8fafc;
+  border: 1px solid rgba(255, 255, 255, 0.5);
+  box-shadow: 0 24px 60px rgba(15, 23, 42, 0.32);
+  display: grid;
+  grid-template-rows: auto 1fr;
+  overflow: hidden;
+}
+
+.report-preview-head{
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+  padding: 14px 16px;
+  background: #fff;
+  border-bottom: 1px solid rgba(15, 23, 42, 0.1);
+}
+
+.report-preview-head > div:first-child{
+  min-width: 0;
+}
+
+.report-preview-head p{
+  margin: 0;
+  font-size: 11px;
+  font-weight: 800;
+  text-transform: uppercase;
+  letter-spacing: .08em;
+  color: rgba(15, 23, 42, .46);
+}
+
+.report-preview-head h4{
+  margin: 2px 0 0;
+  font-size: 16px;
+  color: #0f172a;
+}
+
+.report-preview-head span{
+  display: block;
+  margin-top: 2px;
+  font-size: 12px;
+  color: rgba(15, 23, 42, .62);
+}
+
+.report-share-error{
+  margin: 6px 0 0 !important;
+  font-size: 12px !important;
+  color: #b91c1c !important;
+  text-transform: none !important;
+  letter-spacing: 0 !important;
+  font-weight: 600 !important;
+}
+
+.report-preview-actions{
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  flex-shrink: 0;
+  flex-wrap: wrap;
+  justify-content: flex-end;
+}
+
+.report-preview-iframe{
+  width: 100%;
+  height: 100%;
+  border: 0;
+  background: #fff;
+}
+
+.report-share-overlay{
+  position: fixed;
+  inset: 0;
+  z-index: 110;
+  background: rgba(15, 23, 42, 0.52);
+  backdrop-filter: blur(3px);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 20px;
+}
+
+.report-share-modal{
+  width: min(520px, 94vw);
+  border-radius: 12px;
+  background: #fff;
+  border: 1px solid rgba(15, 23, 42, 0.12);
+  box-shadow: 0 24px 60px rgba(15, 23, 42, 0.28);
+  padding: 14px;
+  display: grid;
+  gap: 12px;
+}
+
+.report-share-modal-head{
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.report-share-modal-head p{
+  margin: 0;
+  font-size: 11px;
+  font-weight: 800;
+  text-transform: uppercase;
+  letter-spacing: .08em;
+  color: rgba(15, 23, 42, .46);
+}
+
+.report-share-modal-head h4{
+  margin: 2px 0 0;
+  font-size: 16px;
+  color: #0f172a;
+}
+
+.report-share-close{
+  width: 28px;
+  height: 28px;
+  border-radius: 999px;
+  border: 1px solid rgba(15, 23, 42, 0.16);
+  background: #fff;
+  color: #0f172a;
+  cursor: pointer;
+  font-size: 18px;
+  line-height: 1;
+}
+
+.report-share-link-field{
+  display: grid;
+  gap: 6px;
+}
+
+.report-share-link-field span{
+  font-size: 12px;
+  font-weight: 700;
+  color: rgba(15, 23, 42, 0.68);
+}
+
+.report-share-link-field input{
+  height: 36px;
+  border-radius: 8px;
+  border: 1px solid rgba(15, 23, 42, 0.14);
+  background: #f8fafc;
+  color: rgba(15, 23, 42, 0.78);
+  padding: 0 10px;
+  font-size: 12px;
+}
+
+.report-share-note{
+  margin: 0;
+  font-size: 12px;
+  color: rgba(15, 23, 42, 0.58);
+}
+
+.report-share-modal-actions{
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 8px;
+  flex-wrap: wrap;
 }
 
 .info-grid{
@@ -9746,6 +10463,29 @@ watch([activeTab, selectedId], async () => {
 @media (max-width: 900px) {
   .report-view{
     padding: 90px 16px 40px;
+  }
+  .report-view.shared-report-mode{
+    padding: 0;
+  }
+  .shared-report-toolbar,
+  .report-preview-head{
+    align-items: stretch;
+    flex-direction: column;
+  }
+  .shared-report-actions,
+  .report-preview-actions{
+    width: 100%;
+    justify-content: stretch;
+  }
+  .shared-report-actions button,
+  .report-preview-actions button{
+    flex: 1;
+  }
+  .report-share-modal-actions{
+    justify-content: stretch;
+  }
+  .report-share-modal-actions button{
+    flex: 1;
   }
   .transformer-picker-trigger{
     min-width: 100%;
