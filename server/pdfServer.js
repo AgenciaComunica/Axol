@@ -5,9 +5,10 @@ import { URL } from 'node:url'
 
 import puppeteer from 'puppeteer'
 
-const PORT = Number(process.env.PDF_PORT || 3001)
-const HOST = process.env.PDF_HOST || '127.0.0.1'
+const PORT = Number(process.env.PORT || process.env.PDF_PORT || 3001)
+const HOST = process.env.HOST || process.env.PDF_HOST || '0.0.0.0'
 const PUBLIC_DIR = path.resolve(process.cwd(), 'public')
+const DIST_DIR = path.resolve(process.cwd(), 'dist')
 
 function escapeHtml(value = '') {
   return String(value)
@@ -56,11 +57,86 @@ function readMeta(html, name) {
 
 function getMimeType(filePath) {
   const ext = path.extname(filePath).toLowerCase()
+  if (ext === '.html') return 'text/html; charset=utf-8'
+  if (ext === '.js') return 'text/javascript; charset=utf-8'
+  if (ext === '.css') return 'text/css; charset=utf-8'
+  if (ext === '.json') return 'application/json; charset=utf-8'
   if (ext === '.png') return 'image/png'
   if (ext === '.jpg' || ext === '.jpeg') return 'image/jpeg'
   if (ext === '.webp') return 'image/webp'
   if (ext === '.svg') return 'image/svg+xml'
+  if (ext === '.ico') return 'image/x-icon'
+  if (ext === '.txt') return 'text/plain; charset=utf-8'
   return 'application/octet-stream'
+}
+
+function sendText(res, status, text) {
+  res.writeHead(status, { 'Content-Type': 'text/plain; charset=utf-8' })
+  res.end(text)
+}
+
+function resolveDistPathCandidates(urlPathname) {
+  const decodedPathname = decodeURIComponent(urlPathname)
+  const normalizedPathname = decodedPathname === '/' ? '/index.html' : decodedPathname
+  const candidates = [
+    normalizedPathname,
+    normalizedPathname.replace(/^\/Axol(?=\/|$)/, '') || '/index.html',
+  ]
+
+  return candidates.flatMap((candidate) => {
+    const relativePath = candidate.startsWith('/') ? candidate.slice(1) : candidate
+    const filePath = path.resolve(DIST_DIR, relativePath)
+    if (filePath.startsWith(DIST_DIR + path.sep) || filePath === DIST_DIR) {
+      return [filePath]
+    }
+    return []
+  })
+}
+
+async function serveStaticAsset(req, res, url) {
+  if (req.method !== 'GET' && req.method !== 'HEAD') return false
+
+  let filePath = ''
+  let stat
+
+  for (const candidate of resolveDistPathCandidates(url.pathname)) {
+    try {
+      filePath = candidate
+      stat = await fs.stat(filePath)
+      if (stat.isDirectory()) {
+        filePath = path.join(filePath, 'index.html')
+        stat = await fs.stat(filePath)
+      }
+      if (stat.isFile()) break
+    } catch {
+      filePath = ''
+      stat = undefined
+    }
+  }
+
+  if (!filePath || !stat?.isFile()) {
+    filePath = path.join(DIST_DIR, 'index.html')
+    try {
+      stat = await fs.stat(filePath)
+    } catch {
+      return false
+    }
+  }
+
+  const headers = {
+    'Content-Type': getMimeType(filePath),
+    'Content-Length': String(stat.size),
+    'Cache-Control': filePath.endsWith('index.html')
+      ? 'no-cache'
+      : 'public, max-age=31536000, immutable',
+  }
+  res.writeHead(200, headers)
+  if (req.method === 'HEAD') {
+    res.end()
+    return true
+  }
+  res.end(await fs.readFile(filePath))
+  return true
 }
 
 async function resolveTemplateAsset(assetUrl) {
@@ -185,8 +261,7 @@ const server = http.createServer(async (req, res) => {
       const html = typeof body.html === 'string' ? body.html : ''
 
       if (!html.trim()) {
-        res.writeHead(400, { 'Content-Type': 'text/plain; charset=utf-8' })
-        res.end('Campo "html" é obrigatório.')
+        sendText(res, 400, 'Campo "html" é obrigatório.')
         return
       }
 
@@ -246,8 +321,7 @@ const server = http.createServer(async (req, res) => {
       }
     } catch (error) {
       const message = error instanceof Error ? error.message : 'Erro ao gerar PDF'
-      res.writeHead(500, { 'Content-Type': 'text/plain; charset=utf-8' })
-      res.end(message)
+      sendText(res, 500, message)
     }
     return
   }
@@ -258,12 +332,14 @@ const server = http.createServer(async (req, res) => {
     return
   }
 
-  res.writeHead(404, { 'Content-Type': 'text/plain; charset=utf-8' })
-  res.end('Not found')
+  if (await serveStaticAsset(req, res, url)) return
+
+  sendText(res, 404, 'Not found')
 })
 
 server.listen(PORT, HOST, () => {
-  console.log(`PDF server listening on http://${HOST}:${PORT}`)
+  console.log(`Axol server listening on http://${HOST}:${PORT}`)
+  console.log(`Serving frontend from ${DIST_DIR}`)
 })
 
 async function shutdown() {
