@@ -8,7 +8,10 @@
   },
   "scripts": {
     "dev": "vite",
+    "dev:all": "run-p dev dev:pdf",
     "dev:pdf": "node server/pdfServer.js",
+    "start": "node server/pdfServer.js",
+    "serve": "npm run build && npm run start",
     "build": "run-p type-check \"build-only {@}\" --",
     "preview": "vite preview",
     "build-only": "vite build && cp dist/index.html dist/404.html",
