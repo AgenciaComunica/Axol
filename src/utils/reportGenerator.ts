@@ -36,6 +36,26 @@ export interface ReportEvalData {
   riskHeatmapRows: ReportHeatmapRow[]
 }
 
+export type ReportSectionName =
+  | 'Avaliação Completa'
+  | 'Histórico de Análises'
+  | 'Avaliações Complementares'
+  | 'Coletas'
+  | 'Tratamento de Óleo'
+
+export interface ReportSupplementalSection {
+  key: ReportSectionName
+  title: string
+  description?: string
+  columns: string[]
+  rows: unknown[][]
+}
+
+export interface CompleteReportOptions {
+  sections?: ReportSectionName[]
+  supplementalSections?: ReportSupplementalSection[]
+}
+
 // ─── Helpers ────────────────────────────────────────────────────────────────
 
 function statusColor(s: string) {
@@ -103,6 +123,32 @@ function escHtml(s: string): string {
 }
 function escAttr(s: string): string {
   return String(s).replace(/"/g, '&quot;').replace(/'/g, '&#39;')
+}
+
+function renderSupplementalSection(section: ReportSupplementalSection, index: number): string {
+  const head = section.columns
+    .map((column) => `<th>${escHtml(String(column))}</th>`)
+    .join('')
+  const rows = section.rows.length
+    ? section.rows.map((row) => `
+        <tr>
+          ${row.map((cell) => `<td>${escHtml(fmtVal(cell))}</td>`).join('')}
+        </tr>
+      `).join('')
+    : `<tr><td colspan="${Math.max(section.columns.length, 1)}" class="supp-empty">Sem dados disponíveis</td></tr>`
+
+  return `
+    <div class="pdf-card supplemental-card">
+      <div class="sec-head"><span class="sec-num">${index}</span>${escHtml(section.title)}</div>
+      ${section.description ? `<p class="supp-desc">${escHtml(section.description)}</p>` : ''}
+      <div class="supp-table-wrap">
+        <table class="supp-table">
+          <thead><tr>${head}</tr></thead>
+          <tbody>${rows}</tbody>
+        </table>
+      </div>
+    </div>
+  `
 }
 
 function sanitizeFileName(value: string): string {
@@ -373,6 +419,7 @@ export function generateCompleteReport(
   trafoImgUrl: string,
   qrUrl: string,
   ev: ReportEvalData,
+  options: CompleteReportOptions = {},
 ): string {
   const now = new Date()
   const reportId = generateId(trafo.id)
@@ -389,6 +436,13 @@ export function generateCompleteReport(
   const crom = ev.latestCrom
   const fisico = ev.latestFisico
   const risk = ev.riskProbabilities
+  const selectedSections = options.sections?.length ? options.sections : ['Avaliação Completa']
+  const includesEvaluation = selectedSections.includes('Avaliação Completa')
+  const supplementalSections = (options.supplementalSections || [])
+    .filter((section) => selectedSections.includes(section.key))
+  const supplementalSectionsHtml = supplementalSections
+    .map((section, index) => renderSupplementalSection(section, includesEvaluation ? index + 6 : index + 1))
+    .join('')
 
   const gases: [string, unknown, string][] = [
     ['H₂',   crom?.H2,   'H2'],
@@ -581,6 +635,13 @@ ${reportMetaTags({
   .risk-fill  { height:100%; border-radius:999px; }
   .risk-num   { font-size:12px; font-weight:800; width:48px; text-align:right; flex-shrink:0; }
   .note-box { background:#f8fafc; border-left:3px solid #1e4e8b; padding:10px 14px; font-size:12px; color:#334155; white-space:pre-wrap; border-radius:2px; margin-top:8px; line-height:1.6; }
+  .supp-desc { font-size:11px;color:#64748b;margin:0 0 10px; }
+  .supp-table-wrap { overflow-x:auto; border:1px solid #e2e8f0; border-radius:7px; }
+  .supp-table { min-width:100%; font-size:11px; }
+  .supp-table th { text-align:left; padding:7px 8px; color:#475569; font-size:10px; font-weight:800; background:#f8fafc; border-bottom:1px solid #e2e8f0; white-space:nowrap; }
+  .supp-table td { padding:7px 8px; color:#0f172a; border-bottom:1px solid #f1f5f9; vertical-align:top; }
+  .supp-table tbody tr:last-child td { border-bottom:0; }
+  .supp-empty { color:#94a3b8 !important; font-style:italic; text-align:center; }
   .mdata-wrap  { border-top:1px dashed #e2e8f0; margin:0 36px; padding:10px 0 16px; }
   .mdata-label { font-size:9px; text-transform:uppercase; letter-spacing:.08em; color:#cbd5e1; margin-bottom:3px; font-weight:700; }
   .mdata-raw   { font-family:monospace; font-size:9px; color:#cbd5e1; word-break:break-all; line-height:1.4; }
@@ -632,7 +693,7 @@ ${reportMetaTags({
     </div>
 
     <div class="content">
-      <div class="pdf-card">
+      ${includesEvaluation ? `<div class="pdf-card">
         <div class="sec-head"><span class="sec-num">1</span>Resultado das Avaliações</div>
         <div class="kv-grid">
           <div class="kv-card"><div class="kv-label">Status Sistema</div><div class="kv-value" style="font-size:14px;color:${statusColor(trafo.status)}">${escHtml(trafo.status)}</div></div>
@@ -670,7 +731,8 @@ ${reportMetaTags({
         <p style="font-size:11px;color:#64748b;margin:0 0 12px">Probabilidade (%) de operação em cada nível de risco para o próximo ano:</p>
         ${riskDonuts}
         ${heatmapTableCompleto}
-      </div>
+      </div>` : ''}
+      ${supplementalSectionsHtml}
     </div>
 
     <div class="mdata-wrap">

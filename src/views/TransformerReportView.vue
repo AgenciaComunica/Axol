@@ -15,8 +15,8 @@ import trafo3dUrl from '@/assets/Trafo_3D.svg'
 import {
   downloadPdfFromHtml,
   generateCompleteReport,
-  generateSimpleReport,
 } from '@/utils/reportGenerator'
+import type { ReportSectionName, ReportSupplementalSection } from '@/utils/reportGenerator'
 
 type BaseRow = Record<string, unknown>
 type Transformer = {
@@ -249,6 +249,11 @@ const activeSubTabs = computed(() => {
 })
 const generateReportMenuOpen = ref(false)
 const generateReportWrapRef = ref<HTMLElement | null>(null)
+const reportSectionSelections = ref<ReportSectionName[]>(['Avaliação Completa'])
+const reportPreviewOpen = ref(false)
+const reportPreviewHtml = ref('')
+const reportPreviewFileName = ref('')
+const reportPreviewGenerating = ref(false)
 
 const transformerOptions = computed<Transformer[]>(() => {
   const baseTransformers: Transformer[] = [
@@ -533,6 +538,9 @@ watch(
     if (!allowed.includes(activeTab.value)) {
       activeTab.value = allowed[0]!
     }
+    reportSectionSelections.value = reportSectionSelections.value.filter((section) =>
+      allowed.includes(section as ReportTab)
+    )
   },
   { immediate: true }
 )
@@ -2713,10 +2721,75 @@ function toggleGenerateReportMenu() {
   generateReportMenuOpen.value = !generateReportMenuOpen.value
 }
 
-async function openGeneratedReport(type: 'simples' | 'completo') {
+const selectedReportSections = computed(() =>
+  activeSubTabs.value.filter((tab) => reportSectionSelections.value.includes(tab.value as ReportSectionName))
+)
+
+const canGenerateReportFile = computed(() => reportSectionSelections.value.length > 0)
+
+function toggleReportSectionSelection(section: ReportSectionName) {
+  if (reportSectionSelections.value.includes(section)) {
+    reportSectionSelections.value = reportSectionSelections.value.filter((item) => item !== section)
+    return
+  }
+  reportSectionSelections.value = [...reportSectionSelections.value, section]
+}
+
+function reportTableRows<T extends Record<string, unknown>>(
+  rows: T[],
+  columns: { id: string; label: string }[],
+  limit = 20,
+) {
+  return rows.slice(0, limit).map((row) => columns.map((column) => normalizeCell(row[column.id])))
+}
+
+function buildReportSupplementalSections(): ReportSupplementalSection[] {
+  const analysisColumns = activeAnalysisVisibleColumns.value.map((column) => ({ id: column.id, label: column.label }))
+  const coletasColumns = [
+    { id: 'transformador', label: 'Transformador' },
+    { id: 'status', label: 'Status' },
+    { id: 'dataColeta', label: 'Data Coleta' },
+    { id: 'subestacao', label: 'Subestação' },
+    { id: 'tipoAnalise', label: 'Tipo de Análise' },
+    { id: 'faltamDias', label: 'Faltam Dia(s)' },
+  ]
+  const treatmentColumnsForReport = treatmentVisibleColumns.value.map((column) => ({ id: column.id, label: column.label }))
+
+  return [
+    {
+      key: 'Histórico de Análises',
+      title: isTrRotaMacro.value ? 'Análise de Campo' : 'Histórico de Análises',
+      description: 'Registros exibidos conforme filtros e ordenação atuais da aba.',
+      columns: analysisColumns.map((column) => column.label),
+      rows: reportTableRows(sortedUnifiedAnalysisRows.value as Record<string, unknown>[], analysisColumns),
+    },
+    {
+      key: 'Avaliações Complementares',
+      title: 'Avaliações Complementares',
+      description: 'Resumo das variáveis fora das faixas estabelecidas por nível de risco.',
+      columns: ['Variável', 'N1', 'N2', 'N3', 'N4', 'N5'],
+      rows: riskHeatmapRows.value.map((row) => [row.label, ...row.values.map((value) => `${value.toFixed(2)}%`)]),
+    },
+    {
+      key: 'Coletas',
+      title: 'Coletas',
+      description: 'Agenda e registros de coletas conforme visão atual.',
+      columns: coletasColumns.map((column) => column.label),
+      rows: reportTableRows(coletasSortedRows.value as unknown as Record<string, unknown>[], coletasColumns),
+    },
+    {
+      key: 'Tratamento de Óleo',
+      title: 'Tratamento de Óleo',
+      description: 'Dados de tratamento do óleo isolante conforme colunas visíveis.',
+      columns: treatmentColumnsForReport.map((column) => column.label),
+      rows: reportTableRows(treatmentFilteredRows.value as Record<string, unknown>[], treatmentColumnsForReport),
+    },
+  ]
+}
+
+function buildGeneratedReportHtml() {
   const trafo = selectedTransformer.value
-  if (!trafo) return
-  generateReportMenuOpen.value = false
+  if (!trafo || !canGenerateReportFile.value) return ''
 
   const latestCrom = latestCromatografiaRow.value
   const latestFisico = fisicoRows.value[0] || null
@@ -2757,17 +2830,39 @@ async function openGeneratedReport(type: 'simples' | 'completo') {
   const logo = `${window.location.origin}/pdf-assets/logo_siaro.png`
   const trafoImg = window.location.origin + trafo3dUrl
   const axolQrUrl = `${window.location.origin}/pdf-assets/axol_qrcode.svg`
-  const html =
-    type === 'simples'
-      ? generateSimpleReport(trafo, logo, evalData)
-      : generateCompleteReport(trafo, logo, trafoImg, axolQrUrl, evalData)
-  const fileName = `relatorio-${type}-${trafo.serial || trafo.id}`
+  return generateCompleteReport(trafo, logo, trafoImg, axolQrUrl, evalData, {
+    sections: reportSectionSelections.value,
+    supplementalSections: buildReportSupplementalSections(),
+  })
+}
 
+function openGeneratedReportPreview() {
+  const trafo = selectedTransformer.value
+  const html = buildGeneratedReportHtml()
+  if (!trafo || !html) return
+
+  generateReportMenuOpen.value = false
+  reportPreviewHtml.value = html
+  reportPreviewFileName.value = `relatorio-${trafo.serial || trafo.id}-${reportSectionSelections.value.length}-abas`
+  reportPreviewOpen.value = true
+}
+
+function closeGeneratedReportPreview() {
+  if (reportPreviewGenerating.value) return
+  reportPreviewOpen.value = false
+}
+
+async function downloadGeneratedReportPreview() {
+  if (!reportPreviewHtml.value || reportPreviewGenerating.value) return
+  reportPreviewGenerating.value = true
   try {
-    await downloadPdfFromHtml(html, fileName)
+    await downloadPdfFromHtml(reportPreviewHtml.value, reportPreviewFileName.value || 'relatorio')
+    reportPreviewOpen.value = false
   } catch (error) {
     console.error('Erro ao gerar PDF', error)
     window.alert('Nao foi possivel gerar o PDF. Verifique se o servico Node do Puppeteer esta em execucao.')
+  } finally {
+    reportPreviewGenerating.value = false
   }
 }
 
@@ -4542,31 +4637,34 @@ watch([activeTab, selectedId], async () => {
               @click="toggleGenerateReportMenu"
             >
               <span class="history-action-icon" aria-hidden="true">⭳</span>
-              Gerar Relatório
+              Comprovante
             </button>
             <div v-if="generateReportMenuOpen" class="report-generate-menu">
-              <p class="report-generate-menu-label">Selecione o tipo de relatório</p>
+              <p class="report-generate-menu-label">Escolha as abas do relatório</p>
+              <label
+                v-for="tab in activeSubTabs"
+                :key="`report-section-${tab.value}`"
+                class="report-section-option"
+              >
+                <input
+                  type="checkbox"
+                  :checked="reportSectionSelections.includes(tab.value)"
+                  @change="toggleReportSectionSelection(tab.value)"
+                />
+                <span>{{ tab.label }}</span>
+              </label>
               <button
                 type="button"
-                class="report-type-btn"
-                @click="openGeneratedReport('simples')"
+                class="report-generate-file-btn"
+                :disabled="!canGenerateReportFile"
+                @click="openGeneratedReportPreview"
               >
-                <span class="report-type-icon">📄</span>
-                <span>
-                  <strong>Relatório Simples</strong><br>
-                  <small>Identificação, status e dados técnicos</small>
-                </span>
-              </button>
-              <button
-                type="button"
-                class="report-type-btn"
-                @click="openGeneratedReport('completo')"
-              >
-                <span class="report-type-icon">🔐</span>
-                <span>
-                  <strong>Relatório Completo</strong><br>
-                  <small>Com QR code, validação e dados estruturados</small>
-                </span>
+                <svg class="report-generate-file-icon" viewBox="0 0 24 24" aria-hidden="true">
+                  <path d="M15 3h6v6"></path>
+                  <path d="M10 14 21 3"></path>
+                  <path d="M18 13v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h6"></path>
+                </svg>
+                Gerar Comprovante
               </button>
             </div>
           </div>
@@ -7152,6 +7250,29 @@ watch([activeTab, selectedId], async () => {
           <div v-else class="summary-viewer-fallback">Visualização indisponível para este transformador.</div>
         </div>
       </div>
+
+      <div v-if="reportPreviewOpen" class="report-preview-overlay" @click.self="closeGeneratedReportPreview">
+        <div class="report-preview-modal">
+          <div class="report-preview-head">
+            <div>
+              <p>Preview HTML</p>
+              <h4>Comprovante do Relatório</h4>
+              <span>{{ selectedReportSections.map((section) => section.label).join(', ') }}</span>
+            </div>
+            <div class="report-preview-actions">
+              <button type="button" class="secondary-btn" :disabled="reportPreviewGenerating" @click="closeGeneratedReportPreview">Cancelar</button>
+              <button type="button" class="primary-btn" :disabled="reportPreviewGenerating" @click="downloadGeneratedReportPreview">
+                {{ reportPreviewGenerating ? 'Gerando...' : 'Exportar PDF' }}
+              </button>
+            </div>
+          </div>
+          <iframe
+            class="report-preview-iframe"
+            :srcdoc="reportPreviewHtml"
+            title="Preview HTML do relatório"
+          ></iframe>
+        </div>
+      </div>
     </section>
   </div>
 </template>
@@ -7227,14 +7348,16 @@ watch([activeTab, selectedId], async () => {
   right: 0;
   top: calc(100% + 6px);
   z-index: 40;
-  width: min(320px, 88vw);
+  width: min(260px, 88vw);
+  max-height: 360px;
+  overflow: auto;
   border-radius: 12px;
   border: 1px solid rgba(15, 23, 42, 0.12);
   background: #fff;
   box-shadow: 0 10px 24px rgba(15, 23, 42, 0.14);
-  padding: 10px;
+  padding: 8px;
   display: grid;
-  gap: 6px;
+  gap: 4px;
 }
 
 .report-generate-menu-label{
@@ -7247,45 +7370,74 @@ watch([activeTab, selectedId], async () => {
   padding: 0;
 }
 
-.report-type-btn{
+.report-section-option{
   display: flex;
   align-items: center;
-  gap: 12px;
-  text-align: left;
-  width: 100%;
-  padding: 12px 14px;
-  border-radius: 10px;
-  border: 1px solid rgba(15, 23, 42, .1);
-  background: #f8fafc;
-  color: #0f172a;
+  gap: 8px;
+  font-size: 12px;
+  color: rgba(15, 23, 42, 0.82);
+  padding: 4px 2px;
   cursor: pointer;
-  transition: background 0.15s, border-color 0.15s;
+  min-width: 0;
 }
 
-.report-type-btn:hover{
-  background: #e8f0fe;
-  border-color: #1a3a5c;
+.report-section-option:hover{
+  color: #1e4e8b;
 }
 
-.report-type-btn strong{
-  display: block;
-  font-size: 13px;
-  font-weight: 700;
-  color: #0f172a;
-}
-
-.report-type-btn small{
-  display: block;
-  font-size: 11px;
-  color: rgba(15, 23, 42, .5);
-  font-weight: 400;
-  margin-top: 1px;
-}
-
-.report-type-icon{
-  font-size: 20px;
+.report-section-option input{
+  width: 14px;
+  height: 14px;
+  accent-color: #1e4e8b;
+  cursor: pointer;
   flex-shrink: 0;
-  line-height: 1;
+}
+
+.report-section-option span{
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.report-generate-file-btn{
+  margin-top: 4px;
+  height: 30px;
+  padding: 0 10px;
+  border: 1px solid #1e4e8b;
+  border-radius: 10px;
+  background: #1e4e8b;
+  color: #fff;
+  font-size: 12px;
+  font-weight: 700;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  cursor: pointer;
+  box-shadow: 0 6px 14px rgba(30, 78, 139, 0.2);
+}
+
+.report-generate-file-btn:hover:not(:disabled){
+  background: #173f70;
+  border-color: #173f70;
+}
+
+.report-generate-file-btn:disabled{
+  opacity: .5;
+  cursor: not-allowed;
+  box-shadow: none;
+}
+
+.report-generate-file-icon{
+  width: 13px;
+  height: 13px;
+  fill: none;
+  stroke: currentColor;
+  stroke-width: 2;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+  flex-shrink: 0;
 }
 
 .selector{
@@ -7612,6 +7764,76 @@ watch([activeTab, selectedId], async () => {
   height: 100%;
   border: 0;
   display: block;
+}
+
+.report-preview-overlay{
+  position: fixed;
+  inset: 0;
+  z-index: 90;
+  background: rgba(15, 23, 42, 0.58);
+  backdrop-filter: blur(4px);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 28px;
+}
+
+.report-preview-modal{
+  width: min(1120px, 96vw);
+  height: min(860px, 92vh);
+  border-radius: 12px;
+  background: #f8fafc;
+  border: 1px solid rgba(255, 255, 255, 0.5);
+  box-shadow: 0 24px 60px rgba(15, 23, 42, 0.32);
+  display: grid;
+  grid-template-rows: auto 1fr;
+  overflow: hidden;
+}
+
+.report-preview-head{
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+  padding: 14px 16px;
+  background: #fff;
+  border-bottom: 1px solid rgba(15, 23, 42, 0.1);
+}
+
+.report-preview-head p{
+  margin: 0;
+  font-size: 11px;
+  font-weight: 800;
+  text-transform: uppercase;
+  letter-spacing: .08em;
+  color: rgba(15, 23, 42, .46);
+}
+
+.report-preview-head h4{
+  margin: 2px 0 0;
+  font-size: 16px;
+  color: #0f172a;
+}
+
+.report-preview-head span{
+  display: block;
+  margin-top: 2px;
+  font-size: 12px;
+  color: rgba(15, 23, 42, .62);
+}
+
+.report-preview-actions{
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  flex-shrink: 0;
+}
+
+.report-preview-iframe{
+  width: 100%;
+  height: 100%;
+  border: 0;
+  background: #fff;
 }
 
 .info-grid{
