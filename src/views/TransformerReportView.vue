@@ -107,6 +107,16 @@ type AdvancedFilterRule = {
   value: string
   connector: AdvancedConnector
 }
+type SharedReportRecord = {
+  id: string
+  html: string
+  fileName: string
+  transformerId: string
+  sections: ReportSectionName[]
+  createdAt: string
+  expiresAt: string
+  status: 'active' | 'revoked'
+}
 
 const route = useRoute()
 const router = useRouter()
@@ -254,6 +264,16 @@ const reportPreviewOpen = ref(false)
 const reportPreviewHtml = ref('')
 const reportPreviewFileName = ref('')
 const reportPreviewGenerating = ref(false)
+const reportShareGenerating = ref(false)
+const reportShareLink = ref('')
+const reportShareCopied = ref(false)
+const sharedReportHtml = ref('')
+const sharedReportAccessState = ref<'ready' | 'missing' | 'expired' | 'revoked'>('ready')
+const sharedReportTitle = ref('Comprovante do Relatório')
+const sharedReportId = ref('')
+const sharedReportExporting = ref(false)
+const sharedReportRevoking = ref(false)
+const reportShareError = ref('')
 
 const transformerOptions = computed<Transformer[]>(() => {
   const baseTransformers: Transformer[] = [
@@ -2726,6 +2746,13 @@ const selectedReportSections = computed(() =>
 )
 
 const canGenerateReportFile = computed(() => reportSectionSelections.value.length > 0)
+const isSharedReportView = computed(() => typeof route.query.sharedReport === 'string' && !!route.query.sharedReport)
+const sharedReportStorageKey = 'axol.sharedReports.v1'
+const sharedReportAccessMessage = computed(() => {
+  if (sharedReportAccessState.value === 'expired') return 'Este link expirou e não pode mais exibir dados do relatório.'
+  if (sharedReportAccessState.value === 'revoked') return 'Este link foi invalidado e o acesso foi bloqueado.'
+  return 'Este link dummy usa armazenamento local do navegador. Quando o backend estiver integrado, o mesmo fluxo poderá buscar o HTML salvo por ID.'
+})
 
 function toggleReportSectionSelection(section: ReportSectionName) {
   if (reportSectionSelections.value.includes(section)) {
@@ -2836,6 +2863,64 @@ function buildGeneratedReportHtml() {
   })
 }
 
+function readSharedReportRecords(): Record<string, SharedReportRecord> {
+  if (typeof window === 'undefined') return {}
+  try {
+    return JSON.parse(window.localStorage.getItem(sharedReportStorageKey) || '{}') as Record<string, SharedReportRecord>
+  } catch {
+    return {}
+  }
+}
+
+function writeSharedReportRecords(records: Record<string, SharedReportRecord>) {
+  if (typeof window === 'undefined') return
+  window.localStorage.setItem(sharedReportStorageKey, JSON.stringify(records))
+}
+
+async function persistSharedReportForLink(record: SharedReportRecord): Promise<string> {
+  const records = readSharedReportRecords()
+  records[record.id] = record
+  writeSharedReportRecords(records)
+  return `${window.location.origin}${window.location.pathname}?sharedReport=${encodeURIComponent(record.id)}`
+}
+
+function loadSharedReportFromLink(id: string) {
+  const record = readSharedReportRecords()[id]
+  sharedReportId.value = id
+  sharedReportHtml.value = ''
+  sharedReportTitle.value = record?.fileName || 'Comprovante do Relatório'
+
+  if (!record) {
+    sharedReportAccessState.value = 'missing'
+    return
+  }
+  if (record.status === 'revoked') {
+    sharedReportAccessState.value = 'revoked'
+    return
+  }
+  if (new Date(record.expiresAt).getTime() <= Date.now()) {
+    sharedReportAccessState.value = 'expired'
+    return
+  }
+
+  sharedReportHtml.value = record.html
+  sharedReportAccessState.value = 'ready'
+}
+
+watch(
+  () => route.query.sharedReport,
+  (value) => {
+    if (typeof value === 'string' && value) {
+      loadSharedReportFromLink(value)
+      return
+    }
+    sharedReportHtml.value = ''
+    sharedReportId.value = ''
+    sharedReportAccessState.value = 'ready'
+  },
+  { immediate: true }
+)
+
 function openGeneratedReportPreview() {
   const trafo = selectedTransformer.value
   const html = buildGeneratedReportHtml()
@@ -2844,6 +2929,9 @@ function openGeneratedReportPreview() {
   generateReportMenuOpen.value = false
   reportPreviewHtml.value = html
   reportPreviewFileName.value = `relatorio-${trafo.serial || trafo.id}-${reportSectionSelections.value.length}-abas`
+  reportShareLink.value = ''
+  reportShareCopied.value = false
+  reportShareError.value = ''
   reportPreviewOpen.value = true
 }
 
@@ -2864,6 +2952,71 @@ async function downloadGeneratedReportPreview() {
   } finally {
     reportPreviewGenerating.value = false
   }
+}
+
+async function shareGeneratedReportLink() {
+  const trafo = selectedTransformer.value
+  if (!trafo || !reportPreviewHtml.value || reportShareGenerating.value) return
+  reportShareGenerating.value = true
+  reportShareCopied.value = false
+  reportShareError.value = ''
+
+  try {
+    const id = `report-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 8)}`
+    const expiresAt = new Date(Date.now() + 7 * 24 * 60 * 60 * 1000).toISOString()
+    reportShareLink.value = await persistSharedReportForLink({
+      id,
+      html: reportPreviewHtml.value,
+      fileName: reportPreviewFileName.value || 'relatorio',
+      transformerId: trafo.id,
+      sections: [...reportSectionSelections.value],
+      createdAt: new Date().toISOString(),
+      expiresAt,
+      status: 'active',
+    })
+    await copyReportShareLink()
+  } catch (error) {
+    console.error('Erro ao compartilhar relatório', error)
+    reportShareError.value = 'Não foi possível gerar o link de compartilhamento.'
+  } finally {
+    reportShareGenerating.value = false
+  }
+}
+
+async function copyReportShareLink() {
+  if (!reportShareLink.value || typeof window === 'undefined') return
+  try {
+    await window.navigator.clipboard?.writeText(reportShareLink.value)
+    reportShareCopied.value = true
+  } catch {
+    reportShareCopied.value = false
+  }
+}
+
+async function exportSharedReportPdf() {
+  if (!sharedReportHtml.value || sharedReportExporting.value) return
+  sharedReportExporting.value = true
+  try {
+    await downloadPdfFromHtml(sharedReportHtml.value, sharedReportTitle.value || 'relatorio-compartilhado')
+  } catch (error) {
+    console.error('Erro ao gerar PDF compartilhado', error)
+    window.alert('Nao foi possivel gerar o PDF do link compartilhado. Verifique se o servico Node do Puppeteer esta em execucao.')
+  } finally {
+    sharedReportExporting.value = false
+  }
+}
+
+function revokeSharedReportLink() {
+  if (!sharedReportId.value || sharedReportRevoking.value) return
+  sharedReportRevoking.value = true
+  const records = readSharedReportRecords()
+  const record = records[sharedReportId.value]
+  if (record) {
+    records[sharedReportId.value] = { ...record, status: 'revoked' }
+    writeSharedReportRecords(records)
+  }
+  loadSharedReportFromLink(sharedReportId.value)
+  sharedReportRevoking.value = false
 }
 
 function toggleAnalysisNewMenu() {
@@ -4575,17 +4728,47 @@ watch([activeTab, selectedId], async () => {
 </script>
 
 <template>
-  <div class="report-view">
-    <SideMenu />
-    <AppHeader
-      :eyebrow="pageEyebrow"
-      :title="pageTitle"
-      :subtitle="pageSubtitle"
-      :secondaryAction="{ label: 'Start Óleo', onClick: () => {} }"
-      :action="{ label: 'Voltar ao Painel', onClick: () => router.push({ name: 'dashboard' }) }"
-    />
+  <div class="report-view" :class="{ 'shared-report-mode': isSharedReportView }">
+    <template v-if="isSharedReportView">
+      <div class="shared-report-view">
+        <div v-if="sharedReportAccessState !== 'ready'" class="shared-report-empty">
+          <h3>Comprovante indisponível</h3>
+          <p>{{ sharedReportAccessMessage }}</p>
+        </div>
+        <template v-else>
+          <div class="shared-report-toolbar">
+            <div>
+              <p>Link compartilhado</p>
+              <h3>{{ sharedReportTitle }}</h3>
+            </div>
+            <div class="shared-report-actions">
+              <button type="button" class="secondary-btn" :disabled="sharedReportRevoking" @click="revokeSharedReportLink">
+                {{ sharedReportRevoking ? 'Invalidando...' : 'Invalidar link' }}
+              </button>
+              <button type="button" class="primary-btn" :disabled="sharedReportExporting" @click="exportSharedReportPdf">
+                {{ sharedReportExporting ? 'Gerando...' : 'Exportar PDF' }}
+              </button>
+            </div>
+          </div>
+          <iframe
+            class="shared-report-iframe"
+            :srcdoc="sharedReportHtml"
+            :title="sharedReportTitle"
+          ></iframe>
+        </template>
+      </div>
+    </template>
+    <template v-else>
+      <SideMenu />
+      <AppHeader
+        :eyebrow="pageEyebrow"
+        :title="pageTitle"
+        :subtitle="pageSubtitle"
+        :secondaryAction="{ label: 'Start Óleo', onClick: () => {} }"
+        :action="{ label: 'Voltar ao Painel', onClick: () => router.push({ name: 'dashboard' }) }"
+      />
 
-    <section class="report-shell">
+      <section class="report-shell">
       <div v-if="!isGlobalScopeView" class="report-toolbar">
         <TransformerPickerDropdown
           v-if="!isGlobalScopeView"
@@ -7258,9 +7441,19 @@ watch([activeTab, selectedId], async () => {
               <p>Preview HTML</p>
               <h4>Comprovante do Relatório</h4>
               <span>{{ selectedReportSections.map((section) => section.label).join(', ') }}</span>
+              <div v-if="reportShareLink" class="report-share-link-row">
+                <input :value="reportShareLink" type="text" readonly aria-label="Link compartilhável do comprovante" />
+                <button type="button" class="secondary-btn" @click="copyReportShareLink">
+                  {{ reportShareCopied ? 'Copiado' : 'Copiar' }}
+                </button>
+              </div>
+              <p v-if="reportShareError" class="report-share-error">{{ reportShareError }}</p>
             </div>
             <div class="report-preview-actions">
               <button type="button" class="secondary-btn" :disabled="reportPreviewGenerating" @click="closeGeneratedReportPreview">Cancelar</button>
+              <button type="button" class="secondary-btn" :disabled="reportShareGenerating || reportPreviewGenerating" @click="shareGeneratedReportLink">
+                {{ reportShareGenerating ? 'Compartilhando...' : 'Compartilhar link' }}
+              </button>
               <button type="button" class="primary-btn" :disabled="reportPreviewGenerating" @click="downloadGeneratedReportPreview">
                 {{ reportPreviewGenerating ? 'Gerando...' : 'Exportar PDF' }}
               </button>
@@ -7273,7 +7466,8 @@ watch([activeTab, selectedId], async () => {
           ></iframe>
         </div>
       </div>
-    </section>
+      </section>
+    </template>
   </div>
 </template>
 
@@ -7284,6 +7478,82 @@ watch([activeTab, selectedId], async () => {
   padding: 32px 32px 60px 96px;
   color: #0f172a;
   overflow-x: hidden;
+}
+
+.report-view.shared-report-mode{
+  padding: 0;
+  background: #f8fafc;
+}
+
+.shared-report-view{
+  min-height: 100vh;
+  background: #f8fafc;
+  display: grid;
+  grid-template-rows: auto 1fr;
+}
+
+.shared-report-iframe{
+  width: 100%;
+  min-height: calc(100vh - 66px);
+  border: 0;
+  background: #fff;
+  display: block;
+}
+
+.shared-report-toolbar{
+  min-height: 66px;
+  padding: 10px 16px;
+  background: #fff;
+  border-bottom: 1px solid rgba(15, 23, 42, 0.1);
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+}
+
+.shared-report-toolbar p{
+  margin: 0;
+  font-size: 11px;
+  font-weight: 800;
+  letter-spacing: .08em;
+  text-transform: uppercase;
+  color: rgba(15, 23, 42, .46);
+}
+
+.shared-report-toolbar h3{
+  margin: 2px 0 0;
+  font-size: 15px;
+  color: #0f172a;
+}
+
+.shared-report-actions{
+  display: inline-flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+
+.shared-report-empty{
+  min-height: 100vh;
+  display: grid;
+  place-content: center;
+  gap: 8px;
+  padding: 24px;
+  text-align: center;
+  color: #0f172a;
+}
+
+.shared-report-empty h3{
+  margin: 0;
+  font-size: 18px;
+}
+
+.shared-report-empty p{
+  margin: 0;
+  max-width: 520px;
+  font-size: 13px;
+  color: rgba(15, 23, 42, 0.62);
 }
 
 .report-shell{
@@ -7800,6 +8070,10 @@ watch([activeTab, selectedId], async () => {
   border-bottom: 1px solid rgba(15, 23, 42, 0.1);
 }
 
+.report-preview-head > div:first-child{
+  min-width: 0;
+}
+
 .report-preview-head p{
   margin: 0;
   font-size: 11px;
@@ -7822,11 +8096,42 @@ watch([activeTab, selectedId], async () => {
   color: rgba(15, 23, 42, .62);
 }
 
+.report-share-link-row{
+  margin-top: 8px;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  max-width: 560px;
+}
+
+.report-share-link-row input{
+  min-width: 0;
+  flex: 1;
+  height: 30px;
+  border-radius: 8px;
+  border: 1px solid rgba(15, 23, 42, 0.14);
+  background: #f8fafc;
+  color: rgba(15, 23, 42, 0.78);
+  padding: 0 10px;
+  font-size: 12px;
+}
+
+.report-share-error{
+  margin: 6px 0 0 !important;
+  font-size: 12px !important;
+  color: #b91c1c !important;
+  text-transform: none !important;
+  letter-spacing: 0 !important;
+  font-weight: 600 !important;
+}
+
 .report-preview-actions{
   display: inline-flex;
   align-items: center;
   gap: 8px;
   flex-shrink: 0;
+  flex-wrap: wrap;
+  justify-content: flex-end;
 }
 
 .report-preview-iframe{
@@ -9968,6 +10273,26 @@ watch([activeTab, selectedId], async () => {
 @media (max-width: 900px) {
   .report-view{
     padding: 90px 16px 40px;
+  }
+  .report-view.shared-report-mode{
+    padding: 0;
+  }
+  .shared-report-toolbar,
+  .report-preview-head{
+    align-items: stretch;
+    flex-direction: column;
+  }
+  .shared-report-actions,
+  .report-preview-actions{
+    width: 100%;
+    justify-content: stretch;
+  }
+  .shared-report-actions button,
+  .report-preview-actions button{
+    flex: 1;
+  }
+  .report-share-link-row{
+    max-width: none;
   }
   .transformer-picker-trigger{
     min-width: 100%;
