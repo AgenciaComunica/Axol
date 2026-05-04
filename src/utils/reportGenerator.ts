@@ -350,7 +350,7 @@ ${reportMetaTags({
       <tr><td class="td-l">Serial / TAG</td><td class="td-v">${escHtml(trafo.serial)} / ${escHtml(trafo.tag)}</td></tr>
       <tr><td class="td-l">Subestação</td><td class="td-v">${escHtml(trafo.substation)}</td></tr>
       <tr><td class="td-l">Status sistema</td><td class="td-v">${escHtml(trafo.status)}</td></tr>
-      <tr><td class="td-l">Status analista</td><td class="td-v">${escHtml(ev.specialistStatus)}</td></tr>
+      <tr><td class="td-l">Status especialista</td><td class="td-v">${escHtml(ev.specialistStatus)}</td></tr>
       <tr><td class="td-l">Estado do óleo</td><td class="td-v">${escHtml(trafo.oilStatus)}</td></tr>
       ${crom ? `<tr><td class="td-l">Condição TGC (IEEE)</td><td class="td-v">${ieeeCondition(crom.TGC, 'TGC')}</td></tr>` : ''}
     </table>
@@ -479,14 +479,15 @@ export function generateCompleteReport(
     : `<tr><td colspan="2" class="tc-empty">Sem dados físico-químicos</td></tr>`
 
   // Donut charts — SVG inline (circumference ≈ 100 with r=15.9)
-  const riskDonuts = `<div style="display:flex;gap:12px;align-items:flex-end;flex-wrap:wrap;margin-bottom:4px">
+  const riskDonuts = `<div class="risk-grid risk-donut-grid">
+    <div class="risk-grid-spacer"></div>
     ${risk.map((pct, i) => {
       const dash = Math.min(pct, 100)
       const gap = 100 - dash
       const color = RISK_COLORS[i]
       const label = ['N1','N2','N3','N4','N5'][i]
       const sub = ['Normal','Atenção','Alerta','Alto Risco','Crítico'][i]
-      return `<div style="text-align:center;flex:1;min-width:80px">
+      return `<div class="risk-donut-cell">
         <svg viewBox="0 0 36 36" width="72" height="72" style="display:block;margin:0 auto">
           <circle cx="18" cy="18" r="15.9" fill="none" stroke="#e2e8f0" stroke-width="3"/>
           <circle cx="18" cy="18" r="15.9" fill="none" stroke="${color}" stroke-width="3"
@@ -502,12 +503,16 @@ export function generateCompleteReport(
 
   const heatmapRows = ev.riskHeatmapRows
   const heatmapTableCompleto = heatmapRows.length
-    ? `<div style="margin-top:16px;overflow-x:auto">
+    ? `<div class="risk-heatmap-wrap">
         <p style="font-size:11px;color:#64748b;margin:0 0 8px">Variáveis fora das faixas estabelecidas (% por nível de risco):</p>
-        <table style="width:100%;border-collapse:collapse;font-size:11px">
+        <table class="risk-heatmap-table">
+          <colgroup>
+            <col class="risk-variable-col">
+            <col span="5">
+          </colgroup>
           <thead>
             <tr>
-              <th style="text-align:left;padding:5px 8px 5px 0;color:#64748b;font-weight:700;font-size:10px;border-bottom:1px solid #e2e8f0;width:90px">Variável</th>
+              <th style="text-align:left;padding:5px 8px 5px 0;color:#64748b;font-weight:700;font-size:10px;border-bottom:1px solid #e2e8f0">Variável</th>
               ${['N1','N2','N3','N4','N5'].map(n =>
                 `<th style="text-align:center;padding:5px 4px;color:#475569;font-weight:700;font-size:10px;border-bottom:1px solid #e2e8f0">${n}</th>`
               ).join('')}
@@ -636,6 +641,13 @@ ${reportMetaTags({
   .risk-track { flex:1; background:#f1f5f9; border-radius:999px; height:10px; overflow:hidden; }
   .risk-fill  { height:100%; border-radius:999px; }
   .risk-num   { font-size:12px; font-weight:800; width:48px; text-align:right; flex-shrink:0; }
+  .risk-grid { display:grid; grid-template-columns:90px repeat(5, minmax(0, 1fr)); column-gap:0; min-width:650px; }
+  .risk-donut-grid { align-items:end; margin:0 0 6px; }
+  .risk-grid-spacer { min-width:0; }
+  .risk-donut-cell { text-align:center; min-width:0; }
+  .risk-heatmap-wrap { margin-top:16px; overflow-x:auto; }
+  .risk-heatmap-table { width:100%; min-width:650px; table-layout:fixed; border-collapse:collapse; font-size:11px; }
+  .risk-variable-col { width:90px; }
   .note-box { background:#f8fafc; border-left:3px solid #1e4e8b; padding:10px 14px; font-size:12px; color:#334155; white-space:pre-wrap; border-radius:2px; margin-top:8px; line-height:1.6; }
   .supp-desc { font-size:11px;color:#64748b;margin:0 0 10px; }
   .supp-table-wrap { overflow-x:auto; border:1px solid #e2e8f0; border-radius:7px; }
@@ -683,14 +695,14 @@ ${reportMetaTags({
       <div class="sbar-main">
         <div class="sbar-accent"></div>
         <div>
-          <div class="sbar-label">Avaliação do Analista</div>
+          <div class="sbar-label">Avaliação do Especialista</div>
           <div class="sbar-status">${escHtml(ev.specialistStatus)}</div>
           <div class="sbar-analyst">${escHtml(trafo.analyst)}</div>
         </div>
       </div>
       <div class="sbar-badges">
         <span class="badge" style="color:${statusColor(trafo.status)};background:${statusBg(trafo.status)}"><span class="badge-dot"></span>Sistema: ${escHtml(trafo.status)}</span>
-        <span class="badge" style="color:${sFg};background:${sBg}"><span class="badge-dot"></span>Analista: ${escHtml(ev.specialistStatus)}</span>
+        <span class="badge" style="color:${sFg};background:${sBg}"><span class="badge-dot"></span>Especialista: ${escHtml(ev.specialistStatus)}</span>
       </div>
     </div>
 
@@ -699,7 +711,7 @@ ${reportMetaTags({
         <div class="sec-head"><span class="sec-num">1</span>Resultado das Avaliações</div>
         <div class="kv-grid">
           <div class="kv-card"><div class="kv-label">Status Sistema</div><div class="kv-value" style="font-size:14px;color:${statusColor(trafo.status)}">${escHtml(trafo.status)}</div></div>
-          <div class="kv-card"><div class="kv-label">Status Analista</div><div class="kv-value" style="font-size:14px;color:${sFg}">${escHtml(ev.specialistStatus)}</div></div>
+          <div class="kv-card"><div class="kv-label">Status Especialista</div><div class="kv-value" style="font-size:14px;color:${sFg}">${escHtml(ev.specialistStatus)}</div></div>
           <div class="kv-card"><div class="kv-label">Estado do Óleo</div><div class="kv-value" style="font-size:13px">${escHtml(trafo.oilStatus)}</div></div>
           ${crom ? `<div class="kv-card"><div class="kv-label">Condição TGC (IEEE)</div><div class="kv-value" style="font-size:14px;color:${condColor(ieeeCondition(crom.TGC,'TGC'))}">${ieeeCondition(crom.TGC,'TGC')}</div></div>` : ''}
         </div>
