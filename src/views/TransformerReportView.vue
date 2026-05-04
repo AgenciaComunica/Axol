@@ -4986,7 +4986,7 @@ watch([activeTab, selectedId], async () => {
                 {{ summaryPrimaryStatusLabel }}: {{ summaryPrimaryStatusValue }}
               </span>
               <span class="pill" :class="statusClass(selectedTransformer.statusAnalyst)">
-                Status Analista: {{ selectedTransformer.statusAnalyst }}
+                Status Especialista: {{ selectedTransformer.statusAnalyst }}
               </span>
             </div>
           </div>
