@@ -110,6 +110,7 @@ type AdvancedFilterRule = {
 type SharedReportRecord = {
   id: string
   html: string
+  pdfHtml?: string
   fileName: string
   transformerId: string
   sections: ReportSectionName[]
@@ -268,12 +269,14 @@ const reportShareGenerating = ref(false)
 const reportShareLink = ref('')
 const reportShareCopied = ref(false)
 const sharedReportHtml = ref('')
+const sharedReportPdfHtml = ref('')
 const sharedReportAccessState = ref<'ready' | 'missing' | 'expired' | 'revoked'>('ready')
 const sharedReportTitle = ref('Comprovante do Relatório')
 const sharedReportId = ref('')
 const sharedReportExporting = ref(false)
 const sharedReportRevoking = ref(false)
 const reportShareError = ref('')
+const reportShareModalOpen = ref(false)
 
 const transformerOptions = computed<Transformer[]>(() => {
   const baseTransformers: Transformer[] = [
@@ -2863,6 +2866,94 @@ function buildGeneratedReportHtml() {
   })
 }
 
+function readReportMeta(html: string, name: string) {
+  const pattern = new RegExp(`<meta[^>]+name=["']${name}["'][^>]+content=["']([^"']*)["'][^>]*>`, 'i')
+  return pattern.exec(html)?.[1] || ''
+}
+
+function escapeSharedReportHtml(value = '') {
+  return String(value)
+    .replace(/&/g, '&amp;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;')
+    .replace(/"/g, '&quot;')
+    .replace(/'/g, '&#39;')
+}
+
+function buildSharedReportHeaderFooter(html: string) {
+  const title = readReportMeta(html, 'report-title') || 'Relatório Técnico'
+  const eyebrow = readReportMeta(html, 'report-eyebrow') || 'Sistema SIARO - Axol Engenharia'
+  const reportId = readReportMeta(html, 'report-id') || '-'
+  const issuedAtLabel = readReportMeta(html, 'report-issued-label') || ''
+  const expiryLabel = readReportMeta(html, 'report-expiry-label') || ''
+  const logoUrl = readReportMeta(html, 'report-logo-url')
+  const validationUrl = readReportMeta(html, 'report-validation-url')
+  const qrUrl = readReportMeta(html, 'report-qr-url')
+  const analyst = readReportMeta(html, 'report-analyst')
+  const logo = logoUrl
+    ? `<img src="${escapeSharedReportHtml(logoUrl)}" alt="Logo" style="height:60px;max-width:132px;object-fit:contain;object-position:left center;display:block;" />`
+    : `<span style="font-weight:700;color:#0f172a;">SIARO - Axol Engenharia</span>`
+  const qr = qrUrl
+    ? `<img src="${escapeSharedReportHtml(qrUrl)}" alt="QR" style="height:36px;width:36px;object-fit:contain;display:block;" />`
+    : ''
+
+  return {
+    header: `
+      <div class="shared-pdf-header">
+        <div style="height:20px;background:#1a3a5c;-webkit-print-color-adjust:exact;print-color-adjust:exact;"></div>
+        <div style="padding:6px 20px 0;">
+          <div style="border-bottom:1px solid #cbd5e1;padding-bottom:6px;">
+            <div style="display:flex;align-items:center;gap:12px;">
+              <div style="width:132px;display:flex;align-items:center;justify-content:flex-start;flex-shrink:0;">${logo}</div>
+              <div style="flex:1;text-align:center;min-width:0;">
+                <div style="font-size:8px;text-transform:uppercase;letter-spacing:.08em;color:#64748b;">${escapeSharedReportHtml(eyebrow)}</div>
+                <div style="font-size:16px;line-height:1.2;font-weight:700;margin-top:2px;">${escapeSharedReportHtml(title)}</div>
+              </div>
+              <div style="width:180px;text-align:right;flex-shrink:0;">
+                <div style="font-size:8px;text-transform:uppercase;letter-spacing:.08em;color:#64748b;">Relatório</div>
+                <div style="font-size:11px;font-family:monospace;font-weight:700;margin-top:2px;">${escapeSharedReportHtml(reportId)}</div>
+                <div style="font-size:9px;color:#64748b;margin-top:2px;">Emitido em ${escapeSharedReportHtml(issuedAtLabel)}</div>
+                <div style="font-size:9px;color:#64748b;margin-top:1px;">${escapeSharedReportHtml(expiryLabel)}</div>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+    `,
+    footer: `
+      <div class="shared-pdf-footer">
+        <div style="padding:0 20px 4px;">
+          <div style="border-top:1px solid #cbd5e1;padding-top:4px;display:flex;align-items:center;justify-content:space-between;gap:12px;">
+            <div style="width:44px;display:flex;justify-content:flex-start;">${qr}</div>
+            <div style="flex:1;text-align:center;">
+              <div>SIARO - Axol Engenharia</div>
+              ${analyst ? `<div style="font-size:8px;color:#64748b;margin-top:2px;">Analista: ${escapeSharedReportHtml(analyst)}</div>` : ''}
+              ${validationUrl ? `<div style="font-size:8px;color:#64748b;margin-top:2px;">${escapeSharedReportHtml(validationUrl)}</div>` : ''}
+            </div>
+            <div style="width:120px;text-align:right;font-size:8px;">Documento compartilhado</div>
+          </div>
+        </div>
+        <div style="height:20px;background:#F5B800;-webkit-print-color-adjust:exact;print-color-adjust:exact;"></div>
+      </div>
+    `,
+  }
+}
+
+function buildShareableReportHtml(html: string) {
+  const parts = buildSharedReportHeaderFooter(html)
+  const style = `
+    <style>
+      .shared-pdf-header,.shared-pdf-footer{max-width:860px;margin:0 auto;background:#fff;color:#0f172a;font-family:Arial,sans-serif;font-size:10px;}
+      .shared-pdf-header{margin-bottom:18px;}
+      .shared-pdf-footer{margin-top:24px;font-size:9px;color:#475569;}
+    </style>
+  `
+  return html
+    .replace('</head>', `${style}</head>`)
+    .replace('<body>', `<body>${parts.header}`)
+    .replace('</body>', `${parts.footer}</body>`)
+}
+
 function readSharedReportRecords(): Record<string, SharedReportRecord> {
   if (typeof window === 'undefined') return {}
   try {
@@ -2888,6 +2979,7 @@ function loadSharedReportFromLink(id: string) {
   const record = readSharedReportRecords()[id]
   sharedReportId.value = id
   sharedReportHtml.value = ''
+  sharedReportPdfHtml.value = ''
   sharedReportTitle.value = record?.fileName || 'Comprovante do Relatório'
 
   if (!record) {
@@ -2904,6 +2996,7 @@ function loadSharedReportFromLink(id: string) {
   }
 
   sharedReportHtml.value = record.html
+  sharedReportPdfHtml.value = record.pdfHtml || record.html
   sharedReportAccessState.value = 'ready'
 }
 
@@ -2915,6 +3008,7 @@ watch(
       return
     }
     sharedReportHtml.value = ''
+    sharedReportPdfHtml.value = ''
     sharedReportId.value = ''
     sharedReportAccessState.value = 'ready'
   },
@@ -2932,6 +3026,7 @@ function openGeneratedReportPreview() {
   reportShareLink.value = ''
   reportShareCopied.value = false
   reportShareError.value = ''
+  reportShareModalOpen.value = false
   reportPreviewOpen.value = true
 }
 
@@ -2966,7 +3061,8 @@ async function shareGeneratedReportLink() {
     const expiresAt = new Date(Date.now() + 7 * 24 * 60 * 60 * 1000).toISOString()
     reportShareLink.value = await persistSharedReportForLink({
       id,
-      html: reportPreviewHtml.value,
+      html: buildShareableReportHtml(reportPreviewHtml.value),
+      pdfHtml: reportPreviewHtml.value,
       fileName: reportPreviewFileName.value || 'relatorio',
       transformerId: trafo.id,
       sections: [...reportSectionSelections.value],
@@ -2974,7 +3070,7 @@ async function shareGeneratedReportLink() {
       expiresAt,
       status: 'active',
     })
-    await copyReportShareLink()
+    reportShareModalOpen.value = true
   } catch (error) {
     console.error('Erro ao compartilhar relatório', error)
     reportShareError.value = 'Não foi possível gerar o link de compartilhamento.'
@@ -2994,16 +3090,21 @@ async function copyReportShareLink() {
 }
 
 async function exportSharedReportPdf() {
-  if (!sharedReportHtml.value || sharedReportExporting.value) return
+  const html = sharedReportPdfHtml.value || sharedReportHtml.value
+  if (!html || sharedReportExporting.value) return
   sharedReportExporting.value = true
   try {
-    await downloadPdfFromHtml(sharedReportHtml.value, sharedReportTitle.value || 'relatorio-compartilhado')
+    await downloadPdfFromHtml(html, sharedReportTitle.value || 'relatorio-compartilhado')
   } catch (error) {
     console.error('Erro ao gerar PDF compartilhado', error)
     window.alert('Nao foi possivel gerar o PDF do link compartilhado. Verifique se o servico Node do Puppeteer esta em execucao.')
   } finally {
     sharedReportExporting.value = false
   }
+}
+
+function closeReportShareModal() {
+  reportShareModalOpen.value = false
 }
 
 function revokeSharedReportLink() {
@@ -7441,12 +7542,6 @@ watch([activeTab, selectedId], async () => {
               <p>Preview HTML</p>
               <h4>Comprovante do Relatório</h4>
               <span>{{ selectedReportSections.map((section) => section.label).join(', ') }}</span>
-              <div v-if="reportShareLink" class="report-share-link-row">
-                <input :value="reportShareLink" type="text" readonly aria-label="Link compartilhável do comprovante" />
-                <button type="button" class="secondary-btn" @click="copyReportShareLink">
-                  {{ reportShareCopied ? 'Copiado' : 'Copiar' }}
-                </button>
-              </div>
               <p v-if="reportShareError" class="report-share-error">{{ reportShareError }}</p>
             </div>
             <div class="report-preview-actions">
@@ -7464,6 +7559,29 @@ watch([activeTab, selectedId], async () => {
             :srcdoc="reportPreviewHtml"
             title="Preview HTML do relatório"
           ></iframe>
+        </div>
+      </div>
+
+      <div v-if="reportShareModalOpen" class="report-share-overlay" @click.self="closeReportShareModal">
+        <div class="report-share-modal">
+          <div class="report-share-modal-head">
+            <div>
+              <p>Compartilhar link</p>
+              <h4>Comprovante do Relatório</h4>
+            </div>
+            <button type="button" class="report-share-close" aria-label="Fechar compartilhamento" @click="closeReportShareModal">×</button>
+          </div>
+          <label class="report-share-link-field">
+            <span>Link de acesso</span>
+            <input :value="reportShareLink" type="text" readonly aria-label="Link compartilhável do comprovante" />
+          </label>
+          <p class="report-share-note">Link dummy salvo localmente, válido por 7 dias ou até ser invalidado.</p>
+          <div class="report-share-modal-actions">
+            <button type="button" class="secondary-btn" @click="closeReportShareModal">Fechar</button>
+            <button type="button" class="primary-btn" @click="copyReportShareLink">
+              {{ reportShareCopied ? 'Copiado' : 'Copiar link' }}
+            </button>
+          </div>
         </div>
       </div>
       </section>
@@ -8096,26 +8214,6 @@ watch([activeTab, selectedId], async () => {
   color: rgba(15, 23, 42, .62);
 }
 
-.report-share-link-row{
-  margin-top: 8px;
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  max-width: 560px;
-}
-
-.report-share-link-row input{
-  min-width: 0;
-  flex: 1;
-  height: 30px;
-  border-radius: 8px;
-  border: 1px solid rgba(15, 23, 42, 0.14);
-  background: #f8fafc;
-  color: rgba(15, 23, 42, 0.78);
-  padding: 0 10px;
-  font-size: 12px;
-}
-
 .report-share-error{
   margin: 6px 0 0 !important;
   font-size: 12px !important;
@@ -8139,6 +8237,98 @@ watch([activeTab, selectedId], async () => {
   height: 100%;
   border: 0;
   background: #fff;
+}
+
+.report-share-overlay{
+  position: fixed;
+  inset: 0;
+  z-index: 110;
+  background: rgba(15, 23, 42, 0.52);
+  backdrop-filter: blur(3px);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 20px;
+}
+
+.report-share-modal{
+  width: min(520px, 94vw);
+  border-radius: 12px;
+  background: #fff;
+  border: 1px solid rgba(15, 23, 42, 0.12);
+  box-shadow: 0 24px 60px rgba(15, 23, 42, 0.28);
+  padding: 14px;
+  display: grid;
+  gap: 12px;
+}
+
+.report-share-modal-head{
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.report-share-modal-head p{
+  margin: 0;
+  font-size: 11px;
+  font-weight: 800;
+  text-transform: uppercase;
+  letter-spacing: .08em;
+  color: rgba(15, 23, 42, .46);
+}
+
+.report-share-modal-head h4{
+  margin: 2px 0 0;
+  font-size: 16px;
+  color: #0f172a;
+}
+
+.report-share-close{
+  width: 28px;
+  height: 28px;
+  border-radius: 999px;
+  border: 1px solid rgba(15, 23, 42, 0.16);
+  background: #fff;
+  color: #0f172a;
+  cursor: pointer;
+  font-size: 18px;
+  line-height: 1;
+}
+
+.report-share-link-field{
+  display: grid;
+  gap: 6px;
+}
+
+.report-share-link-field span{
+  font-size: 12px;
+  font-weight: 700;
+  color: rgba(15, 23, 42, 0.68);
+}
+
+.report-share-link-field input{
+  height: 36px;
+  border-radius: 8px;
+  border: 1px solid rgba(15, 23, 42, 0.14);
+  background: #f8fafc;
+  color: rgba(15, 23, 42, 0.78);
+  padding: 0 10px;
+  font-size: 12px;
+}
+
+.report-share-note{
+  margin: 0;
+  font-size: 12px;
+  color: rgba(15, 23, 42, 0.58);
+}
+
+.report-share-modal-actions{
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 8px;
+  flex-wrap: wrap;
 }
 
 .info-grid{
@@ -10291,8 +10481,11 @@ watch([activeTab, selectedId], async () => {
   .report-preview-actions button{
     flex: 1;
   }
-  .report-share-link-row{
-    max-width: none;
+  .report-share-modal-actions{
+    justify-content: stretch;
+  }
+  .report-share-modal-actions button{
+    flex: 1;
   }
   .transformer-picker-trigger{
     min-width: 100%;
