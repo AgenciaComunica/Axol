@@ -1546,6 +1546,11 @@ function duvalAssetPath(fileName: string) {
   return `${normalizedBase}duval-assets/A01/${fileName.replace(/^\/+/, '')}`
 }
 
+function absoluteReportAssetUrl(url: string) {
+  if (!url || /^(data:|https?:)/i.test(url) || typeof window === 'undefined') return url
+  return new URL(url, window.location.origin).href
+}
+
 const duvalLayersD1 = computed(() => buildDuvalLayers('T1.svg', 'T1_P', 'T1_S'))
 const duvalLayersD4 = computed(() => buildDuvalLayers('T4.svg', 'T4_P', 'T4_S'))
 const duvalLayersD5 = computed(() => buildDuvalLayers('T5.svg', 'T5_P', 'T5_S'))
@@ -2780,7 +2785,58 @@ function reportTableRows<T extends Record<string, unknown>>(
 }
 
 function buildReportSupplementalSections(): ReportSupplementalSection[] {
-  const analysisColumns = activeAnalysisVisibleColumns.value.map((column) => ({ id: column.id, label: column.label }))
+  const selectedDuvalIds = new Set(duvalFullSelectedAnalyses.value)
+  const selectedDuvalAnalyses = duvalAnalysesRows.value.filter((row) => selectedDuvalIds.has(row.id))
+  const duvalDiagramGroups = [
+    {
+      title: 'Triângulos Duval',
+      diagrams: [
+        { title: 'Duval Triângulo 1', layers: duvalLayersD1.value.map(absoluteReportAssetUrl) },
+        { title: 'Duval Triângulo 4', layers: duvalLayersD4.value.map(absoluteReportAssetUrl) },
+        { title: 'Duval Triângulo 5', layers: duvalLayersD5.value.map(absoluteReportAssetUrl) },
+      ],
+    },
+    {
+      title: 'Pentágonos Duval',
+      diagrams: [
+        { title: 'Duval Pentágono 1', layers: duvalLayersP1.value.map(absoluteReportAssetUrl) },
+        { title: 'Duval Pentágono 2', layers: duvalLayersP2.value.map(absoluteReportAssetUrl) },
+      ],
+    },
+  ]
+  const duvalSupplementalSection: ReportSupplementalSection = {
+    key: 'Avaliações Complementares',
+    title: 'Avaliações Complementares',
+    description: 'Análises selecionadas para triângulos e pentágonos de Duval.',
+    diagramGroups: duvalDiagramGroups,
+    columns: ['Análise', 'C₂H₂', 'C₂H₄', 'CH₄', 'C₂H₆', 'H₂', 'Duval 1', 'Duval 4', 'Duval 5', 'Pentágono 1', 'Pentágono 2'],
+    rows: selectedDuvalAnalyses.map((row) => [
+      row.date,
+      row.C2H2,
+      row.C2H4,
+      row.CH4,
+      row.C2H6,
+      row.H2,
+      row.AREA_D1,
+      row.AREA_D4,
+      row.AREA_D5,
+      row.AREA_P1,
+      row.AREA_P2,
+    ]),
+  }
+  const riskSupplementalSection: ReportSupplementalSection = {
+    key: 'Avaliações Complementares',
+    title: 'Avaliações Complementares',
+    description: 'Resumo das variáveis fora das faixas estabelecidas por nível de risco.',
+    columns: ['Variável', 'N1', 'N2', 'N3', 'N4', 'N5'],
+    rows: riskHeatmapRows.value.map((row) => [row.label, ...row.values.map((value) => `${value.toFixed(2)}%`)]),
+  }
+  const analysisColumns = isTrRotaMacro.value
+    ? routeAnalysisVisibleColumns.value.map((column) => ({ id: column.id, label: column.label }))
+    : activeAnalysisVisibleColumns.value.map((column) => ({ id: column.id, label: column.label }))
+  const analysisRows = isTrRotaMacro.value
+    ? sortedRouteInspectionTableRows.value as unknown as Record<string, unknown>[]
+    : sortedUnifiedAnalysisRows.value as Record<string, unknown>[]
   const coletasColumns = [
     { id: 'transformador', label: 'Transformador' },
     { id: 'status', label: 'Status' },
@@ -2797,15 +2853,9 @@ function buildReportSupplementalSections(): ReportSupplementalSection[] {
       title: isTrRotaMacro.value ? 'Análise de Campo' : 'Histórico de Análises',
       description: 'Registros exibidos conforme filtros e ordenação atuais da aba.',
       columns: analysisColumns.map((column) => column.label),
-      rows: reportTableRows(sortedUnifiedAnalysisRows.value as Record<string, unknown>[], analysisColumns),
+      rows: reportTableRows(analysisRows, analysisColumns),
     },
-    {
-      key: 'Avaliações Complementares',
-      title: 'Avaliações Complementares',
-      description: 'Resumo das variáveis fora das faixas estabelecidas por nível de risco.',
-      columns: ['Variável', 'N1', 'N2', 'N3', 'N4', 'N5'],
-      rows: riskHeatmapRows.value.map((row) => [row.label, ...row.values.map((value) => `${value.toFixed(2)}%`)]),
-    },
+    isTrRotaMacro.value ? riskSupplementalSection : duvalSupplementalSection,
     {
       key: 'Coletas',
       title: 'Coletas',
@@ -2827,8 +2877,12 @@ function buildGeneratedReportHtml() {
   const trafo = selectedTransformer.value
   if (!trafo || !canGenerateReportFile.value) return ''
 
-  const latestCrom = latestCromatografiaRow.value
-  const latestFisico = fisicoRows.value[0] || null
+  const latestCrom = activeMacroTab.value === 'TR-Óleo' ? latestCromatografiaRow.value : null
+  const latestFisico = isOltcMacro.value
+    ? fisicoOltcRows.value[0] || null
+    : isTrRotaMacro.value
+      ? null
+      : fisicoRows.value[0] || null
 
   const evalData = {
     specialistStatus: specialistView.value.statusAnalyst,
@@ -2869,6 +2923,17 @@ function buildGeneratedReportHtml() {
   return generateCompleteReport(trafo, logo, trafoImg, axolQrUrl, evalData, {
     sections: reportSectionSelections.value,
     supplementalSections: buildReportSupplementalSections(),
+    macroTab: activeMacroTab.value,
+    routeInspectionDate: latestRouteInspectionSnapshot.value?.date,
+    routeInspectionSections: latestRouteInspectionSnapshot.value?.sections.map((section) => ({
+      title: section.title,
+      fields: section.fields.map((field) => ({
+        label: field.label,
+        value: field.value,
+        displayValue: field.displayValue,
+        unit: field.unit,
+      })),
+    })),
   })
 }
 
