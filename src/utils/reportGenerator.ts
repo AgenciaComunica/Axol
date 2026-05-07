@@ -66,6 +66,7 @@ export interface ReportRouteInspectionField {
   label: string
   value: string
   displayValue?: string
+  tone?: 'good' | 'warn' | 'bad' | 'neutral'
   unit?: string
 }
 
@@ -257,7 +258,11 @@ function renderRouteInspectionReport(sections: ReportRouteInspectionSection[], d
                 ${section.fields.map((field) => `
                   <tr>
                     <td class="route-report-label">${escHtml(field.label)}</td>
-                    <td class="route-report-value">${escHtml(field.displayValue || field.value)}${field.unit ? ` ${escHtml(field.unit)}` : ''}</td>
+                    <td class="route-report-value">
+                      <span class="route-report-badge route-report-badge-${escAttr(field.tone || 'neutral')}">
+                        ${escHtml(field.displayValue || field.value)}${field.unit ? ` ${escHtml(field.unit)}` : ''}
+                      </span>
+                    </td>
                   </tr>
                 `).join('')}
               </tbody>
@@ -810,6 +815,11 @@ ${reportMetaTags({
   .route-report-section table { width:100%; border-collapse:collapse; font-size:11px; }
   .route-report-label { color:#64748b; padding:5px 8px 5px 0; border-bottom:1px solid #f1f5f9; vertical-align:top; width:58%; }
   .route-report-value { color:#0f172a; font-weight:700; padding:5px 0; border-bottom:1px solid #f1f5f9; vertical-align:top; }
+  .route-report-badge { display:inline-flex; align-items:center; justify-content:center; min-width:58px; padding:2px 8px; border-radius:999px; font-size:10px; line-height:1.35; font-weight:800; border:1px solid transparent; -webkit-print-color-adjust:exact; print-color-adjust:exact; }
+  .route-report-badge-good { color:#166534; background:#dcfce7; border-color:#86efac; }
+  .route-report-badge-warn { color:#854d0e; background:#fef3c7; border-color:#fde68a; }
+  .route-report-badge-bad { color:#991b1b; background:#fee2e2; border-color:#fecaca; }
+  .route-report-badge-neutral { color:#334155; background:#f1f5f9; border-color:#e2e8f0; }
   .route-report-empty { color:#94a3b8; font-style:italic; font-size:11px; padding:8px 0; }
   .note-box { background:#f8fafc; border-left:3px solid #1e4e8b; padding:10px 14px; font-size:12px; color:#334155; white-space:pre-wrap; border-radius:2px; margin-top:8px; line-height:1.6; }
   .preventive-table-block { margin-top:14px; }

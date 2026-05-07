@@ -1352,6 +1352,7 @@ type RouteInspectionField = {
   type: 'choice' | 'temperature'
   value: string
   displayValue?: string
+  tone?: RouteInspectionOption['tone']
   score: number
   unit?: string
   options?: RouteInspectionOption[]
@@ -1767,18 +1768,21 @@ function routeChoice(
     type: 'choice',
     value,
     displayValue,
+    tone: selected?.tone || 'good',
     score: routeScoreByTone(selected?.tone || 'good'),
     options,
   }
 }
 
 function routeTemperature(key: string, label: string, value: number): RouteInspectionField {
+  const score = routeTemperatureScore(value)
   return {
     key,
     label,
     type: 'temperature',
     value: String(value),
-    score: routeTemperatureScore(value),
+    tone: score >= 3 ? 'bad' : score >= 2 ? 'warn' : 'good',
+    score,
     unit: '°C',
   }
 }
@@ -2931,6 +2935,7 @@ function buildGeneratedReportHtml() {
         label: field.label,
         value: field.value,
         displayValue: field.displayValue,
+        tone: field.tone,
         unit: field.unit,
       })),
     })),
