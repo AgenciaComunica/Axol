@@ -47,13 +47,40 @@ export interface ReportSupplementalSection {
   key: ReportSectionName
   title: string
   description?: string
+  diagramGroups?: ReportSupplementalDiagramGroup[]
   columns: string[]
   rows: unknown[][]
+}
+
+export interface ReportSupplementalDiagram {
+  title: string
+  layers: string[]
+}
+
+export interface ReportSupplementalDiagramGroup {
+  title: string
+  diagrams: ReportSupplementalDiagram[]
+}
+
+export interface ReportRouteInspectionField {
+  label: string
+  value: string
+  displayValue?: string
+  tone?: 'good' | 'warn' | 'bad' | 'neutral'
+  unit?: string
+}
+
+export interface ReportRouteInspectionSection {
+  title: string
+  fields: ReportRouteInspectionField[]
 }
 
 export interface CompleteReportOptions {
   sections?: ReportSectionName[]
   supplementalSections?: ReportSupplementalSection[]
+  macroTab?: 'TR-Óleo' | 'TR-OLTC' | 'TR-Rota'
+  routeInspectionDate?: string
+  routeInspectionSections?: ReportRouteInspectionSection[]
 }
 
 // ─── Helpers ────────────────────────────────────────────────────────────────
@@ -117,6 +144,11 @@ function condBg(cond: string): string {
 
 const RISK_COLORS = ['#22c55e', '#84cc16', '#eab308', '#f97316', '#ef4444']
 const RISK_LABELS = ['N1 – Normal', 'N2 – Atenção', 'N3 – Alerta', 'N4 – Alto Risco', 'N5 – Crítico']
+const PREVENTIVE_RELIABILITY_ROWS = [
+  ['Operação<br>(dias por ano)', '0.00', '18.76', '194.98', '151.26', '0.00'],
+  ['Frequência (ocorrências por ano)', '0.00', '10.80', '18.25', '7.37', '0.00'],
+  ['Duração média (dias)', '0.00', '1.74', '10.68', '20.51', '0.00'],
+]
 
 function escHtml(s: string): string {
   return String(s).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;').replace(/'/g, '&#39;')
@@ -136,6 +168,9 @@ function renderSupplementalSection(section: ReportSupplementalSection, index: nu
         </tr>
       `).join('')
     : `<tr><td colspan="${Math.max(section.columns.length, 1)}" class="supp-empty">Sem dados disponíveis</td></tr>`
+  const diagramGroups = (section.diagramGroups || [])
+    .map((group) => renderSupplementalDiagramGroup(group))
+    .join('')
 
   return `
     <div class="pdf-card supplemental-card">
@@ -146,6 +181,94 @@ function renderSupplementalSection(section: ReportSupplementalSection, index: nu
           <thead><tr>${head}</tr></thead>
           <tbody>${rows}</tbody>
         </table>
+      </div>
+      ${diagramGroups}
+    </div>
+  `
+}
+
+function renderSupplementalDiagramGroup(group: ReportSupplementalDiagramGroup): string {
+  const columnCount = Math.max(1, Math.min(group.diagrams.length, 3))
+  const diagrams = group.diagrams
+    .map((diagram) => `
+      <article class="supp-diagram-card">
+        <h4>${escHtml(diagram.title)}</h4>
+        <div class="supp-diagram-frame">
+          ${diagram.layers.map((layer) => `<img src="${escAttr(layer)}" alt="${escAttr(diagram.title)}" />`).join('')}
+        </div>
+      </article>
+    `)
+    .join('')
+
+  return `
+    <section class="supp-diagram-group">
+      <h3>${escHtml(group.title)}</h3>
+      <div class="supp-diagram-grid" style="grid-template-columns:repeat(${columnCount}, minmax(0, 1fr));">
+        ${diagrams}
+      </div>
+    </section>
+  `
+}
+
+function renderPreventiveReliabilityTable(className = 'preventive-table'): string {
+  return `
+    <div class="${className}-block">
+      <div class="${className}-wrap">
+        <table class="${className}">
+          <thead>
+            <tr class="${className}-title-row">
+              <th colspan="6">Indicadores de desempenho de operação em risco estimados para o próximo ano</th>
+            </tr>
+            <tr class="${className}-columns-row">
+              <th>Indicadores</th>
+              <th>Nível-01</th>
+              <th>Nível-02</th>
+              <th>Nível-03</th>
+              <th>Nível-04</th>
+              <th>Nível-05</th>
+            </tr>
+          </thead>
+          <tbody>
+            ${PREVENTIVE_RELIABILITY_ROWS.map((row) => `
+              <tr>
+                ${row.map((cell) => `<td>${escHtml(cell).replace(/&lt;br&gt;/g, '<br>')}</td>`).join('')}
+              </tr>
+            `).join('')}
+          </tbody>
+        </table>
+      </div>
+    </div>
+  `
+}
+
+function renderRouteInspectionReport(sections: ReportRouteInspectionSection[], date?: string): string {
+  if (!sections.length) {
+    return `<div class="route-report-empty">Sem dados de inspeção de campo disponíveis.</div>`
+  }
+
+  return `
+    <div class="route-report">
+      ${date ? `<p class="route-report-date">Data da inspeção: <strong>${escHtml(date)}</strong></p>` : ''}
+      <div class="route-report-grid">
+        ${sections.map((section) => `
+          <div class="route-report-section">
+            <h4>${escHtml(section.title)}</h4>
+            <table>
+              <tbody>
+                ${section.fields.map((field) => `
+                  <tr>
+                    <td class="route-report-label">${escHtml(field.label)}</td>
+                    <td class="route-report-value">
+                      <span class="route-report-badge route-report-badge-${escAttr(field.tone || 'neutral')}">
+                        ${escHtml(field.displayValue || field.value)}${field.unit ? ` ${escHtml(field.unit)}` : ''}
+                      </span>
+                    </td>
+                  </tr>
+                `).join('')}
+              </tbody>
+            </table>
+          </div>
+        `).join('')}
       </div>
     </div>
   `
@@ -326,6 +449,13 @@ ${reportMetaTags({
   .td-v { color:#0f172a; font-weight:600; padding:5px 0; vertical-align:top; border-bottom:1px solid #f1f5f9; }
   .td-empty { color:#94a3b8; font-style:italic; padding:8px 0; font-size:11px; }
   .note-box { background:#f8fafc; border-left:3px solid #1e4e8b; padding:8px 12px; font-size:12px; color:#334155; white-space:pre-wrap; border-radius:2px; }
+  .preventive-simple-block { margin-top:14px; }
+  .preventive-simple-wrap { border:1px solid #e2e8f0; border-radius:20px 20px 0 0; overflow:hidden; }
+  .preventive-simple { width:100%; border-collapse:collapse; font-size:11px; table-layout:fixed; }
+  .preventive-simple th { color:#0f172a; font-weight:700; padding:6px 7px; text-align:center; border-bottom:1px solid #e2e8f0; background:transparent; }
+  .preventive-simple-title-row th { color:#0f172a; background:#F8FAFC; font-size:13px; font-weight:700; padding:7px 10px; border:0; border-radius:20px 20px 0 0; }
+  .preventive-simple-columns-row th { border-bottom:1px solid #e2e8f0; }
+  .preventive-simple td { color:#0f172a; padding:6px 7px; text-align:center; border-bottom:1px solid #f1f5f9; }
   .meta-strip { margin-top:20px; display:flex; gap:12px; flex-wrap:wrap; }
   .meta-card { background:#f8fafc; border:1px solid #e2e8f0; border-radius:6px; padding:10px 12px; min-width:180px; }
   .meta-card-label { font-size:10px; text-transform:uppercase; color:#94a3b8; font-weight:700; letter-spacing:.05em; }
@@ -354,6 +484,7 @@ ${reportMetaTags({
       <tr><td class="td-l">Estado do óleo</td><td class="td-v">${escHtml(trafo.oilStatus)}</td></tr>
       ${crom ? `<tr><td class="td-l">Condição TGC (IEEE)</td><td class="td-v">${ieeeCondition(crom.TGC, 'TGC')}</td></tr>` : ''}
     </table>
+    ${renderPreventiveReliabilityTable('preventive-simple')}
   </div>
 
   <!-- CARD 2 – Avaliação do Especialista -->
@@ -438,6 +569,8 @@ export function generateCompleteReport(
   const risk = ev.riskProbabilities
   const selectedSections = options.sections?.length ? options.sections : ['Avaliação Completa']
   const includesEvaluation = selectedSections.includes('Avaliação Completa')
+  const reportSubject = options.macroTab || 'TR-Óleo'
+  const isRouteReport = options.macroTab === 'TR-Rota'
   const supplementalSections = (options.supplementalSections || [])
     .filter((section) => selectedSections.includes(section.key))
   const supplementalSectionsHtml = supplementalSections
@@ -534,6 +667,31 @@ export function generateCompleteReport(
       </div>`
     : ''
 
+  const routeInspectionHtml = renderRouteInspectionReport(
+    options.routeInspectionSections || [],
+    options.routeInspectionDate,
+  )
+
+  const collectionSectionsHtml = isRouteReport
+    ? `<div class="pdf-card">
+        <div class="sec-head"><span class="sec-num">3</span>Última Coleta${options.routeInspectionDate ? ` — ${escHtml(options.routeInspectionDate)}` : ''}</div>
+        <p style="font-size:11px;color:#64748b;margin:0 0 12px">Plano de inspeção de rota (Inspeção de campo)</p>
+        ${routeInspectionHtml}
+      </div>`
+    : `<div class="two-col" style="margin-top:24px">
+        <div class="pdf-card">
+          <div class="sec-head"><span class="sec-num">3</span>Última Coleta${crom ? ` — ${escHtml(crom.date)}` : ''}</div>
+          <table>
+            <tr><td class="tc-label" style="font-weight:700;color:#475569">Gás</td><td class="tc-val" style="font-weight:700;color:#475569">Valor</td><td class="tc-cond" style="font-weight:700;color:#475569;font-size:11px;padding:6px 0;border-bottom:1px solid #f1f5f9">IEEE</td></tr>
+            ${gasTableRows}
+          </table>
+        </div>
+        <div class="pdf-card">
+          <div class="sec-head"><span class="sec-num">4</span>Tratamentos no Óleo${fisico ? ` — ${escHtml(fisico.date)}` : ''}</div>
+          <table>${fisicoTableRows}</table>
+        </div>
+      </div>`
+
   const jsonLd = JSON.stringify({
     '@context': 'https://schema.org', '@type': 'TechArticle',
     name: `Relatório de Transformador ${trafo.serial}`,
@@ -611,6 +769,8 @@ ${reportMetaTags({
   .sbar-label  { font-size:10px; text-transform:uppercase; letter-spacing:.08em; color:#64748b; font-weight:700; }
   .sbar-status { font-size:24px; font-weight:800; color:${sFg}; line-height:1.1; }
   .sbar-analyst { font-size:11px; color:#94a3b8; margin-top:2px; }
+  .sbar-subject { font-size:12px; color:#0f172a; margin-top:7px; font-weight:700; }
+  .sbar-subject span { color:#64748b; font-weight:600; }
   .sbar-badges { display:flex; gap:8px; flex-wrap:wrap; }
   .badge { display:inline-flex; align-items:center; gap:5px; padding:4px 12px; border-radius:999px; font-size:12px; font-weight:700; }
   .badge-dot { width:6px; height:6px; border-radius:50%; background:currentColor; flex-shrink:0; }
@@ -648,8 +808,35 @@ ${reportMetaTags({
   .risk-heatmap-wrap { margin-top:16px; overflow-x:auto; }
   .risk-heatmap-table { width:100%; min-width:650px; table-layout:fixed; border-collapse:collapse; font-size:11px; }
   .risk-variable-col { width:90px; }
+  .route-report-date { margin:0 0 10px; font-size:12px; color:#334155; }
+  .route-report-grid { display:grid; grid-template-columns:repeat(2,minmax(0,1fr)); gap:14px; }
+  .route-report-section { min-width:0; break-inside:avoid; page-break-inside:avoid; }
+  .route-report-section h4 { margin:0 0 6px; font-size:11px; color:#0f172a; font-weight:800; }
+  .route-report-section table { width:100%; border-collapse:collapse; font-size:11px; }
+  .route-report-label { color:#64748b; padding:5px 8px 5px 0; border-bottom:1px solid #f1f5f9; vertical-align:top; width:58%; }
+  .route-report-value { color:#0f172a; font-weight:700; padding:5px 0; border-bottom:1px solid #f1f5f9; vertical-align:top; }
+  .route-report-badge { display:inline-flex; align-items:center; justify-content:center; min-width:58px; padding:2px 8px; border-radius:999px; font-size:10px; line-height:1.35; font-weight:800; border:1px solid transparent; -webkit-print-color-adjust:exact; print-color-adjust:exact; }
+  .route-report-badge-good { color:#166534; background:#dcfce7; border-color:#86efac; }
+  .route-report-badge-warn { color:#854d0e; background:#fef3c7; border-color:#fde68a; }
+  .route-report-badge-bad { color:#991b1b; background:#fee2e2; border-color:#fecaca; }
+  .route-report-badge-neutral { color:#334155; background:#f1f5f9; border-color:#e2e8f0; }
+  .route-report-empty { color:#94a3b8; font-style:italic; font-size:11px; padding:8px 0; }
   .note-box { background:#f8fafc; border-left:3px solid #1e4e8b; padding:10px 14px; font-size:12px; color:#334155; white-space:pre-wrap; border-radius:2px; margin-top:8px; line-height:1.6; }
+  .preventive-table-block { margin-top:14px; }
+  .preventive-table-wrap { border:1px solid #e2e8f0; border-radius:20px 20px 0 0; overflow:hidden; }
+  .preventive-table { width:100%; border-collapse:collapse; font-size:11px; table-layout:fixed; }
+  .preventive-table th { padding:6px 8px; text-align:center; color:#0f172a; font-weight:700; border-bottom:1px solid #e2e8f0; background:transparent; }
+  .preventive-table-title-row th { color:#0f172a; background:#F8FAFC; font-size:13px; font-weight:700; padding:7px 10px; border:0; border-radius:20px 20px 0 0; }
+  .preventive-table-columns-row th { border-bottom:1px solid #e2e8f0; }
+  .preventive-table td { padding:6px 8px; text-align:center; color:#0f172a; border-bottom:1px solid #f1f5f9; }
   .supp-desc { font-size:11px;color:#64748b;margin:0 0 10px; }
+  .supp-diagram-group { margin:12px 0 14px; break-inside:avoid; page-break-inside:avoid; }
+  .supp-diagram-group h3 { margin:0 0 8px; font-size:12px; color:#0f172a; font-weight:800; }
+  .supp-diagram-grid { display:grid; gap:10px; }
+  .supp-diagram-card { border:1px solid #e2e8f0; border-radius:8px; padding:8px; background:#fff; break-inside:avoid; page-break-inside:avoid; }
+  .supp-diagram-card h4 { margin:0 0 6px; font-size:10px; color:#334155; font-weight:800; text-align:center; }
+  .supp-diagram-frame { position:relative; width:100%; aspect-ratio:1 / 1; border:1px solid #e2e8f0; border-radius:7px; overflow:hidden; background:#f8fafc; }
+  .supp-diagram-frame img { position:absolute; inset:0; width:100%; height:100%; object-fit:contain; }
   .supp-table-wrap { overflow-x:auto; border:1px solid #e2e8f0; border-radius:7px; }
   .supp-table { min-width:100%; font-size:11px; }
   .supp-table th { text-align:left; padding:7px 8px; color:#475569; font-size:10px; font-weight:800; background:#f8fafc; border-bottom:1px solid #e2e8f0; white-space:nowrap; }
@@ -698,6 +885,7 @@ ${reportMetaTags({
           <div class="sbar-label">Avaliação do Especialista</div>
           <div class="sbar-status">${escHtml(ev.specialistStatus)}</div>
           <div class="sbar-analyst">${escHtml(trafo.analyst)}</div>
+          <div class="sbar-subject"><span>Matéria do Relatório:</span> ${escHtml(reportSubject)}</div>
         </div>
       </div>
       <div class="sbar-badges">
@@ -715,6 +903,7 @@ ${reportMetaTags({
           <div class="kv-card"><div class="kv-label">Estado do Óleo</div><div class="kv-value" style="font-size:13px">${escHtml(trafo.oilStatus)}</div></div>
           ${crom ? `<div class="kv-card"><div class="kv-label">Condição TGC (IEEE)</div><div class="kv-value" style="font-size:14px;color:${condColor(ieeeCondition(crom.TGC,'TGC'))}">${ieeeCondition(crom.TGC,'TGC')}</div></div>` : ''}
         </div>
+        ${renderPreventiveReliabilityTable('preventive-table')}
       </div>
 
       <div class="pdf-card">
@@ -726,22 +915,10 @@ ${reportMetaTags({
         ${ev.specialistNote && ev.specialistNote !== 'Sem observações registradas.' ? `<div class="note-box">${escHtml(ev.specialistNote)}</div>` : ''}
       </div>
 
-      <div class="two-col" style="margin-top:24px">
-        <div class="pdf-card">
-          <div class="sec-head"><span class="sec-num">3</span>Última Coleta${crom ? ` — ${escHtml(crom.date)}` : ''}</div>
-          <table>
-            <tr><td class="tc-label" style="font-weight:700;color:#475569">Gás</td><td class="tc-val" style="font-weight:700;color:#475569">Valor</td><td class="tc-cond" style="font-weight:700;color:#475569;font-size:11px;padding:6px 0;border-bottom:1px solid #f1f5f9">IEEE</td></tr>
-            ${gasTableRows}
-          </table>
-        </div>
-        <div class="pdf-card">
-          <div class="sec-head"><span class="sec-num">4</span>Tratamentos no Óleo${fisico ? ` — ${escHtml(fisico.date)}` : ''}</div>
-          <table>${fisicoTableRows}</table>
-        </div>
-      </div>
+      ${collectionSectionsHtml}
 
       <div class="pdf-card">
-        <div class="sec-head"><span class="sec-num">5</span>Avaliação do Risco Operacional</div>
+        <div class="sec-head"><span class="sec-num">${isRouteReport ? '4' : '5'}</span>Avaliação do Risco Operacional</div>
         <p style="font-size:11px;color:#64748b;margin:0 0 12px">Probabilidade (%) de operação em cada nível de risco para o próximo ano:</p>
         ${riskDonuts}
         ${heatmapTableCompleto}
