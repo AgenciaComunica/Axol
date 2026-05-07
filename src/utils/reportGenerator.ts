@@ -117,6 +117,11 @@ function condBg(cond: string): string {
 
 const RISK_COLORS = ['#22c55e', '#84cc16', '#eab308', '#f97316', '#ef4444']
 const RISK_LABELS = ['N1 – Normal', 'N2 – Atenção', 'N3 – Alerta', 'N4 – Alto Risco', 'N5 – Crítico']
+const PREVENTIVE_RELIABILITY_ROWS = [
+  ['Operação<br>(dias por ano)', '0.00', '18.76', '194.98', '151.26', '0.00'],
+  ['Frequência (ocorrências por ano)', '0.00', '10.80', '18.25', '7.37', '0.00'],
+  ['Duração média (dias)', '0.00', '1.74', '10.68', '20.51', '0.00'],
+]
 
 function escHtml(s: string): string {
   return String(s).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;').replace(/'/g, '&#39;')
@@ -145,6 +150,37 @@ function renderSupplementalSection(section: ReportSupplementalSection, index: nu
         <table class="supp-table">
           <thead><tr>${head}</tr></thead>
           <tbody>${rows}</tbody>
+        </table>
+      </div>
+    </div>
+  `
+}
+
+function renderPreventiveReliabilityTable(className = 'preventive-table'): string {
+  return `
+    <div class="${className}-block">
+      <div class="${className}-wrap">
+        <table class="${className}">
+          <thead>
+            <tr class="${className}-title-row">
+              <th colspan="6">Indicadores de desempenho de operação em risco estimados para o próximo ano</th>
+            </tr>
+            <tr class="${className}-columns-row">
+              <th>Indicadores</th>
+              <th>Nível-01</th>
+              <th>Nível-02</th>
+              <th>Nível-03</th>
+              <th>Nível-04</th>
+              <th>Nível-05</th>
+            </tr>
+          </thead>
+          <tbody>
+            ${PREVENTIVE_RELIABILITY_ROWS.map((row) => `
+              <tr>
+                ${row.map((cell) => `<td>${escHtml(cell).replace(/&lt;br&gt;/g, '<br>')}</td>`).join('')}
+              </tr>
+            `).join('')}
+          </tbody>
         </table>
       </div>
     </div>
@@ -326,6 +362,13 @@ ${reportMetaTags({
   .td-v { color:#0f172a; font-weight:600; padding:5px 0; vertical-align:top; border-bottom:1px solid #f1f5f9; }
   .td-empty { color:#94a3b8; font-style:italic; padding:8px 0; font-size:11px; }
   .note-box { background:#f8fafc; border-left:3px solid #1e4e8b; padding:8px 12px; font-size:12px; color:#334155; white-space:pre-wrap; border-radius:2px; }
+  .preventive-simple-block { margin-top:14px; }
+  .preventive-simple-wrap { border:1px solid #e2e8f0; border-radius:20px 20px 0 0; overflow:hidden; }
+  .preventive-simple { width:100%; border-collapse:collapse; font-size:11px; table-layout:fixed; }
+  .preventive-simple th { color:#0f172a; font-weight:700; padding:6px 7px; text-align:center; border-bottom:1px solid #e2e8f0; background:transparent; }
+  .preventive-simple-title-row th { color:#0f172a; background:#F8FAFC; font-size:13px; font-weight:700; padding:7px 10px; border:0; border-radius:20px 20px 0 0; }
+  .preventive-simple-columns-row th { border-bottom:1px solid #e2e8f0; }
+  .preventive-simple td { color:#0f172a; padding:6px 7px; text-align:center; border-bottom:1px solid #f1f5f9; }
   .meta-strip { margin-top:20px; display:flex; gap:12px; flex-wrap:wrap; }
   .meta-card { background:#f8fafc; border:1px solid #e2e8f0; border-radius:6px; padding:10px 12px; min-width:180px; }
   .meta-card-label { font-size:10px; text-transform:uppercase; color:#94a3b8; font-weight:700; letter-spacing:.05em; }
@@ -354,6 +397,7 @@ ${reportMetaTags({
       <tr><td class="td-l">Estado do óleo</td><td class="td-v">${escHtml(trafo.oilStatus)}</td></tr>
       ${crom ? `<tr><td class="td-l">Condição TGC (IEEE)</td><td class="td-v">${ieeeCondition(crom.TGC, 'TGC')}</td></tr>` : ''}
     </table>
+    ${renderPreventiveReliabilityTable('preventive-simple')}
   </div>
 
   <!-- CARD 2 – Avaliação do Especialista -->
@@ -649,6 +693,13 @@ ${reportMetaTags({
   .risk-heatmap-table { width:100%; min-width:650px; table-layout:fixed; border-collapse:collapse; font-size:11px; }
   .risk-variable-col { width:90px; }
   .note-box { background:#f8fafc; border-left:3px solid #1e4e8b; padding:10px 14px; font-size:12px; color:#334155; white-space:pre-wrap; border-radius:2px; margin-top:8px; line-height:1.6; }
+  .preventive-table-block { margin-top:14px; }
+  .preventive-table-wrap { border:1px solid #e2e8f0; border-radius:20px 20px 0 0; overflow:hidden; }
+  .preventive-table { width:100%; border-collapse:collapse; font-size:11px; table-layout:fixed; }
+  .preventive-table th { padding:6px 8px; text-align:center; color:#0f172a; font-weight:700; border-bottom:1px solid #e2e8f0; background:transparent; }
+  .preventive-table-title-row th { color:#0f172a; background:#F8FAFC; font-size:13px; font-weight:700; padding:7px 10px; border:0; border-radius:20px 20px 0 0; }
+  .preventive-table-columns-row th { border-bottom:1px solid #e2e8f0; }
+  .preventive-table td { padding:6px 8px; text-align:center; color:#0f172a; border-bottom:1px solid #f1f5f9; }
   .supp-desc { font-size:11px;color:#64748b;margin:0 0 10px; }
   .supp-table-wrap { overflow-x:auto; border:1px solid #e2e8f0; border-radius:7px; }
   .supp-table { min-width:100%; font-size:11px; }
@@ -715,6 +766,7 @@ ${reportMetaTags({
           <div class="kv-card"><div class="kv-label">Estado do Óleo</div><div class="kv-value" style="font-size:13px">${escHtml(trafo.oilStatus)}</div></div>
           ${crom ? `<div class="kv-card"><div class="kv-label">Condição TGC (IEEE)</div><div class="kv-value" style="font-size:14px;color:${condColor(ieeeCondition(crom.TGC,'TGC'))}">${ieeeCondition(crom.TGC,'TGC')}</div></div>` : ''}
         </div>
+        ${renderPreventiveReliabilityTable('preventive-table')}
       </div>
 
       <div class="pdf-card">

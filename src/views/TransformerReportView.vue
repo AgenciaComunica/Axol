@@ -258,6 +258,12 @@ const activeSubTabs = computed(() => {
     label: isTrRotaMacro.value && tab === 'Histórico de Análises' ? 'Análise de Campo' : tab,
   }))
 })
+
+const preventiveReliabilityRows = [
+  { indicator: 'Operação (dias por ano)', n1: '0.00', n2: '18.76', n3: '194.98', n4: '151.26', n5: '0.00' },
+  { indicator: 'Frequência (ocorrências por ano)', n1: '0.00', n2: '10.80', n3: '18.25', n4: '7.37', n5: '0.00' },
+  { indicator: 'Duração média (dias)', n1: '0.00', n2: '1.74', n3: '10.68', n4: '20.51', n5: '0.00' },
+]
 const generateReportMenuOpen = ref(false)
 const generateReportWrapRef = ref<HTMLElement | null>(null)
 const reportSectionSelections = ref<ReportSectionName[]>(['Avaliação Completa'])
@@ -4921,7 +4927,7 @@ watch([activeTab, selectedId], async () => {
               @click="toggleGenerateReportMenu"
             >
               <span class="history-action-icon" aria-hidden="true">⭳</span>
-              Comprovante
+              Relatórios
             </button>
             <div v-if="generateReportMenuOpen" class="report-generate-menu">
               <p class="report-generate-menu-label">Escolha as abas do relatório</p>
@@ -4948,7 +4954,7 @@ watch([activeTab, selectedId], async () => {
                   <path d="M10 14 21 3"></path>
                   <path d="M18 13v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h6"></path>
                 </svg>
-                Gerar Comprovante
+                Gerar Relatório
               </button>
             </div>
           </div>
@@ -5525,6 +5531,41 @@ watch([activeTab, selectedId], async () => {
             vigentes e nas políticas de manutenção da Energisa. Verificar se existe alguma variável fora da condição
             normal estabelecida pela tabela de condições definida no documento de requisitos funcionais da plataforma e
             continuar o monitoramento.
+          </p>
+          <p class="preventive-reliability-title">
+            <b>Indicadores de desempenho de operação em risco do transformador:</b>
+          </p>
+          <p class="preventive-reliability-subtitle">
+            A seguir é apresentado uma tabela com os índices de confiabilidade calculados para a avaliação de risco
+            operacional dos transformadores.
+          </p>
+          <div class="mini-table-wrap preventive-reliability-table-wrap">
+            <table class="table compact mini-table preventive-reliability-table">
+              <thead>
+                <tr>
+                  <th class="text-center">Indicadores</th>
+                  <th class="text-center">Nível-01</th>
+                  <th class="text-center">Nível-02</th>
+                  <th class="text-center">Nível-03</th>
+                  <th class="text-center">Nível-04</th>
+                  <th class="text-center">Nível-05</th>
+                </tr>
+              </thead>
+              <tbody>
+                <tr v-for="row in preventiveReliabilityRows" :key="row.indicator">
+                  <td class="text-center">{{ row.indicator }}</td>
+                  <td class="text-center">{{ row.n1 }}</td>
+                  <td class="text-center">{{ row.n2 }}</td>
+                  <td class="text-center">{{ row.n3 }}</td>
+                  <td class="text-center">{{ row.n4 }}</td>
+                  <td class="text-center">{{ row.n5 }}</td>
+                </tr>
+              </tbody>
+            </table>
+          </div>
+          <p class="preventive-reliability-note">
+            Esta avaliação, permite estimar as probabilidades de ocorrências dos estados de risco do transformador,
+            indo de N1, mais brando, até N5, mais crítico.
           </p>
           <p><b>Resultado da concentração de gases combustíveis (TGC) segundo o Guia IEEE Std C57.104™- 2008:</b></p>
           <p>
@@ -8432,6 +8473,8 @@ watch([activeTab, selectedId], async () => {
   display: grid;
   gap: 10px;
   align-content: start;
+  min-width: 0;
+  max-width: 100%;
 }
 
 .panel-eval .eval-card-3{
@@ -8456,6 +8499,13 @@ watch([activeTab, selectedId], async () => {
 .panel-eval .tile{
   height: fit-content;
   align-self: start;
+  min-width: 0;
+  max-width: 100%;
+}
+
+.panel-eval .eval-left-stack > *{
+  min-width: 0;
+  max-width: 100%;
 }
 
 .panel-eval .eval-card-3{
@@ -8785,10 +8835,29 @@ watch([activeTab, selectedId], async () => {
   border: 1px solid rgba(30, 78, 139, 0.16);
   border-radius: 10px;
   background: #ffffff;
+  width: 100%;
+  max-width: 100%;
 }
 
 .mini-table td{
   white-space: nowrap;
+}
+
+.preventive-reliability-title{
+  margin-top: 14px !important;
+}
+
+.preventive-reliability-subtitle{
+  margin: 4px 0 8px !important;
+}
+
+.preventive-reliability-table-wrap{
+  margin: 10px 0 12px;
+  max-width: 100%;
+}
+
+.preventive-reliability-note{
+  margin-top: 8px !important;
 }
 
 .tile p.table-legend{
