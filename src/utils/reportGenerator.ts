@@ -215,6 +215,10 @@ function renderPreventiveReliabilityTable(className = 'preventive-table'): strin
     <div class="${className}-block">
       <div class="${className}-wrap">
         <table class="${className}">
+          <colgroup>
+            <col class="risk-variable-col">
+            <col span="5">
+          </colgroup>
           <thead>
             <tr class="${className}-title-row">
               <th colspan="6">Indicadores de desempenho de operação em risco estimados para o próximo ano</th>
@@ -570,7 +574,11 @@ export function generateCompleteReport(
   const selectedSections = options.sections?.length ? options.sections : ['Avaliação Completa']
   const includesEvaluation = selectedSections.includes('Avaliação Completa')
   const reportSubject = options.macroTab || 'TR-Óleo'
+  const isOilReport = reportSubject === 'TR-Óleo'
+  const isOltcReport = reportSubject === 'TR-OLTC'
+  const isOilOrOltcReport = isOilReport || isOltcReport
   const isRouteReport = options.macroTab === 'TR-Rota'
+  const usesPreventiveReliabilityTable = isOilOrOltcReport || isRouteReport
   const supplementalSections = (options.supplementalSections || [])
     .filter((section) => selectedSections.includes(section.key))
   const supplementalSectionsHtml = supplementalSections
@@ -672,12 +680,8 @@ export function generateCompleteReport(
     options.routeInspectionDate,
   )
 
-  const collectionSectionsHtml = isRouteReport
-    ? `<div class="pdf-card">
-        <div class="sec-head"><span class="sec-num">3</span>Última Coleta${options.routeInspectionDate ? ` — ${escHtml(options.routeInspectionDate)}` : ''}</div>
-        <p style="font-size:11px;color:#64748b;margin:0 0 12px">Plano de inspeção de rota (Inspeção de campo)</p>
-        ${routeInspectionHtml}
-      </div>`
+  const collectionSectionsHtml = isOilOrOltcReport || isRouteReport
+    ? ''
     : `<div class="two-col" style="margin-top:24px">
         <div class="pdf-card">
           <div class="sec-head"><span class="sec-num">3</span>Última Coleta${crom ? ` — ${escHtml(crom.date)}` : ''}</div>
@@ -900,10 +904,9 @@ ${reportMetaTags({
         <div class="kv-grid">
           <div class="kv-card"><div class="kv-label">Status Sistema</div><div class="kv-value" style="font-size:14px;color:${statusColor(trafo.status)}">${escHtml(trafo.status)}</div></div>
           <div class="kv-card"><div class="kv-label">Status Especialista</div><div class="kv-value" style="font-size:14px;color:${sFg}">${escHtml(ev.specialistStatus)}</div></div>
-          <div class="kv-card"><div class="kv-label">Estado do Óleo</div><div class="kv-value" style="font-size:13px">${escHtml(trafo.oilStatus)}</div></div>
-          ${crom ? `<div class="kv-card"><div class="kv-label">Condição TGC (IEEE)</div><div class="kv-value" style="font-size:14px;color:${condColor(ieeeCondition(crom.TGC,'TGC'))}">${ieeeCondition(crom.TGC,'TGC')}</div></div>` : ''}
+          ${isOilReport ? `<div class="kv-card"><div class="kv-label">Estado do Óleo</div><div class="kv-value" style="font-size:13px">${escHtml(trafo.oilStatus)}</div></div>` : ''}
+          ${isOilReport && crom ? `<div class="kv-card"><div class="kv-label">Condição TGC (IEEE)</div><div class="kv-value" style="font-size:14px;color:${condColor(ieeeCondition(crom.TGC,'TGC'))}">${ieeeCondition(crom.TGC,'TGC')}</div></div>` : ''}
         </div>
-        ${renderPreventiveReliabilityTable('preventive-table')}
       </div>
 
       <div class="pdf-card">
@@ -918,10 +921,11 @@ ${reportMetaTags({
       ${collectionSectionsHtml}
 
       <div class="pdf-card">
-        <div class="sec-head"><span class="sec-num">${isRouteReport ? '4' : '5'}</span>Avaliação do Risco Operacional</div>
+        <div class="sec-head"><span class="sec-num">${isOilOrOltcReport || isRouteReport ? '3' : '5'}</span>Avaliação do Risco Operacional</div>
         <p style="font-size:11px;color:#64748b;margin:0 0 12px">Probabilidade (%) de operação em cada nível de risco para o próximo ano:</p>
         ${riskDonuts}
         ${heatmapTableCompleto}
+        ${usesPreventiveReliabilityTable ? renderPreventiveReliabilityTable('preventive-table') : ''}
       </div>` : ''}
       ${supplementalSectionsHtml}
     </div>
