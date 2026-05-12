@@ -705,7 +705,7 @@ export function generateCompleteReport(
       manufacturer: { '@type': 'Organization', name: trafo.manufacturer } },
   })
 
-  const machineJson = JSON.stringify({
+  const machineData = {
     reportId, issuedAt: now.toISOString(), expiresAt: expiryDate.toISOString(), validationUrl,
     transformer: { id: trafo.id, serial: trafo.serial, tag: trafo.tag, substation: trafo.substation,
       unit: trafo.unit, status: trafo.status, statusAnalyst: ev.specialistStatus,
@@ -715,7 +715,7 @@ export function generateCompleteReport(
     riskProbabilities: risk,
     latestChromatography: crom ? { date: crom.date, H2: crom.H2, CH4: crom.CH4, C2H2: crom.C2H2,
       C2H4: crom.C2H4, C2H6: crom.C2H6, CO: crom.CO, CO2: crom.CO2, TGC: crom.TGC } : null,
-  })
+  }
 
   return `<!DOCTYPE html>
 <html lang="pt-BR">
@@ -847,9 +847,6 @@ ${reportMetaTags({
   .supp-table td { padding:7px 8px; color:#0f172a; border-bottom:1px solid #f1f5f9; vertical-align:top; }
   .supp-table tbody tr:last-child td { border-bottom:0; }
   .supp-empty { color:#94a3b8 !important; font-style:italic; text-align:center; }
-  .mdata-wrap  { border-top:1px dashed #e2e8f0; margin:0 36px; padding:10px 0 16px; }
-  .mdata-label { font-size:9px; text-transform:uppercase; letter-spacing:.08em; color:#cbd5e1; margin-bottom:3px; font-weight:700; }
-  .mdata-raw   { font-family:monospace; font-size:9px; color:#cbd5e1; word-break:break-all; line-height:1.4; }
 </style>
 </head>
 <body>
@@ -928,11 +925,6 @@ ${reportMetaTags({
         ${usesPreventiveReliabilityTable ? renderPreventiveReliabilityTable('preventive-table') : ''}
       </div>` : ''}
       ${supplementalSectionsHtml}
-    </div>
-
-    <div class="mdata-wrap">
-      <div class="mdata-label">Dados de integração (machine-readable JSON)</div>
-      <div class="mdata-raw">${escHtml(machineJson)}</div>
     </div>
 </div>
 </body>
