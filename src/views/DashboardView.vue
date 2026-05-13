@@ -307,6 +307,15 @@ const scopeTransformers = computed(() => {
     const cityId = cityNode.value?.id
     return items.filter((item) => item.cityId === cityId)
   }
+  if (mapBounds.value && mapZoom.value > 4) {
+    const bounds = mapBounds.value
+    return items.filter(
+      (item) =>
+        typeof item.lat === 'number' &&
+        typeof item.lng === 'number' &&
+        isInsideBounds(item.lat, item.lng, bounds)
+    )
+  }
   return items
 })
 
