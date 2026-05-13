@@ -13,8 +13,8 @@ import VueApexCharts from 'vue3-apexcharts'
 import type { ApexOptions } from 'apexcharts'
 import trafo3dUrl from '@/assets/Trafo_3D.svg'
 import {
-  downloadPdfFromHtml,
   generateCompleteReport,
+  printPdfFromHtml,
 } from '@/utils/reportGenerator'
 import type { ReportSectionName, ReportSupplementalSection } from '@/utils/reportGenerator'
 
@@ -258,6 +258,9 @@ const activeSubTabs = computed(() => {
     label: isTrRotaMacro.value && tab === 'Histórico de Análises' ? 'Análise de Campo' : tab,
   }))
 })
+const reportGenerationTabs = computed(() =>
+  activeSubTabs.value.filter((tab) => tab.value === 'Avaliação Completa')
+)
 
 const preventiveReliabilityRows = [
   { indicator: 'Operação (dias por ano)', n1: '0.00', n2: '18.76', n3: '194.98', n4: '151.26', n5: '0.00' },
@@ -563,13 +566,17 @@ watch(
   activeSubTabs,
   (items) => {
     const allowed = items.map((tab) => tab.value)
+    const reportAllowed = reportGenerationTabs.value.map((tab) => tab.value)
     if (!allowed.length) return
     if (!allowed.includes(activeTab.value)) {
       activeTab.value = allowed[0]!
     }
     reportSectionSelections.value = reportSectionSelections.value.filter((section) =>
-      allowed.includes(section as ReportTab)
+      reportAllowed.includes(section as ReportTab)
     )
+    if (!reportSectionSelections.value.length && reportAllowed.includes('Avaliação Completa')) {
+      reportSectionSelections.value = ['Avaliação Completa']
+    }
   },
   { immediate: true }
 )
@@ -2760,7 +2767,7 @@ function toggleGenerateReportMenu() {
 }
 
 const selectedReportSections = computed(() =>
-  activeSubTabs.value.filter((tab) => reportSectionSelections.value.includes(tab.value as ReportSectionName))
+  reportGenerationTabs.value.filter((tab) => reportSectionSelections.value.includes(tab.value as ReportSectionName))
 )
 
 const canGenerateReportFile = computed(() => reportSectionSelections.value.length > 0)
@@ -2773,6 +2780,7 @@ const sharedReportAccessMessage = computed(() => {
 })
 
 function toggleReportSectionSelection(section: ReportSectionName) {
+  if (section !== 'Avaliação Completa') return
   if (reportSectionSelections.value.includes(section)) {
     reportSectionSelections.value = reportSectionSelections.value.filter((item) => item !== section)
     return
@@ -3115,11 +3123,11 @@ async function downloadGeneratedReportPreview() {
   if (!reportPreviewHtml.value || reportPreviewGenerating.value) return
   reportPreviewGenerating.value = true
   try {
-    await downloadPdfFromHtml(reportPreviewHtml.value, reportPreviewFileName.value || 'relatorio')
+    await printPdfFromHtml(reportPreviewHtml.value, reportPreviewFileName.value || 'relatorio')
     reportPreviewOpen.value = false
   } catch (error) {
     console.error('Erro ao gerar PDF', error)
-    window.alert('Nao foi possivel gerar o PDF. Verifique se o servico Node do Puppeteer esta em execucao.')
+    window.alert('Nao foi possivel abrir a impressão do relatório. Verifique se o navegador permite janelas de impressão.')
   } finally {
     reportPreviewGenerating.value = false
   }
@@ -3170,10 +3178,10 @@ async function exportSharedReportPdf() {
   if (!html || sharedReportExporting.value) return
   sharedReportExporting.value = true
   try {
-    await downloadPdfFromHtml(html, sharedReportTitle.value || 'relatorio-compartilhado')
+    await printPdfFromHtml(html, sharedReportTitle.value || 'relatorio-compartilhado')
   } catch (error) {
     console.error('Erro ao gerar PDF compartilhado', error)
-    window.alert('Nao foi possivel gerar o PDF do link compartilhado. Verifique se o servico Node do Puppeteer esta em execucao.')
+    window.alert('Nao foi possivel abrir a impressão do relatório compartilhado. Verifique se o navegador permite janelas de impressão.')
   } finally {
     sharedReportExporting.value = false
   }
@@ -4699,24 +4707,33 @@ const riskParameterDefsOleo = [
   { key: 'C2H2', label: 'C₂H₂', tooltip: 'C₂H₂ - Acetileno' },
 ]
 const riskParameterDefsTrRota = [
-  { key: 'TEMP_OLEO', label: 'TEMP-Óleo', tooltip: 'TEMP- Óleo - Temperatura do óleo' },
-  { key: 'TEMP_ENROL', label: 'TEMP-Enrol', tooltip: 'TEMP - Enrol - Temperatura do enrolamento' },
-  { key: 'TEMP_AMB', label: 'TEMP-Amb', tooltip: 'TEMP-Amb - Temperatura ambiente' },
-  { key: 'LIMP', label: 'LIMP', tooltip: 'LIMP - Limpeza do transformador' },
-  { key: 'CORR', label: 'CORR', tooltip: 'CORR - Corrosão no transformador' },
-  { key: 'PINT', label: 'PINT', tooltip: 'PINT - Pintura do transformador' },
-  { key: 'ATERR', label: 'ATERR', tooltip: 'ATERR - Aterramento do transformador' },
-  { key: 'VAZA', label: 'VAZA', tooltip: 'VAZA - Vazamentos no transformador' },
-  { key: 'CONSER', label: 'CONSER', tooltip: 'CONSER - Conservador de óleo' },
+  { key: 'TEMP_OLEO', label: 'Temp. óleo', tooltip: 'Temperatura do óleo' },
+  { key: 'TEMP_ENROL', label: 'Temp. enrolamento', tooltip: 'Temperatura do enrolamento' },
+  { key: 'TEMP_AMB', label: 'Temp. ambiente', tooltip: 'Temperatura ambiente' },
+  { key: 'LIMP', label: 'Limpeza', tooltip: 'Limpeza do transformador' },
+  { key: 'CORR', label: 'Corrosão', tooltip: 'Corrosão no transformador' },
+  { key: 'PINT', label: 'Pintura', tooltip: 'Pintura do transformador' },
+  { key: 'ATERR', label: 'Aterramento', tooltip: 'Aterramento do transformador' },
+  { key: 'VAZA', label: 'Vazamentos', tooltip: 'Vazamentos no transformador' },
+  { key: 'CONSER', label: 'Conservador de óleo', tooltip: 'Conservador de óleo' },
   { key: 'NIVEL_OLEO', label: 'Nível de óleo', tooltip: 'Nível de óleo isolante' },
-  { key: 'SECA', label: 'SECA', tooltip: 'SECA - Secador de ar' },
-  { key: 'CONEX_AT', label: 'CONEX-AT', tooltip: 'CONEX-AT - Conexões AT' },
-  { key: 'CONEX_BT', label: 'CONEX-BT', tooltip: 'CONEX-BT - Conexões BT' },
-  { key: 'TEMP_PRIM', label: 'TEMP-Prim', tooltip: 'TEMP-Prim - Temperaturas do primário' },
-  { key: 'TEMP_SEC', label: 'TEMP-Sec', tooltip: 'TEMP-Sec - Temperaturas do secundário' },
-  { key: 'VIBRA', label: 'VIBRA', tooltip: 'VIBRA - Vibração da parte ativa' },
+  { key: 'SECA', label: 'Secador de ar', tooltip: 'Secador de ar' },
+  { key: 'CONEX_AT', label: 'Conexões AT', tooltip: 'Conexões AT' },
+  { key: 'CONEX_BT', label: 'Conexões BT', tooltip: 'Conexões BT' },
+  { key: 'TEMP_PRIM', label: 'Temp. primário', tooltip: 'Temperaturas do primário' },
+  { key: 'TEMP_SEC', label: 'Temp. secundário', tooltip: 'Temperaturas do secundário' },
+  { key: 'VIBRA', label: 'Vibração', tooltip: 'Vibração da parte ativa' },
 ]
-const riskParameterDefs = computed(() => (isTrRotaMacro.value ? riskParameterDefsTrRota : riskParameterDefsOleo))
+const riskParameterDefsOltc = [
+  { key: 'RD', label: 'RD', tooltip: 'RD - Rigidez Dielétrica' },
+  { key: 'H2O', label: 'Teor de H2O', tooltip: 'Teor de H2O - Água' },
+  { key: 'C2H4', label: 'C2H4', tooltip: 'C2H4 - Etileno' },
+]
+const riskParameterDefs = computed(() => {
+  if (isTrRotaMacro.value) return riskParameterDefsTrRota
+  if (isOltcMacro.value) return riskParameterDefsOltc
+  return riskParameterDefsOleo
+})
 
 const demoRiskHeatmapByLabelOleo: Record<string, number[]> = {
   TEMP: [0, 1, 0, 0, 0],
@@ -4752,6 +4769,11 @@ const demoRiskHeatmapByLabelTrRota: Record<string, number[]> = {
   TEMP_SEC: [0, 0, 0, 12, 0],
   VIBRA: [0, 0, 0, 26, 0],
 }
+const demoRiskHeatmapByLabelOltc: Record<string, number[]> = {
+  RD: [0, 0, 0, 55, 0],
+  H2O: [0, 12, 0, 0, 0],
+  C2H4: [0, 0, 14, 0, 0],
+}
 
 const riskHeatmapRows = computed(() => {
   const trafo = selectedTransformer.value
@@ -4760,7 +4782,11 @@ const riskHeatmapRows = computed(() => {
   const tag = String(trafo?.tag || '').toUpperCase()
   const is9701A01Demo = id.includes('9701-A01') || (tag === '9701' && serial === 'A01')
   const activeDefs = riskParameterDefs.value
-  const activeDemoValues = isTrRotaMacro.value ? demoRiskHeatmapByLabelTrRota : demoRiskHeatmapByLabelOleo
+  const activeDemoValues = isTrRotaMacro.value
+    ? demoRiskHeatmapByLabelTrRota
+    : isOltcMacro.value
+      ? demoRiskHeatmapByLabelOltc
+      : demoRiskHeatmapByLabelOleo
 
   if (is9701A01Demo) {
     return activeDefs.map((parameter) => ({
@@ -5002,7 +5028,7 @@ watch([activeTab, selectedId], async () => {
             <div v-if="generateReportMenuOpen" class="report-generate-menu">
               <p class="report-generate-menu-label">Escolha as abas do relatório</p>
               <label
-                v-for="tab in activeSubTabs"
+                v-for="tab in reportGenerationTabs"
                 :key="`report-section-${tab.value}`"
                 class="report-section-option"
               >
@@ -5898,12 +5924,20 @@ watch([activeTab, selectedId], async () => {
           </div>
           </div>
 
-          <p><b>{{ isTrRotaMacro ? 'Variáveis de inspeção de campo que levaram o transformador aos estados de risco:' : 'Variáveis do óleo que levaram o transformador aos estados de risco:' }}</b></p>
+          <p><b>{{
+            isTrRotaMacro
+              ? 'Variáveis de inspeção de campo que levaram o transformador aos estados de risco:'
+              : isOltcMacro
+                ? 'Variáveis do OLTC que levaram o transformador aos estados de risco:'
+                : 'Variáveis do óleo que levaram o transformador aos estados de risco:'
+          }}</b></p>
           <p>
             {{
               isTrRotaMacro
                 ? 'A matriz acima apresenta as variáveis de inspeção de campo que levaram o transformador a operar nas regiões de risco (N1 a N5).'
-                : 'A matrix acima apresenta as variáveis do óleo isolante que levaram o transformador a operar nas regiões de risco (N1 a N5).'
+                : isOltcMacro
+                  ? 'A matriz acima apresenta as variáveis do OLTC que levaram o transformador a operar nas regiões de risco (N1 a N5).'
+                  : 'A matrix acima apresenta as variáveis do óleo isolante que levaram o transformador a operar nas regiões de risco (N1 a N5).'
             }}
           </p>
 

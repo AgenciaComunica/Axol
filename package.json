@@ -8,9 +8,7 @@
   },
   "scripts": {
     "dev": "vite",
-    "dev:all": "run-p dev dev:pdf",
-    "dev:pdf": "node server/pdfServer.js",
-    "start": "node server/pdfServer.js",
+    "start": "vite preview --host 0.0.0.0",
     "serve": "npm run build && npm run start",
     "build": "run-p type-check \"build-only {@}\" --",
     "preview": "vite preview",
@@ -25,7 +23,6 @@
     "apexcharts": "^5.3.6",
     "maplibre-gl": "^5.16.0",
     "pinia": "^3.0.4",
-    "puppeteer": "^24.42.0",
     "three": "^0.182.0",
     "vue": "^3.5.26",
     "vue-router": "^4.6.4",
