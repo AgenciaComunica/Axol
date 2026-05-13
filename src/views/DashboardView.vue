@@ -8,7 +8,6 @@ import MapSearchBar from '@/components/MapSearchBar.vue'
 import { usePrototypeScopeStore, type MapItem } from '@/stores/prototypeScope'
 import { normalizeStatus, pickWorstStatus, getWorstStatusLabel, formatStatus, statusRank } from '@/composables/useStatusUtils'
 import transformersData from '@/assets/transformadores.json'
-import dashboardLoadData from '../../ArquivoExtRef/dashboard.json'
 type StateSelect = { name: string; sigla: string; value: number; transformers?: any[] }
 type KpiRow = {
   label: string
@@ -1519,71 +1518,6 @@ function normalizeCoordinate(value?: unknown) {
   return Number.isFinite(num) ? num : undefined
 }
 
-function mapDashboardTransformer(point: any) {
-  const firstContingency = Array.isArray(point?.contingencias) ? point.contingencias[0] : null
-  const id = String(point?.id ?? point?.serial ?? '')
-  const serial = point?.serial ? String(point.serial) : id
-  const tag = point?.tag ? String(point.tag) : ''
-  const substation = point?.subestacao ? String(point.subestacao) : 'Subestação'
-  const powerValue = point?.potencia ? Number(point.potencia) / 1000 : 0
-
-  return {
-    id: tag || serial ? `${tag || 'TR'}-${serial}` : id,
-    serial,
-    tag,
-    substation,
-    status: pickWorstStatus(point?.status, point?.estado_analista),
-    analystStatus: formatStatus(point?.estado_analista || point?.status),
-    analystNote: point?.descricao_analista,
-    analyst: point?.analista,
-    power: powerValue ? `${Number(powerValue.toFixed(2))} MVA` : '-',
-    voltage: point?.t_maior ? `${point.t_maior} kV` : '-',
-    oil: point?.oleo_fluido || '-',
-    manufacturer: point?.fabricante,
-    year: point?.ano_fabricacao,
-    commutator: point?.comutador || '-',
-    location: substation,
-    lat: normalizeCoordinate(point?.latitude),
-    lng: normalizeCoordinate(point?.longitude),
-    regionId: 'CO',
-    stateId: 'DF',
-    cityId: substation,
-    contingencySerial: firstContingency?.serial,
-    contingencyStatus: firstContingency ? pickWorstStatus(firstContingency.status, firstContingency.estado_analista) : undefined,
-    contingencySubstation: firstContingency?.subestacao,
-    contingencyPower: firstContingency?.potencia ? `${Number(firstContingency.potencia) / 1000} MVA` : undefined,
-    contingencyLat: normalizeCoordinate(firstContingency?.latitude),
-    contingencyLng: normalizeCoordinate(firstContingency?.longitude),
-  }
-}
-
-function applyDemoContingencies(transformers: ReturnType<typeof mapDashboardTransformer>[]) {
-  const bySerial = new Map(transformers.map((item) => [item.serial, item]))
-  const demoPairs = [
-    ['MN458-TRF-01', 'MN458-TRF-09'],
-    ['MN458-TRF-02', 'MN458-TRF-10'],
-    ['MI060-TRF-01', 'MI060-TRF-08'],
-    ['PC402-TRF-01', 'PC402-TRF-10'],
-  ]
-
-  demoPairs.forEach(([principalSerial, contingencySerial]) => {
-    const principal = bySerial.get(principalSerial)
-    const contingency = bySerial.get(contingencySerial)
-    if (!principal || !contingency) return
-    if (typeof contingency.lat !== 'number' || typeof contingency.lng !== 'number') return
-
-    principal.status = pickWorstStatus(principal.status, 'Crítico')
-    principal.contingencySerial = contingency.serial
-    principal.contingencyStatus = contingency.status
-    principal.contingencySubstation = contingency.substation
-    principal.contingencyPower = contingency.power
-    principal.contingencyLat = contingency.lat
-    principal.contingencyLng = contingency.lng
-  })
-
-  return transformers
-}
-
 const displayWorstStatus = computed(() => {
   const transformers = displayInfo.value?.transformers
   if (!transformers?.length) return ''
@@ -1626,7 +1560,6 @@ onMounted(async () => {
     }
   }
   const rawSubstations = (transformersData as any)?.subestacoes || []
-  const dashboardPoints = (dashboardLoadData as any)?.data?.map_points || []
   const baseTransformers = [
     {
       id: 'MG-9701-A01',
@@ -1776,14 +1709,12 @@ onMounted(async () => {
       contingencyLng: normalizeCoordinate(trafo?.CONTINGENCIA?.LONGITUDE),
     }))
   })
-  const dashboardTransformers = applyDemoContingencies(dashboardPoints.map(mapDashboardTransformer))
   console.info('[dashboard] simulated transformer load', {
-    dashboard: dashboardTransformers.length,
     json: jsonTransformers.length,
     base: baseTransformers.length,
-    total: baseTransformers.length + dashboardTransformers.length + jsonTransformers.length,
+    total: baseTransformers.length + jsonTransformers.length,
   })
-  transformerOptions.value = [...baseTransformers, ...dashboardTransformers, ...jsonTransformers]
+  transformerOptions.value = [...baseTransformers, ...jsonTransformers]
 })
 
 onBeforeUnmount(() => {
