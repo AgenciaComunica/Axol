@@ -13,8 +13,8 @@ import VueApexCharts from 'vue3-apexcharts'
 import type { ApexOptions } from 'apexcharts'
 import trafo3dUrl from '@/assets/Trafo_3D.svg'
 import {
-  downloadPdfFromHtml,
   generateCompleteReport,
+  printPdfFromHtml,
 } from '@/utils/reportGenerator'
 import type { ReportSectionName, ReportSupplementalSection } from '@/utils/reportGenerator'
 
@@ -3123,11 +3123,11 @@ async function downloadGeneratedReportPreview() {
   if (!reportPreviewHtml.value || reportPreviewGenerating.value) return
   reportPreviewGenerating.value = true
   try {
-    await downloadPdfFromHtml(reportPreviewHtml.value, reportPreviewFileName.value || 'relatorio')
+    await printPdfFromHtml(reportPreviewHtml.value, reportPreviewFileName.value || 'relatorio')
     reportPreviewOpen.value = false
   } catch (error) {
     console.error('Erro ao gerar PDF', error)
-    window.alert('Nao foi possivel gerar o PDF. Verifique se o servico Node do Puppeteer esta em execucao.')
+    window.alert('Nao foi possivel abrir a impressão do relatório. Verifique se o navegador permite janelas de impressão.')
   } finally {
     reportPreviewGenerating.value = false
   }
@@ -3178,10 +3178,10 @@ async function exportSharedReportPdf() {
   if (!html || sharedReportExporting.value) return
   sharedReportExporting.value = true
   try {
-    await downloadPdfFromHtml(html, sharedReportTitle.value || 'relatorio-compartilhado')
+    await printPdfFromHtml(html, sharedReportTitle.value || 'relatorio-compartilhado')
   } catch (error) {
     console.error('Erro ao gerar PDF compartilhado', error)
-    window.alert('Nao foi possivel gerar o PDF do link compartilhado. Verifique se o servico Node do Puppeteer esta em execucao.')
+    window.alert('Nao foi possivel abrir a impressão do relatório compartilhado. Verifique se o navegador permite janelas de impressão.')
   } finally {
     sharedReportExporting.value = false
   }

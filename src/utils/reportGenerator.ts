@@ -315,32 +315,172 @@ ${qrUrl ? `<meta name="report-qr-url" content="${escAttr(qrUrl)}">` : ''}
 ${analyst ? `<meta name="report-analyst" content="${escAttr(analyst)}">` : ''}`.trim()
 }
 
-export async function downloadPdfFromHtml(
+function waitForFrameLoad(frame: HTMLIFrameElement): Promise<void> {
+  return new Promise((resolve) => {
+    frame.addEventListener('load', () => resolve(), { once: true })
+    window.setTimeout(resolve, 800)
+  })
+}
+
+async function waitForPrintableAssets(doc: Document): Promise<void> {
+  const fonts = doc.fonts?.ready.catch(() => undefined) || Promise.resolve()
+  const images = Array.from(doc.images)
+    .filter((image) => !image.complete)
+    .map((image) => new Promise<void>((resolve) => {
+      image.addEventListener('load', () => resolve(), { once: true })
+      image.addEventListener('error', () => resolve(), { once: true })
+    }))
+
+  await Promise.race([
+    Promise.all([fonts, ...images]),
+    new Promise((resolve) => window.setTimeout(resolve, 1600)),
+  ])
+}
+
+function mmToPx(doc: Document, mm: number): number {
+  const marker = doc.createElement('div')
+  marker.style.position = 'absolute'
+  marker.style.visibility = 'hidden'
+  marker.style.height = `${mm}mm`
+  doc.body.appendChild(marker)
+  const px = marker.getBoundingClientRect().height
+  marker.remove()
+  return px || mm * 3.78
+}
+
+async function resolvePrintImageUrl(url: string): Promise<string> {
+  if (!url || url.startsWith('data:')) return url
+  try {
+    const response = await fetch(url)
+    if (!response.ok) return url
+    const contentType = response.headers.get('content-type') || ''
+    if (contentType.includes('svg') || url.toLowerCase().endsWith('.svg')) {
+      const svg = await response.text()
+      return `data:image/svg+xml;charset=utf-8,${encodeURIComponent(svg)}`
+    }
+    const blob = await response.blob()
+    return await new Promise((resolve) => {
+      const reader = new FileReader()
+      reader.onloadend = () => resolve(String(reader.result || url))
+      reader.onerror = () => resolve(url)
+      reader.readAsDataURL(blob)
+    })
+  } catch {
+    return url
+  }
+}
+
+async function prepareNativePrintPagination(doc: Document): Promise<void> {
+  const content = doc.querySelector<HTMLElement>('.content')
+  if (!content) return
+
+  doc.querySelector('.native-print-pages')?.remove()
+  doc.querySelector('.native-print-header')?.remove()
+  doc.querySelector('.native-print-footer')?.remove()
+
+  const meta = (name: string) => doc.querySelector<HTMLMetaElement>(`meta[name="${name}"]`)?.content || ''
+  const logoUrl = meta('report-logo-url')
+  const qrUrl = await resolvePrintImageUrl(meta('report-qr-url'))
+  const title = meta('report-title') || doc.title || 'Relatório Técnico'
+  const eyebrow = meta('report-eyebrow') || 'Sistema SIARO - Axol Engenharia'
+  const reportId = meta('report-id') || '-'
+  const issuedAt = meta('report-issued-label')
+  const expiry = meta('report-expiry-label')
+  const validationUrl = meta('report-validation-url')
+  const analyst = meta('report-analyst')
+
+  const header = doc.createElement('header')
+  header.className = 'native-print-header'
+  header.innerHTML = `
+    <div class="native-print-topbar"></div>
+    <div class="native-print-header-row">
+      <div class="native-print-logo">${logoUrl ? `<img src="${escAttr(logoUrl)}" alt="Logo">` : 'SIARO - Axol Engenharia'}</div>
+      <div class="native-print-title">
+        <div>${escHtml(eyebrow)}</div>
+        <strong>${escHtml(title)}</strong>
+      </div>
+      <div class="native-print-meta">
+        <span>Relatório</span>
+        <strong>${escHtml(reportId)}</strong>
+        ${issuedAt ? `<small>Emitido em ${escHtml(issuedAt)}</small>` : ''}
+        ${expiry ? `<small>${escHtml(expiry)}</small>` : ''}
+      </div>
+    </div>
+  `
+
+  const footer = doc.createElement('footer')
+  footer.className = 'native-print-footer'
+  footer.innerHTML = `
+    <div class="native-print-footer-body">
+      <div class="native-print-qr">${qrUrl ? `<img src="${escAttr(qrUrl)}" alt="QR">` : ''}</div>
+      <div>
+        <div>SIARO - Axol Engenharia</div>
+        ${analyst ? `<small>Analista: ${escHtml(analyst)}</small>` : ''}
+        ${validationUrl ? `<small>${escHtml(validationUrl)}</small>` : ''}
+      </div>
+    </div>
+    <div class="native-print-footer-stripe"></div>
+  `
+  doc.body.prepend(header)
+  doc.body.appendChild(footer)
+
+  const pageHeight = mmToPx(doc, 297)
+  const usableHeight = pageHeight - mmToPx(doc, 58)
+  const sections = Array.from(doc.querySelectorAll<HTMLElement>('.content > .pdf-card, .content > .two-col, .content > .supplemental-card'))
+  let pageStart = 0
+
+  sections.forEach((section) => section.classList.remove('print-page-break-before'))
+  sections.forEach((section) => {
+    const top = section.offsetTop
+    const height = section.offsetHeight
+    if (top - pageStart > 0 && top + height - pageStart > usableHeight && height < usableHeight) {
+      section.classList.add('print-page-break-before')
+      pageStart = top
+    }
+  })
+}
+
+export async function printPdfFromHtml(
   html: string,
   fileName = 'relatorio.pdf',
-  endpoint = '/generate-pdf',
 ): Promise<void> {
-  const response = await fetch(endpoint, {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ html }),
-  })
+  const normalizedName = sanitizeFileName(fileName) || 'relatorio'
+  const frame = document.createElement('iframe')
+  frame.setAttribute('title', 'Impressão do relatório')
+  frame.style.position = 'fixed'
+  frame.style.right = '0'
+  frame.style.bottom = '0'
+  frame.style.width = '210mm'
+  frame.style.height = '297mm'
+  frame.style.border = '0'
+  frame.style.opacity = '0'
+  frame.style.pointerEvents = 'none'
+  document.body.appendChild(frame)
 
-  if (!response.ok) {
-    const message = await response.text()
-    throw new Error(message || 'Falha ao gerar PDF')
+  const cleanup = () => {
+    window.setTimeout(() => frame.remove(), 600)
   }
 
-  const blob = await response.blob()
-  const url = window.URL.createObjectURL(blob)
-  const anchor = document.createElement('a')
-  anchor.href = url
-  const normalizedName = sanitizeFileName(fileName) || 'relatorio'
-  anchor.download = normalizedName.endsWith('.pdf') ? normalizedName : `${normalizedName}.pdf`
-  document.body.appendChild(anchor)
-  anchor.click()
-  anchor.remove()
-  window.URL.revokeObjectURL(url)
+  try {
+    const doc = frame.contentDocument
+    if (!doc) throw new Error('Não foi possível preparar a impressão do relatório.')
+    doc.open()
+    doc.write(html.replace(/<title>.*?<\/title>/i, `<title>${escHtml(normalizedName)}</title>`))
+    doc.close()
+    await waitForFrameLoad(frame)
+    await waitForPrintableAssets(doc)
+    await prepareNativePrintPagination(doc)
+
+    const printWindow = frame.contentWindow
+    if (!printWindow) throw new Error('Não foi possível abrir a impressão do relatório.')
+    printWindow.addEventListener('afterprint', cleanup, { once: true })
+    printWindow.focus()
+    printWindow.print()
+    window.setTimeout(cleanup, 3000)
+  } catch (error) {
+    cleanup()
+    throw error
+  }
 }
 
 // ─── CSS shared ─────────────────────────────────────────────────────────────
@@ -578,7 +718,7 @@ export function generateCompleteReport(
   const isOltcReport = reportSubject === 'TR-OLTC'
   const isOilOrOltcReport = isOilReport || isOltcReport
   const isRouteReport = options.macroTab === 'TR-Rota'
-  const usesPreventiveReliabilityTable = isOilOrOltcReport || isRouteReport
+  const preventiveReliabilityHtml = renderPreventiveReliabilityTable('preventive-table')
   const supplementalSections = (options.supplementalSections || [])
     .filter((section) => selectedSections.includes(section.key))
   const supplementalSectionsHtml = supplementalSections
@@ -847,6 +987,42 @@ ${reportMetaTags({
   .supp-table td { padding:7px 8px; color:#0f172a; border-bottom:1px solid #f1f5f9; vertical-align:top; }
   .supp-table tbody tr:last-child td { border-bottom:0; }
   .supp-empty { color:#94a3b8 !important; font-style:italic; text-align:center; }
+  .native-print-pages,
+  .native-print-header,
+  .native-print-footer { display:none; }
+  @media print {
+    @page { size:A4; margin:0; }
+    html, body { width:210mm; margin:0 !important; padding:0 !important; background:#fff !important; -webkit-print-color-adjust:exact; print-color-adjust:exact; }
+    .rpt { max-width:none; width:210mm; margin:0; padding:30mm 10mm 18mm; }
+    .watermark { position:fixed; inset:0; }
+    .native-print-pages { display:none !important; }
+    .native-print-header { display:block; position:fixed; top:0; left:0; right:0; height:24mm; background:#fff; z-index:20; }
+    .native-print-topbar { height:6mm; background:#1a3a5c; }
+    .native-print-header-row { height:18mm; display:grid; grid-template-columns:38mm 1fr 45mm; align-items:center; gap:5mm; padding:2mm 10mm 0; border-bottom:1px solid #cbd5e1; font-size:9px; color:#0f172a; }
+    .native-print-logo { font-weight:700; color:#0f172a; }
+    .native-print-logo img { max-width:34mm; max-height:13mm; object-fit:contain; display:block; }
+    .native-print-title { text-align:center; color:#64748b; text-transform:uppercase; letter-spacing:.08em; font-size:7px; }
+    .native-print-title strong { display:block; color:#0f172a; text-transform:none; letter-spacing:0; font-size:13px; line-height:1.2; margin-top:1mm; }
+    .native-print-meta { text-align:right; color:#64748b; font-size:7px; text-transform:uppercase; letter-spacing:.08em; }
+    .native-print-meta strong { display:block; color:#0f172a; font-family:monospace; font-size:9px; letter-spacing:0; margin-top:1mm; }
+    .native-print-meta small { display:block; color:#64748b; text-transform:none; letter-spacing:0; font-size:7px; margin-top:.5mm; }
+    .native-print-footer { display:block; position:fixed; left:0; right:0; bottom:0; min-height:18mm; z-index:20; font-size:8px; color:#475569; }
+    .native-print-footer-body { margin:0 10mm 3mm; border-top:1px solid #cbd5e1; padding-top:2mm; display:grid; grid-template-columns:14mm 1fr 14mm; align-items:center; text-align:center; gap:4mm; }
+    .native-print-footer-stripe { height:6mm; background:#F5B800; -webkit-print-color-adjust:exact; print-color-adjust:exact; }
+    .native-print-footer small { display:block; color:#64748b; font-size:7px; margin-top:.5mm; }
+    .native-print-qr img { width:10mm; height:10mm; object-fit:contain; display:block; background:#fff; }
+    .print-page-break-before { break-before:page; page-break-before:always; padding-top:30mm; }
+    .hband { break-inside:avoid; page-break-inside:avoid; }
+    .content { padding:8mm 0 0; }
+    .sec-head:first-child { margin-top:0; }
+    .pdf-card,
+    .two-col,
+    .supplemental-card,
+    tr,
+    .risk-row,
+    .route-report-section,
+    .supp-diagram-card { break-inside:avoid; page-break-inside:avoid; }
+  }
 </style>
 </head>
 <body>
@@ -922,8 +1098,9 @@ ${reportMetaTags({
         <p style="font-size:11px;color:#64748b;margin:0 0 12px">Probabilidade (%) de operação em cada nível de risco para o próximo ano:</p>
         ${riskDonuts}
         ${heatmapTableCompleto}
-        ${usesPreventiveReliabilityTable ? renderPreventiveReliabilityTable('preventive-table') : ''}
-      </div>` : ''}
+        ${isOilOrOltcReport ? preventiveReliabilityHtml : ''}
+      </div>
+      ${isRouteReport ? `<div class="pdf-card route-preventive-card print-page-break-before">${preventiveReliabilityHtml}</div>` : ''}` : ''}
       ${supplementalSectionsHtml}
     </div>
 </div>
