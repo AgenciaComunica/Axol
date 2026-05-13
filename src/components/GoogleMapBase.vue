@@ -81,6 +81,7 @@ function createMarkerContent(
   wrapper.appendChild(icon)
   wrapper.appendChild(badge)
   wrapper.addEventListener('mouseenter', onEnter)
+  wrapper.addEventListener('mousemove', onEnter)
   wrapper.addEventListener('mouseleave', onLeave)
   ;(wrapper as any).__badgeEl = badge
   return wrapper
@@ -180,6 +181,10 @@ function handleHover(marker: MapMarker, event?: any) {
     emit('markerHover', { id: marker.id, clientX: domEvent.clientX, clientY: domEvent.clientY })
     return
   }
+  if (event?.clientX !== undefined && event?.clientY !== undefined) {
+    emit('markerHover', { id: marker.id, clientX: event.clientX, clientY: event.clientY })
+    return
+  }
   const fallback = getClientPosition(marker.position.lat, marker.position.lng)
   if (fallback) {
     emit('markerHover', { id: marker.id, clientX: fallback.clientX, clientY: fallback.clientY })
@@ -225,6 +230,7 @@ function syncMarkers() {
     ;(instance as any).__markerId = marker.id
     instance.addListener('click', () => emit('markerClick', marker.id))
     instance.addListener('mouseover', (event: any) => handleHover(marker, event))
+    instance.addListener('mousemove', (event: any) => handleHover(marker, event))
     instance.addListener('mouseout', () => emit('markerLeave', marker.id))
     return instance
   })

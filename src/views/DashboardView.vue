@@ -685,10 +685,7 @@ function handleMarkerHover(payload: { id: string; clientX: number; clientY: numb
   if (!transformer) return
   const rect = mapShellRef.value?.getBoundingClientRect()
   if (!rect) return
-  const isLocal = payload.clientX <= rect.width && payload.clientY <= rect.height
-  const clientX = isLocal ? rect.left + payload.clientX : payload.clientX
-  const clientY = isLocal ? rect.top + payload.clientY : payload.clientY
-  hoverPos.value = { x: clientX - rect.left, y: clientY - rect.top }
+  hoverPos.value = { x: payload.clientX - rect.left, y: payload.clientY - rect.top }
   mapShellOffset.value = { x: rect.left, y: rect.top }
   hoverInfo.value = {
     name: transformer.substation || transformer.location || transformer.id,
@@ -696,8 +693,6 @@ function handleMarkerHover(payload: { id: string; clientX: number; clientY: numb
     value: 0,
     transformers: [transformer],
   }
-  hoverPos.value = { x: payload.clientX - rect.left, y: payload.clientY - rect.top }
-  mapShellOffset.value = { x: rect.left, y: rect.top }
   drawContingencyRoute(transformer)
 }
 
@@ -1385,12 +1380,30 @@ const displayPos = computed(() =>
   pinnedInfo.value && pinnedPos.value ? pinnedPos.value : hoverPos.value
 )
 const mapHoverStyle = computed(() => {
+  const gap = 8
+  const margin = 8
+  const cardWidth = 320
+  const cardHeight = displayInfo.value?.transformers && displayInfo.value.transformers.length > 1 ? 380 : 250
+  const viewportWidth = typeof window !== 'undefined' ? window.innerWidth : 1280
+  const viewportHeight = typeof window !== 'undefined' ? window.innerHeight : 720
+  const anchorX = mapShellOffset.value.x + displayPos.value.x
+  const anchorY = mapShellOffset.value.y + displayPos.value.y
+  const canOpenRight = anchorX + gap + cardWidth <= viewportWidth - margin
+  const canOpenAbove = anchorY - gap - cardHeight >= margin
+  const canOpenBelow = anchorY + gap + cardHeight <= viewportHeight - margin
+  const x = canOpenRight
+    ? Math.max(margin, anchorX + gap)
+    : Math.min(viewportWidth - margin, anchorX - gap)
+  const y = canOpenAbove
+    ? Math.min(viewportHeight - margin, anchorY - gap)
+    : Math.max(margin, Math.min(anchorY + gap, viewportHeight - margin))
+
   return {
-    left: '50%',
+    left: `${x}px`,
+    top: `${y}px`,
     right: 'auto',
-    top: 'auto',
-    bottom: '32px',
-    transform: 'translateX(-50%)',
+    bottom: 'auto',
+    transform: `translate(${canOpenRight ? '0' : '-100%'}, ${canOpenAbove ? '-100%' : '0'})`,
   }
 })
 const isLogoHidden = computed(() => mapZoom.value >= logoHideZoom)
