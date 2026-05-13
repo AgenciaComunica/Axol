@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { computed, nextTick, onMounted, ref, shallowRef, toRaw, watch } from 'vue'
+import { computed, nextTick, onBeforeUnmount, onMounted, ref, shallowRef, toRaw, watch } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import SideMenu from '@/components/SideMenu.vue'
 import GoogleMapBase from '@/components/GoogleMapBase.vue'
@@ -8,6 +8,7 @@ import MapSearchBar from '@/components/MapSearchBar.vue'
 import { usePrototypeScopeStore, type MapItem } from '@/stores/prototypeScope'
 import { normalizeStatus, pickWorstStatus, getWorstStatusLabel, formatStatus, statusRank } from '@/composables/useStatusUtils'
 import transformersData from '@/assets/transformadores.json'
+import dashboardLoadData from '../../ArquivoExtRef/dashboard.json'
 type StateSelect = { name: string; sigla: string; value: number; transformers?: any[] }
 type KpiRow = {
   label: string
@@ -138,9 +139,9 @@ const selectedSubstation = ref<string | null>(null)
 const searchPolygonActive = ref(false)
 const searchPolygonGeojson = ref<any | null>(null)
 const searchPolygons = ref<{ outer: { lat: number; lng: number }[]; holes: { lat: number; lng: number }[][] }[]>([])
-const centralViewportFactor = 0.6
 const substationZoomThreshold = 7
 const logoHideZoom = 5
+let mapBoundsTimer: number | null = null
 
 const stateOptions: MapItem[] = [
   { id: 'AC', name: 'Acre', qty: 1 },
@@ -258,17 +259,24 @@ function isPointInsideSearchPolygon(lat: number, lng: number) {
   })
 }
 
-function getCentralBounds(bounds: { north: number; south: number; east: number; west: number }, factor: number) {
-  const centerLat = (bounds.north + bounds.south) / 2
-  const centerLng = (bounds.east + bounds.west) / 2
-  const latSpan = (bounds.north - bounds.south) * factor
-  const lngSpan = (bounds.east - bounds.west) * factor
-  return {
-    north: centerLat + latSpan / 2,
-    south: centerLat - latSpan / 2,
-    east: centerLng + lngSpan / 2,
-    west: centerLng - lngSpan / 2,
-  }
+const searchPolygonBounds = computed(() => {
+  if (!searchPolygonActive.value || !searchPolygons.value.length) return null
+  return searchPolygons.value.reduce(
+    (bounds, polygon) => {
+      polygon.outer.forEach((point) => {
+        bounds.north = Math.max(bounds.north, point.lat)
+        bounds.south = Math.min(bounds.south, point.lat)
+        bounds.east = Math.max(bounds.east, point.lng)
+        bounds.west = Math.min(bounds.west, point.lng)
+      })
+      return bounds
+    },
+    { north: -Infinity, south: Infinity, east: -Infinity, west: Infinity }
+  )
+})
+
+function isInsideBounds(lat: number, lng: number, bounds: { north: number; south: number; east: number; west: number }) {
+  return lat <= bounds.north && lat >= bounds.south && lng <= bounds.east && lng >= bounds.west
 }
 
 const scopeTransformers = computed(() => {
@@ -281,12 +289,12 @@ const scopeTransformers = computed(() => {
     return items.filter((item) => item.substation?.toLowerCase() === selectedSubstation.value?.toLowerCase())
   }
   if (searchPolygonActive.value) {
-    return items.filter(
-      (item) =>
-        typeof item.lat === 'number' &&
-        typeof item.lng === 'number' &&
-        isPointInsideSearchPolygon(item.lat, item.lng)
-    )
+    const polygonBounds = searchPolygonBounds.value
+    return items.filter((item) => {
+      if (typeof item.lat !== 'number' || typeof item.lng !== 'number') return false
+      if (polygonBounds && !isInsideBounds(item.lat, item.lng, polygonBounds)) return false
+      return isPointInsideSearchPolygon(item.lat, item.lng)
+    })
   }
   if (store.level === 'regiao') {
     const regionId = store.current.id
@@ -300,32 +308,76 @@ const scopeTransformers = computed(() => {
     const cityId = cityNode.value?.id
     return items.filter((item) => item.cityId === cityId)
   }
-  if (!mapBounds.value || mapZoom.value <= 4) {
-    return items
+  return items
+})
+
+function createStatusBuckets() {
+  return { Normal: 0, Alerta: 0, Critico: 0 }
+}
+
+const scopeMetrics = computed(() => {
+  const statusCounts = createStatusBuckets()
+  const powerStatusBands = {
+    high: createStatusBuckets(),
+    mid: createStatusBuckets(),
+    low: createStatusBuckets(),
   }
-  const central = getCentralBounds(mapBounds.value, centralViewportFactor)
-  return items.filter(
-    (item) =>
-      typeof item.lat === 'number' &&
-      typeof item.lng === 'number' &&
-      item.lat <= central.north &&
-      item.lat >= central.south &&
-      item.lng <= central.east &&
-      item.lng >= central.west
-  )
+  const voltageStatusBands = {
+    high: createStatusBuckets(),
+    mid: createStatusBuckets(),
+    low: createStatusBuckets(),
+  }
+  const oilBands = { adequado: 0, reclass: 0, regenera: 0 }
+  let powerSum = 0
+  let powerCount = 0
+  let voltageSum = 0
+  let voltageCount = 0
+
+  scopeTransformers.value.forEach((item) => {
+    const status = normalizeStatus(item.status) as keyof typeof statusRank
+    statusCounts[status] += 1
+
+    const power = parseNumeric(item.power)
+    if (power > 0) {
+      powerSum += power
+      powerCount += 1
+      if (power >= 50) powerStatusBands.high[status] += 1
+      else if (power > 30) powerStatusBands.mid[status] += 1
+      else powerStatusBands.low[status] += 1
+    }
+
+    const voltage = parseNumeric(item.voltage)
+    if (voltage > 0) {
+      voltageSum += voltage
+      voltageCount += 1
+      if (voltage >= 230) voltageStatusBands.high[status] += 1
+      else if (voltage > 69) voltageStatusBands.mid[status] += 1
+      else voltageStatusBands.low[status] += 1
+    }
+
+    const oil = item.oil?.toLowerCase() || ''
+    if (oil.includes('adequ')) oilBands.adequado += 1
+    else if (oil.includes('reclass')) oilBands.reclass += 1
+    else if (oil.includes('regener')) oilBands.regenera += 1
+  })
+
+  return {
+    total: scopeTransformers.value.length,
+    statusCounts,
+    powerAvg: powerCount ? powerSum / powerCount : 0,
+    voltageAvg: voltageCount ? voltageSum / voltageCount : 0,
+    powerStatusBands,
+    voltageStatusBands,
+    oilBands,
+  }
 })
 
 const statusCounts = computed(() => {
-  const counts = { Normal: 0, Alerta: 0, Critico: 0 }
-  scopeTransformers.value.forEach((item) => {
-    const normalized = normalizeStatus(item.status)
-    counts[normalized as keyof typeof counts] += 1
-  })
-  return counts
+  return scopeMetrics.value.statusCounts
 })
 
 const statusPercents = computed(() => {
-  const total = scopeTransformers.value.length || 1
+  const total = scopeMetrics.value.total || 1
   return {
     Normal: (statusCounts.value.Normal / total) * 100,
     Alerta: (statusCounts.value.Alerta / total) * 100,
@@ -361,66 +413,13 @@ const statusChart = computed(() => ({
 }))
 
 const kpiCards = computed<KpiCard[]>(() => {
-  const total = scopeTransformers.value.length
-  const powerValues = scopeTransformers.value.map((item) => parseNumeric(item.power)).filter((v) => v > 0)
-  const voltageValues = scopeTransformers.value.map((item) => parseNumeric(item.voltage)).filter((v) => v > 0)
-  const powerAvg = powerValues.length
-    ? powerValues.reduce((acc, v) => acc + v, 0) / powerValues.length
-    : 0
-  const voltageAvg = voltageValues.length
-    ? voltageValues.reduce((acc, v) => acc + v, 0) / voltageValues.length
-    : 0
-
-  const powerBands = { low: 0, mid: 0, high: 0 }
-  powerValues.forEach((value) => {
-    if (value <= 30) powerBands.low += 1
-    else if (value < 50) powerBands.mid += 1
-    else powerBands.high += 1
-  })
-
-  const powerStatusBands = {
-    high: { Normal: 0, Alerta: 0, Critico: 0 },
-    mid: { Normal: 0, Alerta: 0, Critico: 0 },
-    low: { Normal: 0, Alerta: 0, Critico: 0 },
-  }
-  scopeTransformers.value.forEach((item) => {
-    const power = parseNumeric(item.power)
-    const status = normalizeStatus(item.status) as keyof typeof statusRank
-    if (!power) return
-    if (power >= 50) powerStatusBands.high[status] += 1
-    else if (power > 30) powerStatusBands.mid[status] += 1
-    else powerStatusBands.low[status] += 1
-  })
-
-  const voltageBands = { low: 0, mid: 0, high: 0 }
-  voltageValues.forEach((value) => {
-    if (value <= 69) voltageBands.low += 1
-    else if (value < 230) voltageBands.mid += 1
-    else voltageBands.high += 1
-  })
-  const voltageStatusBands = {
-    high: { Normal: 0, Alerta: 0, Critico: 0 },
-    mid: { Normal: 0, Alerta: 0, Critico: 0 },
-    low: { Normal: 0, Alerta: 0, Critico: 0 },
-  }
-  scopeTransformers.value.forEach((item) => {
-    const voltage = parseNumeric(item.voltage)
-    const status = normalizeStatus(item.status) as keyof typeof statusRank
-    if (!voltage) return
-    if (voltage >= 230) voltageStatusBands.high[status] += 1
-    else if (voltage > 69) voltageStatusBands.mid[status] += 1
-    else voltageStatusBands.low[status] += 1
-  })
-
-  const oilBands = { adequado: 0, reclass: 0, regenera: 0 }
-  scopeTransformers.value.forEach((item) => {
-    const oil = item.oil?.toLowerCase() || ''
-    if (oil.includes('adequ')) oilBands.adequado += 1
-    else if (oil.includes('reclass')) oilBands.reclass += 1
-    else if (oil.includes('regener')) oilBands.regenera += 1
-  })
-
-  const pct = (count: number) => (total ? Math.round((count / total) * 100) : 0)
+  const {
+    total,
+    powerAvg,
+    voltageAvg,
+    powerStatusBands,
+    voltageStatusBands,
+  } = scopeMetrics.value
 
   return [
     {
@@ -686,10 +685,7 @@ function handleMarkerHover(payload: { id: string; clientX: number; clientY: numb
   if (!transformer) return
   const rect = mapShellRef.value?.getBoundingClientRect()
   if (!rect) return
-  const isLocal = payload.clientX <= rect.width && payload.clientY <= rect.height
-  const clientX = isLocal ? rect.left + payload.clientX : payload.clientX
-  const clientY = isLocal ? rect.top + payload.clientY : payload.clientY
-  hoverPos.value = { x: clientX - rect.left, y: clientY - rect.top }
+  hoverPos.value = { x: payload.clientX - rect.left, y: payload.clientY - rect.top }
   mapShellOffset.value = { x: rect.left, y: rect.top }
   hoverInfo.value = {
     name: transformer.substation || transformer.location || transformer.id,
@@ -697,8 +693,6 @@ function handleMarkerHover(payload: { id: string; clientX: number; clientY: numb
     value: 0,
     transformers: [transformer],
   }
-  hoverPos.value = { x: payload.clientX - rect.left, y: payload.clientY - rect.top }
-  mapShellOffset.value = { x: rect.left, y: rect.top }
   drawContingencyRoute(transformer)
 }
 
@@ -729,6 +723,14 @@ function handleMapInteraction() {
     hoverInfo.value = null
     clearRoute()
   }
+}
+
+function handleBoundsUpdate(bounds: typeof mapBounds.value) {
+  if (mapBoundsTimer) window.clearTimeout(mapBoundsTimer)
+  mapBoundsTimer = window.setTimeout(() => {
+    mapBounds.value = bounds
+    mapBoundsTimer = null
+  }, 150)
 }
 
 function handleMarkerLeave(id: string) {
@@ -1170,12 +1172,45 @@ function drawContingencyRoute(
     : `${transformer.id}:${reverseMatch!.id}`
   if (lastRouteKey.value === key && routePolyline.value) return
   lastRouteKey.value = key
+
+  const drawPath = (path: any[]) => {
+    if (options.pinned) {
+      const existing = pinnedRouteOverlays.value.get(key)
+      if (existing) {
+        const raw = toRaw(existing)
+        raw?.setMap?.(map)
+        return
+      }
+      const pinnedPolyline = new googleMaps.Polyline({
+        path,
+        strokeColor: '#1e4e8b',
+        strokeOpacity: 0.9,
+        strokeWeight: 4,
+        map,
+      })
+      pinnedRouteOverlays.value.set(key, pinnedPolyline)
+      return
+    }
+    if (routePolyline.value) {
+      const raw = toRaw(routePolyline.value)
+      raw?.setMap?.(null)
+    }
+    routePolyline.value = new googleMaps.Polyline({
+      path,
+      strokeColor: '#1e4e8b',
+      strokeOpacity: 0.9,
+      strokeWeight: 4,
+      map,
+    })
+  }
+
   if (options.pinned && pinnedRouteOverlays.value.has(key)) {
     const existing = pinnedRouteOverlays.value.get(key)
     const raw = toRaw(existing)
     raw?.setMap?.(map)
     return
   }
+
   directionsService.value.route(
     {
       origin: routeOrigin,
@@ -1184,32 +1219,16 @@ function drawContingencyRoute(
     },
     (result: any, status: string) => {
       if (status !== 'OK' || !result?.routes?.length) {
-        clearRoute()
+        console.warn('[route] directions unavailable', {
+          status,
+          origin: routeOrigin,
+          destination: routeDestination,
+          transformer: transformer.id,
+        })
         return
       }
       const path = result.routes[0].overview_path
-      if (options.pinned) {
-        const pinnedPolyline = new googleMaps.Polyline({
-          path,
-          strokeColor: '#1e4e8b',
-          strokeOpacity: 0.9,
-          strokeWeight: 4,
-          map,
-        })
-        pinnedRouteOverlays.value.set(key, pinnedPolyline)
-        return
-      }
-      if (routePolyline.value) {
-        const raw = toRaw(routePolyline.value)
-        raw?.setMap?.(null)
-      }
-      routePolyline.value = new googleMaps.Polyline({
-        path,
-        strokeColor: '#1e4e8b',
-        strokeOpacity: 0.9,
-        strokeWeight: 4,
-        map,
-      })
+      drawPath(path)
     }
   )
 }
@@ -1361,12 +1380,30 @@ const displayPos = computed(() =>
   pinnedInfo.value && pinnedPos.value ? pinnedPos.value : hoverPos.value
 )
 const mapHoverStyle = computed(() => {
+  const gap = 8
+  const margin = 8
+  const cardWidth = 320
+  const cardHeight = displayInfo.value?.transformers && displayInfo.value.transformers.length > 1 ? 380 : 250
+  const viewportWidth = typeof window !== 'undefined' ? window.innerWidth : 1280
+  const viewportHeight = typeof window !== 'undefined' ? window.innerHeight : 720
+  const anchorX = mapShellOffset.value.x + displayPos.value.x
+  const anchorY = mapShellOffset.value.y + displayPos.value.y
+  const canOpenRight = anchorX + gap + cardWidth <= viewportWidth - margin
+  const canOpenAbove = anchorY - gap - cardHeight >= margin
+  const canOpenBelow = anchorY + gap + cardHeight <= viewportHeight - margin
+  const x = canOpenRight
+    ? Math.max(margin, anchorX + gap)
+    : Math.min(viewportWidth - margin, anchorX - gap)
+  const y = canOpenAbove
+    ? Math.min(viewportHeight - margin, anchorY - gap)
+    : Math.max(margin, Math.min(anchorY + gap, viewportHeight - margin))
+
   return {
-    left: '50%',
+    left: `${x}px`,
+    top: `${y}px`,
     right: 'auto',
-    top: 'auto',
-    bottom: '32px',
-    transform: 'translateX(-50%)',
+    bottom: 'auto',
+    transform: `translate(${canOpenRight ? '0' : '-100%'}, ${canOpenAbove ? '-100%' : '0'})`,
   }
 })
 const isLogoHidden = computed(() => mapZoom.value >= logoHideZoom)
@@ -1465,9 +1502,9 @@ function selectTransformer(transformer: {
   pinnedPos.value = { ...hoverPos.value }
 }
 
-function normalizeCoordinate(value?: string) {
+function normalizeCoordinate(value?: unknown) {
   if (!value) return undefined
-  const cleaned = value.replace(/[^0-9.-]/g, '')
+  const cleaned = String(value).replace(/[^0-9.-]/g, '')
   if (!cleaned) return undefined
   const parts = cleaned.split('.')
   if (parts.length > 2) {
@@ -1481,6 +1518,72 @@ function normalizeCoordinate(value?: string) {
   const num = Number(cleaned)
   return Number.isFinite(num) ? num : undefined
 }
+
+function mapDashboardTransformer(point: any) {
+  const firstContingency = Array.isArray(point?.contingencias) ? point.contingencias[0] : null
+  const id = String(point?.id ?? point?.serial ?? '')
+  const serial = point?.serial ? String(point.serial) : id
+  const tag = point?.tag ? String(point.tag) : ''
+  const substation = point?.subestacao ? String(point.subestacao) : 'Subestação'
+  const powerValue = point?.potencia ? Number(point.potencia) / 1000 : 0
+
+  return {
+    id: tag || serial ? `${tag || 'TR'}-${serial}` : id,
+    serial,
+    tag,
+    substation,
+    status: pickWorstStatus(point?.status, point?.estado_analista),
+    analystStatus: formatStatus(point?.estado_analista || point?.status),
+    analystNote: point?.descricao_analista,
+    analyst: point?.analista,
+    power: powerValue ? `${Number(powerValue.toFixed(2))} MVA` : '-',
+    voltage: point?.t_maior ? `${point.t_maior} kV` : '-',
+    oil: point?.oleo_fluido || '-',
+    manufacturer: point?.fabricante,
+    year: point?.ano_fabricacao,
+    commutator: point?.comutador || '-',
+    location: substation,
+    lat: normalizeCoordinate(point?.latitude),
+    lng: normalizeCoordinate(point?.longitude),
+    regionId: 'CO',
+    stateId: 'DF',
+    cityId: substation,
+    contingencySerial: firstContingency?.serial,
+    contingencyStatus: firstContingency ? pickWorstStatus(firstContingency.status, firstContingency.estado_analista) : undefined,
+    contingencySubstation: firstContingency?.subestacao,
+    contingencyPower: firstContingency?.potencia ? `${Number(firstContingency.potencia) / 1000} MVA` : undefined,
+    contingencyLat: normalizeCoordinate(firstContingency?.latitude),
+    contingencyLng: normalizeCoordinate(firstContingency?.longitude),
+  }
+}
+
+function applyDemoContingencies(transformers: ReturnType<typeof mapDashboardTransformer>[]) {
+  const bySerial = new Map(transformers.map((item) => [item.serial, item]))
+  const demoPairs = [
+    ['MN458-TRF-01', 'MN458-TRF-09'],
+    ['MN458-TRF-02', 'MN458-TRF-10'],
+    ['MI060-TRF-01', 'MI060-TRF-08'],
+    ['PC402-TRF-01', 'PC402-TRF-10'],
+  ]
+
+  demoPairs.forEach(([principalSerial, contingencySerial]) => {
+    const principal = bySerial.get(principalSerial)
+    const contingency = bySerial.get(contingencySerial)
+    if (!principal || !contingency) return
+    if (typeof contingency.lat !== 'number' || typeof contingency.lng !== 'number') return
+
+    principal.status = pickWorstStatus(principal.status, 'Crítico')
+    principal.contingencySerial = contingency.serial
+    principal.contingencyStatus = contingency.status
+    principal.contingencySubstation = contingency.substation
+    principal.contingencyPower = contingency.power
+    principal.contingencyLat = contingency.lat
+    principal.contingencyLng = contingency.lng
+  })
+
+  return transformers
+}
+
 const displayWorstStatus = computed(() => {
   const transformers = displayInfo.value?.transformers
   if (!transformers?.length) return ''
@@ -1523,6 +1626,7 @@ onMounted(async () => {
     }
   }
   const rawSubstations = (transformersData as any)?.subestacoes || []
+  const dashboardPoints = (dashboardLoadData as any)?.data?.map_points || []
   const baseTransformers = [
     {
       id: 'MG-9701-A01',
@@ -1672,7 +1776,20 @@ onMounted(async () => {
       contingencyLng: normalizeCoordinate(trafo?.CONTINGENCIA?.LONGITUDE),
     }))
   })
-  transformerOptions.value = [...baseTransformers, ...jsonTransformers]
+  const dashboardTransformers = applyDemoContingencies(dashboardPoints.map(mapDashboardTransformer))
+  console.info('[dashboard] simulated transformer load', {
+    dashboard: dashboardTransformers.length,
+    json: jsonTransformers.length,
+    base: baseTransformers.length,
+    total: baseTransformers.length + dashboardTransformers.length + jsonTransformers.length,
+  })
+  transformerOptions.value = [...baseTransformers, ...dashboardTransformers, ...jsonTransformers]
+})
+
+onBeforeUnmount(() => {
+  if (mapBoundsTimer) window.clearTimeout(mapBoundsTimer)
+  if (searchSuggestTimer) window.clearTimeout(searchSuggestTimer)
+  if (searchSuggestAbort) searchSuggestAbort.abort()
 })
 
 watch(
@@ -1876,7 +1993,7 @@ watch(
               :badges="markerBadges"
               @update:center="mapCenter = $event"
               @update:zoom="mapZoom = $event"
-              @update:bounds="mapBounds = $event"
+              @update:bounds="handleBoundsUpdate"
               @markerClick="handleMapMarkerClick"
               @markerHover="handleMarkerHover"
               @markerLeave="handleMarkerLeave"

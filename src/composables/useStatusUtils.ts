@@ -10,7 +10,7 @@ export function normalizeStatus(raw?: string): string {
   if (!raw) return 'Normal'
   const value = raw.toLowerCase().normalize('NFD').replace(/[̀-ͯ]/g, '')
   if (value.includes('crit')) return 'Critico'
-  if (value.includes('alert') || value.includes('manut') || value.includes('reclass')) return 'Alerta'
+  if (value.includes('alert') || value.includes('alarm') || value.includes('manut') || value.includes('reclass')) return 'Alerta'
   if (value.includes('oper')) return 'Normal'
   if (value.includes('ainda')) return 'Alerta'
   return 'Normal'
