@@ -1559,6 +1559,12 @@ function absoluteReportAssetUrl(url: string) {
   return new URL(url, window.location.origin).href
 }
 
+function publicReportAssetUrl(path: string) {
+  const base = import.meta.env.BASE_URL || '/'
+  const normalizedBase = base.endsWith('/') ? base : `${base}/`
+  return absoluteReportAssetUrl(`${normalizedBase}${path.replace(/^\/+/, '')}`)
+}
+
 const duvalLayersD1 = computed(() => buildDuvalLayers('T1.svg', 'T1_P', 'T1_S'))
 const duvalLayersD4 = computed(() => buildDuvalLayers('T4.svg', 'T4_P', 'T4_S'))
 const duvalLayersD5 = computed(() => buildDuvalLayers('T5.svg', 'T5_P', 'T5_S'))
@@ -2929,9 +2935,9 @@ function buildGeneratedReportHtml() {
     riskHeatmapRows: riskHeatmapRows.value.map((r) => ({ label: r.label, values: r.values })),
   }
 
-  const logo = `${window.location.origin}/pdf-assets/logo_siaro.png`
-  const trafoImg = window.location.origin + trafo3dUrl
-  const axolQrUrl = `${window.location.origin}/pdf-assets/axol_qrcode.svg`
+  const logo = publicReportAssetUrl('pdf-assets/logo_siaro.png')
+  const trafoImg = absoluteReportAssetUrl(trafo3dUrl)
+  const axolQrUrl = publicReportAssetUrl('pdf-assets/axol_qrcode.svg')
   return generateCompleteReport(trafo, logo, trafoImg, axolQrUrl, evalData, {
     sections: reportSectionSelections.value,
     supplementalSections: buildReportSupplementalSections(),

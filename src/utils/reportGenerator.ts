@@ -379,7 +379,7 @@ async function prepareNativePrintPagination(doc: Document): Promise<void> {
   doc.querySelector('.native-print-footer')?.remove()
 
   const meta = (name: string) => doc.querySelector<HTMLMetaElement>(`meta[name="${name}"]`)?.content || ''
-  const logoUrl = meta('report-logo-url')
+  const logoUrl = await resolvePrintImageUrl(meta('report-logo-url'))
   const qrUrl = await resolvePrintImageUrl(meta('report-qr-url'))
   const title = meta('report-title') || doc.title || 'Relatório Técnico'
   const eyebrow = meta('report-eyebrow') || 'Sistema SIARO - Axol Engenharia'
