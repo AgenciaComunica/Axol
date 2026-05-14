@@ -429,8 +429,16 @@ async function prepareNativePrintPagination(doc: Document): Promise<void> {
   const sections = Array.from(doc.querySelectorAll<HTMLElement>('.content > .pdf-card, .content > .two-col, .content > .supplemental-card'))
   let pageStart = 0
 
-  sections.forEach((section) => section.classList.remove('print-page-break-before'))
   sections.forEach((section) => {
+    if (!section.classList.contains('print-page-break-forced')) {
+      section.classList.remove('print-page-break-before')
+    }
+  })
+  sections.forEach((section) => {
+    if (section.classList.contains('print-page-break-forced')) {
+      pageStart = section.offsetTop
+      return
+    }
     const top = section.offsetTop
     const height = section.offsetHeight
     if (top - pageStart > 0 && top + height - pageStart > usableHeight && height < usableHeight) {
@@ -1011,7 +1019,10 @@ ${reportMetaTags({
     .native-print-footer-stripe { height:6mm; background:#F5B800; -webkit-print-color-adjust:exact; print-color-adjust:exact; }
     .native-print-footer small { display:block; color:#64748b; font-size:7px; margin-top:.5mm; }
     .native-print-qr img { width:10mm; height:10mm; object-fit:contain; display:block; background:#fff; }
-    .print-page-break-before { break-before:page; page-break-before:always; padding-top:30mm; }
+    .print-page-break-before,
+    .print-page-break-forced { break-before:page; page-break-before:always; padding-top:30mm; }
+    .oltc-risk-card.print-page-break-before,
+    .oltc-risk-card.print-page-break-forced { padding-top:34mm; }
     .hband { break-inside:avoid; page-break-inside:avoid; }
     .content { padding:8mm 0 0; }
     .sec-head:first-child { margin-top:0; }
@@ -1093,7 +1104,7 @@ ${reportMetaTags({
 
       ${collectionSectionsHtml}
 
-      <div class="pdf-card">
+      <div class="pdf-card${isOltcReport ? ' oltc-risk-card print-page-break-forced' : ''}">
         <div class="sec-head"><span class="sec-num">${isOilOrOltcReport || isRouteReport ? '3' : '5'}</span>Avaliação do Risco Operacional</div>
         <p style="font-size:11px;color:#64748b;margin:0 0 12px">Probabilidade (%) de operação em cada nível de risco para o próximo ano:</p>
         ${riskDonuts}
