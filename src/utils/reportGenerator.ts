@@ -78,7 +78,7 @@ export interface ReportRouteInspectionSection {
 export interface CompleteReportOptions {
   sections?: ReportSectionName[]
   supplementalSections?: ReportSupplementalSection[]
-  macroTab?: 'TR-Óleo' | 'TR-OLTC' | 'TR-Rota'
+  macroTab?: 'TR-Óleo' | 'TR-OLTC' | 'TR-Rota' | 'TR-Confiabilidade'
   routeInspectionDate?: string
   routeInspectionSections?: ReportRouteInspectionSection[]
 }
@@ -86,11 +86,13 @@ export interface CompleteReportOptions {
 // ─── Helpers ────────────────────────────────────────────────────────────────
 
 function statusColor(s: string) {
+  if (s === 'Severo') return '#dc2626'
   if (s === 'Crítico') return '#dc2626'
   if (s === 'Alerta') return '#d97706'
   return '#16a34a'
 }
 function statusBg(s: string) {
+  if (s === 'Severo') return '#fee2e2'
   if (s === 'Crítico') return '#fee2e2'
   if (s === 'Alerta') return '#fef3c7'
   return '#dcfce7'
@@ -726,6 +728,9 @@ export function generateCompleteReport(
   const isOltcReport = reportSubject === 'TR-OLTC'
   const isOilOrOltcReport = isOilReport || isOltcReport
   const isRouteReport = options.macroTab === 'TR-Rota'
+  const isReliabilityReport = reportSubject === 'TR-Confiabilidade'
+  const primaryStatusLabel = isReliabilityReport ? 'Status TR-Confiabilidade' : 'Sistema'
+  const primaryStatusValue = isReliabilityReport ? 'Severo' : trafo.status
   const preventiveReliabilityHtml = renderPreventiveReliabilityTable('preventive-table')
   const supplementalSections = (options.supplementalSections || [])
     .filter((section) => selectedSections.includes(section.key))
@@ -828,7 +833,41 @@ export function generateCompleteReport(
     options.routeInspectionDate,
   )
 
-  const collectionSectionsHtml = isOilOrOltcReport || isRouteReport
+  const reliabilityRankingHtml = `<div class="pdf-card reliability-ranking-card print-page-break-forced">
+        <div class="sec-head"><span class="sec-num">3</span>Ranqueamento em Ordem de Criticidade</div>
+        <table>
+          <tr><td colspan="2" class="tc-section-label">Vida Regulatória e Impacto em Falha</td></tr>
+          <tr><td class="tc-label">Vida Regulatória</td><td class="tc-val">20 anos</td></tr>
+          <tr>
+            <td class="tc-label">Impacto em caso de falha</td>
+            <td class="tc-val"><span class="badge" style="color:#991b1b;background:#fee2e2"><span class="badge-dot"></span>Severo</span></td>
+          </tr>
+          <tr><td colspan="2" class="tc-section-label">Ranqueamento do ativo no parque</td></tr>
+          <tr>
+            <td class="tc-label">Índices de saúde</td>
+            <td class="tc-val">posição 23º de 1200</td>
+          </tr>
+          <tr>
+            <td class="tc-label">Prejuízo probabilizado</td>
+            <td class="tc-val">posição 103 de 1200</td>
+          </tr>
+        </table>
+      </div>`
+
+  const reliabilityReserveHtml = `<div class="pdf-card">
+        <div class="sec-head"><span class="sec-num">5</span>Gestão de Reserva</div>
+        <table>
+          <tr><td class="tc-label">Reserva Institucional (Compartilhado)</td><td class="tc-val"><span class="badge" style="color:#166534;background:#dcfce7"><span class="badge-dot"></span>SIM</span></td></tr>
+          <tr><td class="tc-label">Reserva Local</td><td class="tc-val"><span class="badge" style="color:#991b1b;background:#fee2e2"><span class="badge-dot"></span>Não</span></td></tr>
+          <tr><td class="tc-label">Equipamento reserva</td><td class="tc-val">Transformador</td></tr>
+          <tr><td class="tc-label">Número de série</td><td class="tc-val">6398-123</td></tr>
+          <tr><td class="tc-label">Localização</td><td class="tc-val">Montes Claros, SE Zé Bedeu</td></tr>
+          <tr><td class="tc-label">Tempo de reposição estimado</td><td class="tc-val">7 dias úteis</td></tr>
+          <tr><td class="tc-label">Custo da falha estimado</td><td class="tc-val"><span class="badge" style="color:#991b1b;background:#fee2e2"><span class="badge-dot"></span>R$ 1.250.000,00</span></td></tr>
+        </table>
+      </div>`
+
+  const collectionSectionsHtml = isOilOrOltcReport || isRouteReport || isReliabilityReport
     ? ''
     : `<div class="two-col" style="margin-top:24px">
         <div class="pdf-card">
@@ -947,7 +986,9 @@ ${reportMetaTags({
   .tc-val   { color:#0f172a; font-weight:600; padding:6px 0; font-size:12px; vertical-align:top; border-bottom:1px solid #f1f5f9; }
   .tc-cond  { padding:6px 0; vertical-align:top; border-bottom:1px solid #f1f5f9; }
   .tc-empty { color:#94a3b8; font-style:italic; font-size:11px; padding:8px 0; }
+  .tc-section-label { color:#64748b; font-size:12px; font-weight:700; padding:10px 0 4px; border-bottom:1px solid #f1f5f9; }
   .cpill    { display:inline-block; padding:2px 8px; border-radius:4px; font-size:11px; font-weight:700; }
+  .report-subitem { margin:2px 0; }
   .risk-row { display:flex; align-items:center; gap:10px; margin-bottom:7px;break-inside: avoid; page-break-inside: avoid; }
   .risk-lbl { font-size:11px; color:#64748b; width:120px; flex-shrink:0; }
   .risk-track { flex:1; background:#f1f5f9; border-radius:999px; height:10px; overflow:hidden; }
@@ -1077,7 +1118,7 @@ ${reportMetaTags({
         </div>
       </div>
       <div class="sbar-badges">
-        <span class="badge" style="color:${statusColor(trafo.status)};background:${statusBg(trafo.status)}"><span class="badge-dot"></span>Sistema: ${escHtml(trafo.status)}</span>
+        <span class="badge" style="color:${statusColor(primaryStatusValue)};background:${statusBg(primaryStatusValue)}"><span class="badge-dot"></span>${escHtml(primaryStatusLabel)}: ${escHtml(primaryStatusValue)}</span>
         <span class="badge" style="color:${sFg};background:${sBg}"><span class="badge-dot"></span>Especialista: ${escHtml(ev.specialistStatus)}</span>
       </div>
     </div>
@@ -1086,7 +1127,7 @@ ${reportMetaTags({
       ${includesEvaluation ? `<div class="pdf-card">
         <div class="sec-head"><span class="sec-num">1</span>Resultado das Avaliações</div>
         <div class="kv-grid">
-          <div class="kv-card"><div class="kv-label">Status Sistema</div><div class="kv-value" style="font-size:14px;color:${statusColor(trafo.status)}">${escHtml(trafo.status)}</div></div>
+          <div class="kv-card"><div class="kv-label">${isReliabilityReport ? 'Status TR-Confiabilidade' : 'Status Sistema'}</div><div class="kv-value" style="font-size:14px;color:${statusColor(primaryStatusValue)}">${escHtml(primaryStatusValue)}</div></div>
           <div class="kv-card"><div class="kv-label">Status Especialista</div><div class="kv-value" style="font-size:14px;color:${sFg}">${escHtml(ev.specialistStatus)}</div></div>
           ${isOilReport ? `<div class="kv-card"><div class="kv-label">Estado do Óleo</div><div class="kv-value" style="font-size:13px">${escHtml(trafo.oilStatus)}</div></div>` : ''}
           ${isOilReport && crom ? `<div class="kv-card"><div class="kv-label">Condição TGC (IEEE)</div><div class="kv-value" style="font-size:14px;color:${condColor(ieeeCondition(crom.TGC,'TGC'))}">${ieeeCondition(crom.TGC,'TGC')}</div></div>` : ''}
@@ -1103,14 +1144,22 @@ ${reportMetaTags({
       </div>
 
       ${collectionSectionsHtml}
+      ${isReliabilityReport ? reliabilityRankingHtml : ''}
 
       <div class="pdf-card${isOltcReport ? ' oltc-risk-card print-page-break-forced' : ''}">
-        <div class="sec-head"><span class="sec-num">${isOilOrOltcReport || isRouteReport ? '3' : '5'}</span>Avaliação do Risco Operacional</div>
+        <div class="sec-head"><span class="sec-num">${
+          isReliabilityReport
+            ? '4'
+            : isOilOrOltcReport || isRouteReport
+              ? '3'
+              : '5'
+        }</span>Avaliação do Risco Operacional</div>
         <p style="font-size:11px;color:#64748b;margin:0 0 12px">Probabilidade (%) de operação em cada nível de risco para o próximo ano:</p>
         ${riskDonuts}
-        ${heatmapTableCompleto}
-        ${isOilOrOltcReport ? preventiveReliabilityHtml : ''}
+        ${isReliabilityReport ? '' : heatmapTableCompleto}
+        ${isOilOrOltcReport || isReliabilityReport ? preventiveReliabilityHtml : ''}
       </div>
+      ${isReliabilityReport ? reliabilityReserveHtml : ''}
       ${isRouteReport ? `<div class="pdf-card route-preventive-card print-page-break-before">${preventiveReliabilityHtml}</div>` : ''}` : ''}
       ${supplementalSectionsHtml}
     </div>
