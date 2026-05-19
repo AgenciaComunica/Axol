@@ -164,7 +164,7 @@ function getAnalysisDataSerialAliases(): Record<string, string[]> {
   }
 }
 
-const macroTabs = ['TR-Óleo', 'TR-OLTC', 'TR-Rota'] as const
+const macroTabs = ['TR-Óleo', 'TR-OLTC', 'TR-Rota', 'TR-Confiabilidade'] as const
 type MacroTab = (typeof macroTabs)[number]
 
 const tabs = [
@@ -191,6 +191,7 @@ function toValidMacro(value: unknown): MacroTab {
   if (text === 'TR Óleo') return 'TR-Óleo'
   if (text === 'OLTC') return 'TR-OLTC'
   if (text === 'TR Rota') return 'TR-Rota'
+  if (text === 'TR-Conf' || text === 'TR Conf' || text === 'TR Confiabilidade') return 'TR-Confiabilidade'
   return (macroTabs.find((tab) => tab === text) as MacroTab) || 'TR-Óleo'
 }
 
@@ -228,6 +229,7 @@ const forcedGlobalTab = computed<ReportTab | null>(() => {
 })
 const isOltcMacro = computed(() => activeMacroTab.value === 'TR-OLTC')
 const isTrRotaMacro = computed(() => activeMacroTab.value === 'TR-Rota')
+const isReliabilityMacro = computed(() => activeMacroTab.value === 'TR-Confiabilidade')
 
 const trOleoSubTabs: ReportTab[] = [
   'Avaliação Completa',
@@ -252,7 +254,9 @@ const activeSubTabs = computed(() => {
       ? trOleoSubTabs
       : activeMacroTab.value === 'TR-Rota'
         ? trRotaSubTabs
-        : oltcSubTabs
+        : activeMacroTab.value === 'TR-Confiabilidade'
+          ? trOleoSubTabs
+          : oltcSubTabs
   return base.map((tab) => ({
     value: tab,
     label: isTrRotaMacro.value && tab === 'Histórico de Análises' ? 'Análise de Campo' : tab,
@@ -3488,6 +3492,7 @@ const selectedOltcMeta = computed<BaseRow | null>(() => {
 const summaryPrimaryStatusLabel = computed(() => {
   if (activeMacroTab.value === 'TR-OLTC') return 'Status TR-OLTC'
   if (activeMacroTab.value === 'TR-Rota') return 'Status TR-Rota'
+  if (activeMacroTab.value === 'TR-Confiabilidade') return 'Status TR-Confiabilidade'
   return 'Status TR-Óleo'
 })
 
@@ -3497,6 +3502,7 @@ const summaryPrimaryStatusValue = computed(() => {
     const oltcStatus = normalizeCell(selectedOltcMeta.value?.ESTADO)
     return oltcStatus !== '-' ? oltcStatus : selectedTransformer.value.status
   }
+  if (activeMacroTab.value === 'TR-Confiabilidade') return 'Severo'
   return selectedTransformer.value.status
 })
 
@@ -4845,6 +4851,7 @@ function statusClass(value: string) {
     .replace(/[\u0300-\u036f]/g, '')
   if (text.includes('atras')) return 'tone-danger'
   if (text.includes('colet')) return 'tone-normal'
+  if (text.includes('sever')) return 'tone-danger'
   if (text.includes('crit')) return 'tone-danger'
   if (text.includes('alert') || text.includes('alta')) return 'tone-warning'
   if (text.includes('pend')) return 'tone-neutral'
@@ -5613,7 +5620,11 @@ watch([activeTab, selectedId], async () => {
         </article>
       </section>
 
-      <section v-else-if="activeTab === 'Avaliação Completa'" class="panel panel-eval">
+      <section
+        v-else-if="activeTab === 'Avaliação Completa'"
+        class="panel panel-eval"
+        :class="{ 'panel-reliability': isReliabilityMacro }"
+      >
         <div class="eval-left-stack">
         <article class="tile eval-card-1" :class="{ 'eval-collapsed': !evalCardOpen['1'] }">
           <div class="eval-card-head">
@@ -5665,26 +5676,28 @@ watch([activeTab, selectedId], async () => {
               </tbody>
             </table>
           </div>
-          <p class="preventive-reliability-note">
-            Esta avaliação, permite estimar as probabilidades de ocorrências dos estados de risco do transformador,
-            indo de N1, mais brando, até N5, mais crítico.
-          </p>
-          <p><b>Resultado da concentração de gases combustíveis (TGC) segundo o Guia IEEE Std C57.104™- 2008:</b></p>
-          <p>
-            “Condição 02: Quando o total de gases combustíveis (TGC) está fora do normal. Se há algum gás excedendo
-            esse limite, deve ser investigado.”
-          </p>
-          <p>
-            <b>Resultado do método de identificação de falhas: triângulos e pentágonos de DUVAL, segundo o Guia IEEE
-              Std C57.104™- 2019:</b>
-          </p>
-          <p>Triângulo de DUVAL 1: DT - Ocorrência simultânea de falta térmica e arco elétrico.</p>
-          <p>Triângulo de DUVAL 4: C - Possível carbonização do papel.</p>
-          <p>Triângulo de DUVAL 5: T3 - Falha térmica, t &gt; 700 ºC.</p>
-          <p>Pentágono 1: D2 - Descargas de alta energia.</p>
-          <p>Pentágono 2: D2 - Descargas de alta energia.</p>
-          <p><b>Tratamento do óleo isolante:</b></p>
-          <p>Óleo isolante em condições normais, nenhuma atividade recomendada.</p>
+          <template v-if="!isReliabilityMacro">
+            <p class="preventive-reliability-note">
+              Esta avaliação, permite estimar as probabilidades de ocorrências dos estados de risco do transformador,
+              indo de N1, mais brando, até N5, mais crítico.
+            </p>
+            <p><b>Resultado da concentração de gases combustíveis (TGC) segundo o Guia IEEE Std C57.104™- 2008:</b></p>
+            <p>
+              “Condição 02: Quando o total de gases combustíveis (TGC) está fora do normal. Se há algum gás excedendo
+              esse limite, deve ser investigado.”
+            </p>
+            <p>
+              <b>Resultado do método de identificação de falhas: triângulos e pentágonos de DUVAL, segundo o Guia IEEE
+                Std C57.104™- 2019:</b>
+            </p>
+            <p>Triângulo de DUVAL 1: DT - Ocorrência simultânea de falta térmica e arco elétrico.</p>
+            <p>Triângulo de DUVAL 4: C - Possível carbonização do papel.</p>
+            <p>Triângulo de DUVAL 5: T3 - Falha térmica, t &gt; 700 ºC.</p>
+            <p>Pentágono 1: D2 - Descargas de alta energia.</p>
+            <p>Pentágono 2: D2 - Descargas de alta energia.</p>
+            <p><b>Tratamento do óleo isolante:</b></p>
+            <p>Óleo isolante em condições normais, nenhuma atividade recomendada.</p>
+          </template>
           </template>
         </article>
         <article class="tile eval-card-2" :class="{ 'eval-collapsed': !evalCardOpen['2'] }">
@@ -5719,12 +5732,28 @@ watch([activeTab, selectedId], async () => {
         </div>
         <article class="tile eval-card-3" :class="{ 'eval-collapsed': !evalCardOpen['3'] }">
           <div class="eval-card-head">
-            <h4>3 - Última Coleta</h4>
+            <h4>{{ isReliabilityMacro ? '3 - Ranqueamento em ordem de criticidade' : '3 - Última Coleta' }}</h4>
             <button type="button" class="eval-collapse-btn" @click="toggleEvalCard('3')">
               {{ evalCardOpen['3'] ? '−' : '+' }}
             </button>
           </div>
           <template v-if="evalCardOpen['3']">
+          <template v-if="isReliabilityMacro">
+            <p><b>Vida Regulatória e Impacto em Falha:</b></p>
+            <ul class="reliability-subitems">
+              <li><b>Vida Regulatória:</b> 20 anos</li>
+              <li>
+                <b>Impacto em caso de falha:</b>
+                <span class="pill eval-status" :class="statusClass('Crítico')">Severo</span>
+              </li>
+            </ul>
+            <p><b>Ranqueamento do ativo no parque:</b></p>
+            <ul class="reliability-subitems">
+              <li><b>Índices de saúde:</b> posição 23º de 1200</li>
+              <li><b>Prejuízo probabilizado:</b> posição 103 de 1200</li>
+            </ul>
+          </template>
+          <template v-else>
           <p>
             <b>{{
               isTrRotaMacro
@@ -5878,10 +5907,15 @@ watch([activeTab, selectedId], async () => {
           </p>
           </template>
           </template>
+          </template>
         </article>
         <article class="tile eval-card-4" :class="{ 'eval-collapsed': !evalCardOpen['4'] }">
           <div class="eval-card-head">
-            <h4>{{ isTrRotaMacro ? '4 - Avaliação do risco operacional do transformador' : '5 - Avaliação do risco operacional do transformador' }}</h4>
+            <h4>{{
+              isTrRotaMacro || isReliabilityMacro
+                ? '4 - Avaliação do risco operacional do transformador'
+                : '5 - Avaliação do risco operacional do transformador'
+            }}</h4>
             <button type="button" class="eval-collapse-btn" @click="toggleEvalCard('4')">
               {{ evalCardOpen['4'] ? '−' : '+' }}
             </button>
@@ -5909,6 +5943,7 @@ watch([activeTab, selectedId], async () => {
             </article>
           </div>
 
+          <template v-if="!isReliabilityMacro">
           <div class="risk-heatmap-head">
             <div class="risk-pies-tab risk-heatmap-head-label" aria-label="Variáveis">Variáveis</div>
             <div class="risk-heatmap-title">Variáveis fora das faixas estabelecidas</div>
@@ -5928,8 +5963,10 @@ watch([activeTab, selectedId], async () => {
               </template>
             </div>
           </div>
+          </template>
           </div>
 
+          <template v-if="!isReliabilityMacro">
           <p><b>{{
             isTrRotaMacro
               ? 'Variáveis de inspeção de campo que levaram o transformador aos estados de risco:'
@@ -5954,6 +5991,7 @@ watch([activeTab, selectedId], async () => {
             <span class="risk-legend-stop">100%</span>
           </div>
           </template>
+          </template>
         </article>
         <article
           v-if="!isTrRotaMacro"
@@ -5961,12 +5999,31 @@ watch([activeTab, selectedId], async () => {
           :class="{ 'eval-collapsed': !evalCardOpen['5'] }"
         >
           <div class="eval-card-head">
-            <h4>4 - Tratamentos no óleo isolante</h4>
+            <h4>{{ isReliabilityMacro ? '5 - Gestão de Reserva' : '4 - Tratamentos no óleo isolante' }}</h4>
             <button type="button" class="eval-collapse-btn" @click="toggleEvalCard('5')">
               {{ evalCardOpen['5'] ? '−' : '+' }}
             </button>
           </div>
           <template v-if="evalCardOpen['5']">
+          <template v-if="isReliabilityMacro">
+            <p>
+              <b>Reserva Institucional (Compartilhado):</b>
+              <span class="pill eval-status tone-normal">SIM</span>
+            </p>
+            <p>
+              <b>Reserva Local:</b>
+              <span class="pill eval-status tone-danger">Não</span>
+            </p>
+            <p><b>Equipamento reserva:</b> Transformador</p>
+            <p><b>Número de série:</b> 6398-123</p>
+            <p><b>Localização:</b> Montes Claros, SE Zé Bedeu</p>
+            <p><b>Tempo de reposição estimado:</b> 7 dias úteis</p>
+            <p>
+              <b>Custo da falha estimado:</b>
+              <span class="pill eval-status tone-danger">R$ 1.250.000,00</span>
+            </p>
+          </template>
+          <template v-else>
           <p>
             Devem ser realizados de acordo com os resultados dos ensaios físico-químicos do óleo isolante, observando
             os limites mínimos e máximos estabelecidos para cada variável de interesse, conforme orientações da norma
@@ -6012,6 +6069,7 @@ watch([activeTab, selectedId], async () => {
               <div><span>F. Pot. 100ºC</span><b>-</b></div>
             </div>
           </div>
+          </template>
           </template>
         </article>
       </section>
@@ -8602,6 +8660,19 @@ watch([activeTab, selectedId], async () => {
   grid-row: 3;
 }
 
+.panel-eval.panel-reliability .eval-card-4{
+  grid-row: 3;
+  min-height: 245px;
+}
+
+.panel-eval.panel-reliability .eval-card-5{
+  grid-row: 4;
+}
+
+.panel-eval.panel-reliability .eval-card-4 .risk-grid-shell{
+  min-height: 175px;
+}
+
 .panel-eval{
   align-items: start;
 }
@@ -8719,6 +8790,17 @@ watch([activeTab, selectedId], async () => {
 .panel-eval .tile.eval-collapsed .eval-card-head,
 .panel-eval .tile.eval-collapsed .eval-card-head-actions{
   margin-bottom: 0;
+}
+
+.reliability-subitems{
+  margin: -2px 0 6px 18px;
+  padding: 0;
+  color: rgba(15, 23, 42, 0.82);
+  font-size: 13px;
+}
+
+.reliability-subitems li{
+  margin: 4px 0;
 }
 
 .tile p{
