@@ -9683,6 +9683,11 @@ watch([activeTab, selectedId], async () => {
   color: rgba(15, 23, 42, 0.82);
 }
 
+.reliability-severity-row > b{
+  color: #123a6d;
+  font-weight: 700;
+}
+
 .reliability-severity-picker{
   position: relative;
   min-width: 176px;
