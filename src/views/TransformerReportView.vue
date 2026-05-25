@@ -3005,6 +3005,12 @@ function readReportMeta(html: string, name: string) {
   return pattern.exec(html)?.[1] || ''
 }
 
+function buildReportFileName(html: string, subject = activeMacroTab.value) {
+  const reportId = readReportMeta(html, 'report-id') || Date.now().toString(36).toUpperCase()
+  const reportSubject = String(subject || 'Relatorio').trim().replace(/\s+/g, '-')
+  return `SIARO_${reportSubject}_${reportId}`
+}
+
 function escapeSharedReportHtml(value = '') {
   return String(value)
     .replace(/&/g, '&amp;')
@@ -3156,7 +3162,7 @@ function openGeneratedReportPreview() {
 
   generateReportMenuOpen.value = false
   reportPreviewHtml.value = html
-  reportPreviewFileName.value = `relatorio-${trafo.serial || trafo.id}-${reportSectionSelections.value.length}-abas`
+  reportPreviewFileName.value = buildReportFileName(html)
   reportShareLink.value = ''
   reportShareCopied.value = false
   reportShareError.value = ''

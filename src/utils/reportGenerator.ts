@@ -294,7 +294,6 @@ function sanitizeFileName(value: string): string {
     .replace(/[^a-zA-Z0-9-_]+/g, '-')
     .replace(/-+/g, '-')
     .replace(/^-|-$/g, '')
-    .toLowerCase()
 }
 
 function reportMetaTags(params: {
@@ -463,6 +462,7 @@ export async function printPdfFromHtml(
 ): Promise<void> {
   const normalizedName = sanitizeFileName(fileName) || 'relatorio'
   const frame = document.createElement('iframe')
+  const previousTitle = document.title
   frame.setAttribute('title', 'Impressão do relatório')
   frame.style.position = 'fixed'
   frame.style.right = '0'
@@ -475,7 +475,10 @@ export async function printPdfFromHtml(
   document.body.appendChild(frame)
 
   const cleanup = () => {
-    window.setTimeout(() => frame.remove(), 600)
+    window.setTimeout(() => {
+      document.title = previousTitle
+      frame.remove()
+    }, 600)
   }
 
   try {
@@ -484,6 +487,7 @@ export async function printPdfFromHtml(
     doc.open()
     doc.write(html.replace(/<title>.*?<\/title>/i, `<title>${escHtml(normalizedName)}</title>`))
     doc.close()
+    document.title = normalizedName
     await waitForFrameLoad(frame)
     await waitForPrintableAssets(doc)
     await prepareNativePrintPagination(doc)
