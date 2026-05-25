@@ -433,7 +433,7 @@ const transformerOptions = computed<Transformer[]>(() => {
       operating: '-',
       sealed: '-',
       analyst: 'alex.fabiano@axol.eng.br',
-      analystNote: 'Descricao do analista',
+      analystNote: 'Descricao do especialista',
       failureMode: '-',
       latitude: '-19.8945',
       longitude: '-44.1377',
@@ -2221,12 +2221,15 @@ const routeAnalysisSortDirection = ref<'asc' | 'desc'>('desc')
 const routeAnalysisModalOpen = ref(false)
 const routeAnalysisModalStep = ref(0)
 const manualRouteInspectionRows = ref<RouteInspectionSource[]>([])
-const evalCardOpen = ref<Record<'1' | '2' | '3' | '4' | '5', boolean>>({
+type EvalCardKey = '1' | '2' | '3' | '4' | '5' | '7'
+
+const evalCardOpen = ref<Record<EvalCardKey, boolean>>({
   '1': true,
   '2': true,
   '3': true,
   '4': true,
   '5': true,
+  '7': true,
 })
 const ieeeCardOpen = ref<Record<'2008' | '2019', boolean>>({
   '2008': true,
@@ -2301,7 +2304,7 @@ const routeAnalysisModalTabs = [
   'Sistema de ativo',
 ] as const
 
-function toggleEvalCard(card: '1' | '2' | '3' | '4' | '5') {
+function toggleEvalCard(card: EvalCardKey) {
   evalCardOpen.value[card] = !evalCardOpen.value[card]
 }
 
@@ -3021,7 +3024,7 @@ function buildSharedReportHeaderFooter(html: string) {
             <div style="width:44px;display:flex;justify-content:flex-start;">${qr}</div>
             <div style="flex:1;text-align:center;">
               <div>SIARO - Axol Engenharia</div>
-              ${analyst ? `<div style="font-size:8px;color:#64748b;margin-top:2px;">Analista: ${escapeSharedReportHtml(analyst)}</div>` : ''}
+              ${analyst ? `<div style="font-size:8px;color:#64748b;margin-top:2px;">Especialista: ${escapeSharedReportHtml(analyst)}</div>` : ''}
               ${validationUrl ? `<div style="font-size:8px;color:#64748b;margin-top:2px;">${escapeSharedReportHtml(validationUrl)}</div>` : ''}
             </div>
             <div style="width:120px;text-align:right;font-size:8px;">Documento compartilhado</div>
@@ -3502,7 +3505,7 @@ const summaryPrimaryStatusValue = computed(() => {
     const oltcStatus = normalizeCell(selectedOltcMeta.value?.ESTADO)
     return oltcStatus !== '-' ? oltcStatus : selectedTransformer.value.status
   }
-  if (activeMacroTab.value === 'TR-Confiabilidade') return 'Severo'
+  if (activeMacroTab.value === 'TR-Confiabilidade') return 'Alerta'
   return selectedTransformer.value.status
 })
 
@@ -5121,6 +5124,10 @@ watch([activeTab, selectedId], async () => {
             <div><small>Latitude</small><b>{{ selectedTransformer.latitude }}</b></div>
             <div><small>Longitude</small><b>{{ selectedTransformer.longitude }}</b></div>
           </div>
+          <div v-if="isReliabilityMacro" class="reliability-hero-pins" aria-label="Resumo de confiabilidade">
+            <span class="reliability-hero-pin tone-danger">Impacto em caso de falha (Severidade): Severo</span>
+            <span class="reliability-hero-pin reliability-hero-pin-blue">Vida regulatória: 20 anos</span>
+          </div>
         </article>
       </div>
 
@@ -5724,7 +5731,7 @@ watch([activeTab, selectedId], async () => {
           </p>
           <p><b>Observações:</b> {{ specialistView.analystNote }}</p>
           <p>
-            <b>Modo de falha selecionado:</b>
+            <b>Modo de falha mais provável:</b>
             {{ specialistView.failureMode }}
           </p>
           </template>
@@ -5739,15 +5746,6 @@ watch([activeTab, selectedId], async () => {
           </div>
           <template v-if="evalCardOpen['3']">
           <template v-if="isReliabilityMacro">
-            <p><b>Vida Regulatória e Impacto em Falha:</b></p>
-            <ul class="reliability-subitems">
-              <li><b>Vida Regulatória:</b> 20 anos</li>
-              <li>
-                <b>Impacto em caso de falha:</b>
-                <span class="pill eval-status" :class="statusClass('Crítico')">Severo</span>
-              </li>
-            </ul>
-            <p><b>Ranqueamento do ativo no parque:</b></p>
             <ul class="reliability-subitems">
               <li><b>Índices de saúde:</b> posição 23º de 1200</li>
               <li><b>Prejuízo probabilizado:</b> posição 103 de 1200</li>
@@ -5999,7 +5997,7 @@ watch([activeTab, selectedId], async () => {
           :class="{ 'eval-collapsed': !evalCardOpen['5'] }"
         >
           <div class="eval-card-head">
-            <h4>{{ isReliabilityMacro ? '5 - Gestão de Reserva' : '4 - Tratamentos no óleo isolante' }}</h4>
+            <h4>{{ isReliabilityMacro ? '6 - Gestão de Reserva' : '4 - Tratamentos no óleo isolante' }}</h4>
             <button type="button" class="eval-collapse-btn" @click="toggleEvalCard('5')">
               {{ evalCardOpen['5'] ? '−' : '+' }}
             </button>
@@ -6018,10 +6016,6 @@ watch([activeTab, selectedId], async () => {
             <p><b>Número de série:</b> 6398-123</p>
             <p><b>Localização:</b> Montes Claros, SE Zé Bedeu</p>
             <p><b>Tempo de reposição estimado:</b> 7 dias úteis</p>
-            <p>
-              <b>Custo da falha estimado:</b>
-              <span class="pill eval-status tone-danger">R$ 1.250.000,00</span>
-            </p>
           </template>
           <template v-else>
           <p>
@@ -6070,6 +6064,24 @@ watch([activeTab, selectedId], async () => {
             </div>
           </div>
           </template>
+          </template>
+        </article>
+        <article
+          v-if="isReliabilityMacro"
+          class="tile eval-card-7"
+          :class="{ 'eval-collapsed': !evalCardOpen['7'] }"
+        >
+          <div class="eval-card-head">
+            <h4>7 - Custo da falha estimado</h4>
+            <button type="button" class="eval-collapse-btn" @click="toggleEvalCard('7')">
+              {{ evalCardOpen['7'] ? '−' : '+' }}
+            </button>
+          </div>
+          <template v-if="evalCardOpen['7']">
+          <p>
+            <b>Custo da falha estimado:</b>
+            <span class="pill eval-status tone-danger">R$ 1.250.000,00</span>
+          </p>
           </template>
         </article>
       </section>
@@ -8579,6 +8591,34 @@ watch([activeTab, selectedId], async () => {
   font-weight: 600;
 }
 
+.reliability-hero-pins{
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin-top: 16px;
+}
+
+.reliability-hero-pin{
+  display: inline-flex;
+  align-items: center;
+  border-radius: 999px;
+  padding: 5px 10px;
+  background: rgba(148, 163, 184, 0.16);
+  color: #475569;
+  font-size: 12px;
+  font-weight: 700;
+}
+
+.reliability-hero-pin.tone-danger{
+  background: rgba(255, 0, 0, 0.18);
+  color: #8f0000;
+}
+
+.reliability-hero-pin-blue{
+  background: rgba(30, 78, 139, 0.14);
+  color: #1e4e8b;
+}
+
 .tone-normal{
   background: rgba(0, 255, 0, 0.18);
   color: #0b5f0b;
@@ -8667,6 +8707,11 @@ watch([activeTab, selectedId], async () => {
 
 .panel-eval.panel-reliability .eval-card-5{
   grid-row: 4;
+}
+
+.panel-eval.panel-reliability .eval-card-7{
+  grid-column: 1 / -1;
+  grid-row: 5;
 }
 
 .panel-eval.panel-reliability .eval-card-4 .risk-grid-shell{
@@ -10788,7 +10833,8 @@ watch([activeTab, selectedId], async () => {
   .panel-eval .eval-card-2,
   .panel-eval .eval-card-3,
   .panel-eval .eval-card-4,
-  .panel-eval .eval-card-5{
+  .panel-eval .eval-card-5,
+  .panel-eval .eval-card-7{
     grid-column: auto;
     grid-row: auto;
   }

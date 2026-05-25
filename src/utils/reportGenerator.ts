@@ -417,7 +417,7 @@ async function prepareNativePrintPagination(doc: Document): Promise<void> {
       <div class="native-print-qr">${qrUrl ? `<img src="${escAttr(qrUrl)}" alt="QR">` : ''}</div>
       <div>
         <div>SIARO - Axol Engenharia</div>
-        ${analyst ? `<small>Analista: ${escHtml(analyst)}</small>` : ''}
+        ${analyst ? `<small>Especialista: ${escHtml(analyst)}</small>` : ''}
         ${validationUrl ? `<small>${escHtml(validationUrl)}</small>` : ''}
       </div>
     </div>
@@ -634,7 +634,7 @@ ${reportMetaTags({
       <tr><td class="td-l">Serial / TAG</td><td class="td-v">${escHtml(trafo.serial)} / ${escHtml(trafo.tag)}</td></tr>
       <tr><td class="td-l">Subestação</td><td class="td-v">${escHtml(trafo.substation)}</td></tr>
       <tr><td class="td-l">Status sistema</td><td class="td-v">${escHtml(trafo.status)}</td></tr>
-      <tr><td class="td-l">Status especialista</td><td class="td-v">${escHtml(ev.specialistStatus)}</td></tr>
+      <tr><td class="td-l">Status Especialista</td><td class="td-v">${escHtml(ev.specialistStatus)}</td></tr>
       <tr><td class="td-l">Estado do óleo</td><td class="td-v">${escHtml(trafo.oilStatus)}</td></tr>
       ${crom ? `<tr><td class="td-l">Condição TGC (IEEE)</td><td class="td-v">${ieeeCondition(crom.TGC, 'TGC')}</td></tr>` : ''}
     </table>
@@ -646,7 +646,7 @@ ${reportMetaTags({
     <div class="sec-title">2 – Avaliação do Especialista</div>
     <table>
       <tr><td class="td-l">Status</td><td class="td-v">${escHtml(ev.specialistStatus)}</td></tr>
-      <tr><td class="td-l">Modo de falha</td><td class="td-v">${escHtml(ev.specialistFailureMode)}</td></tr>
+      <tr><td class="td-l">Modo de falha mais provável</td><td class="td-v">${escHtml(ev.specialistFailureMode)}</td></tr>
     </table>
     ${ev.specialistNote && ev.specialistNote !== 'Sem observações registradas.' ? `<div class="note-box" style="margin-top:8px">${escHtml(ev.specialistNote)}</div>` : ''}
   </div>
@@ -729,8 +729,12 @@ export function generateCompleteReport(
   const isOilOrOltcReport = isOilReport || isOltcReport
   const isRouteReport = options.macroTab === 'TR-Rota'
   const isReliabilityReport = reportSubject === 'TR-Confiabilidade'
-  const primaryStatusLabel = isReliabilityReport ? 'Status TR-Confiabilidade' : 'Sistema'
+  const primaryStatusLabel = isReliabilityReport ? 'Impacto em caso de falha (Severidade)' : 'Sistema'
   const primaryStatusValue = isReliabilityReport ? 'Severo' : trafo.status
+  const secondaryStatusLabel = isReliabilityReport ? 'Vida regulatória' : 'Especialista'
+  const secondaryStatusValue = isReliabilityReport ? '20 anos' : ev.specialistStatus
+  const secondaryStatusColor = isReliabilityReport ? '#1e4e8b' : sFg
+  const secondaryStatusBg = isReliabilityReport ? 'rgba(30,78,139,.14)' : sBg
   const preventiveReliabilityHtml = renderPreventiveReliabilityTable('preventive-table')
   const supplementalSections = (options.supplementalSections || [])
     .filter((section) => selectedSections.includes(section.key))
@@ -833,25 +837,18 @@ export function generateCompleteReport(
     options.routeInspectionDate,
   )
 
-  const reliabilityRankingHtml = `<div class="pdf-card reliability-ranking-card print-page-break-forced">
+  const reliabilityRankingHtml = `<div class="pdf-card reliability-ranking-card">
         <div class="sec-head"><span class="sec-num">3</span>Ranqueamento em Ordem de Criticidade</div>
-        <table>
-          <tr><td colspan="2" class="tc-section-label">Vida Regulatória e Impacto em Falha</td></tr>
-          <tr><td class="tc-label">Vida Regulatória</td><td class="tc-val">20 anos</td></tr>
-          <tr>
-            <td class="tc-label">Impacto em caso de falha</td>
-            <td class="tc-val"><span class="badge" style="color:#991b1b;background:#fee2e2"><span class="badge-dot"></span>Severo</span></td>
-          </tr>
-          <tr><td colspan="2" class="tc-section-label">Ranqueamento do ativo no parque</td></tr>
-          <tr>
-            <td class="tc-label">Índices de saúde</td>
-            <td class="tc-val">posição 23º de 1200</td>
-          </tr>
-          <tr>
-            <td class="tc-label">Prejuízo probabilizado</td>
-            <td class="tc-val">posição 103 de 1200</td>
-          </tr>
-        </table>
+        <div class="ranking-two-col">
+          <div class="ranking-metric">
+            <div class="ranking-label">Índice de saúde probabilístico</div>
+            <div class="ranking-value">posição 23º de 1200</div>
+          </div>
+          <div class="ranking-metric">
+            <div class="ranking-label">Prejuízo probabilizado</div>
+            <div class="ranking-value">posição 103º de 1200</div>
+          </div>
+        </div>
       </div>`
 
   const reliabilityReserveHtml = `<div class="pdf-card">
@@ -863,6 +860,12 @@ export function generateCompleteReport(
           <tr><td class="tc-label">Número de série</td><td class="tc-val">6398-123</td></tr>
           <tr><td class="tc-label">Localização</td><td class="tc-val">Montes Claros, SE Zé Bedeu</td></tr>
           <tr><td class="tc-label">Tempo de reposição estimado</td><td class="tc-val">7 dias úteis</td></tr>
+        </table>
+      </div>`
+
+  const reliabilityFailureCostHtml = `<div class="pdf-card">
+        <div class="sec-head"><span class="sec-num">6</span>Custo da Falha Estimado</div>
+        <table>
           <tr><td class="tc-label">Custo da falha estimado</td><td class="tc-val"><span class="badge" style="color:#991b1b;background:#fee2e2"><span class="badge-dot"></span>R$ 1.250.000,00</span></td></tr>
         </table>
       </div>`
@@ -989,6 +992,10 @@ ${reportMetaTags({
   .tc-section-label { color:#64748b; font-size:12px; font-weight:700; padding:10px 0 4px; border-bottom:1px solid #f1f5f9; }
   .cpill    { display:inline-block; padding:2px 8px; border-radius:4px; font-size:11px; font-weight:700; }
   .report-subitem { margin:2px 0; }
+  .ranking-two-col { display:grid; grid-template-columns:repeat(2, minmax(0, 1fr)); gap:12px; }
+  .ranking-metric { background:#f8fafc; border:1px solid #e2e8f0; border-radius:7px; padding:10px 12px; min-width:0; }
+  .ranking-label { color:#64748b; font-size:10px; font-weight:700; text-transform:uppercase; letter-spacing:.05em; }
+  .ranking-value { color:#0f172a; font-size:13px; font-weight:800; margin-top:4px; }
   .risk-row { display:flex; align-items:center; gap:10px; margin-bottom:7px;break-inside: avoid; page-break-inside: avoid; }
   .risk-lbl { font-size:11px; color:#64748b; width:120px; flex-shrink:0; }
   .risk-track { flex:1; background:#f1f5f9; border-radius:999px; height:10px; overflow:hidden; }
@@ -1119,7 +1126,7 @@ ${reportMetaTags({
       </div>
       <div class="sbar-badges">
         <span class="badge" style="color:${statusColor(primaryStatusValue)};background:${statusBg(primaryStatusValue)}"><span class="badge-dot"></span>${escHtml(primaryStatusLabel)}: ${escHtml(primaryStatusValue)}</span>
-        <span class="badge" style="color:${sFg};background:${sBg}"><span class="badge-dot"></span>Especialista: ${escHtml(ev.specialistStatus)}</span>
+        <span class="badge" style="color:${secondaryStatusColor};background:${secondaryStatusBg}"><span class="badge-dot"></span>${escHtml(secondaryStatusLabel)}: ${escHtml(secondaryStatusValue)}</span>
       </div>
     </div>
 
@@ -1127,7 +1134,7 @@ ${reportMetaTags({
       ${includesEvaluation ? `<div class="pdf-card">
         <div class="sec-head"><span class="sec-num">1</span>Resultado das Avaliações</div>
         <div class="kv-grid">
-          <div class="kv-card"><div class="kv-label">${isReliabilityReport ? 'Status TR-Confiabilidade' : 'Status Sistema'}</div><div class="kv-value" style="font-size:14px;color:${statusColor(primaryStatusValue)}">${escHtml(primaryStatusValue)}</div></div>
+          <div class="kv-card"><div class="kv-label">Status Sistema</div><div class="kv-value" style="font-size:14px;color:${statusColor(trafo.status)}">${escHtml(trafo.status)}</div></div>
           <div class="kv-card"><div class="kv-label">Status Especialista</div><div class="kv-value" style="font-size:14px;color:${sFg}">${escHtml(ev.specialistStatus)}</div></div>
           ${isOilReport ? `<div class="kv-card"><div class="kv-label">Estado do Óleo</div><div class="kv-value" style="font-size:13px">${escHtml(trafo.oilStatus)}</div></div>` : ''}
           ${isOilReport && crom ? `<div class="kv-card"><div class="kv-label">Condição TGC (IEEE)</div><div class="kv-value" style="font-size:14px;color:${condColor(ieeeCondition(crom.TGC,'TGC'))}">${ieeeCondition(crom.TGC,'TGC')}</div></div>` : ''}
@@ -1138,7 +1145,7 @@ ${reportMetaTags({
         <div class="sec-head"><span class="sec-num">2</span>Avaliação do Especialista</div>
         <table>
           <tr><td class="tc-label">Status</td><td class="tc-val"><span class="badge" style="color:${sFg};background:${sBg}">${escHtml(ev.specialistStatus)}</span></td></tr>
-          <tr><td class="tc-label">Modo de falha</td><td class="tc-val">${escHtml(ev.specialistFailureMode)}</td></tr>
+          <tr><td class="tc-label">Modo de falha mais provável</td><td class="tc-val">${escHtml(ev.specialistFailureMode)}</td></tr>
         </table>
         ${ev.specialistNote && ev.specialistNote !== 'Sem observações registradas.' ? `<div class="note-box">${escHtml(ev.specialistNote)}</div>` : ''}
       </div>
@@ -1146,7 +1153,7 @@ ${reportMetaTags({
       ${collectionSectionsHtml}
       ${isReliabilityReport ? reliabilityRankingHtml : ''}
 
-      <div class="pdf-card${isOltcReport ? ' oltc-risk-card print-page-break-forced' : ''}">
+      <div class="pdf-card${isOltcReport ? ' oltc-risk-card print-page-break-forced' : ''}${isReliabilityReport ? ' reliability-risk-card print-page-break-forced' : ''}">
         <div class="sec-head"><span class="sec-num">${
           isReliabilityReport
             ? '4'
@@ -1160,6 +1167,7 @@ ${reportMetaTags({
         ${isOilOrOltcReport || isReliabilityReport ? preventiveReliabilityHtml : ''}
       </div>
       ${isReliabilityReport ? reliabilityReserveHtml : ''}
+      ${isReliabilityReport ? reliabilityFailureCostHtml : ''}
       ${isRouteReport ? `<div class="pdf-card route-preventive-card print-page-break-before">${preventiveReliabilityHtml}</div>` : ''}` : ''}
       ${supplementalSectionsHtml}
     </div>
