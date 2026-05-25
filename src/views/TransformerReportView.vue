@@ -5671,7 +5671,7 @@ watch([activeTab, selectedId], async () => {
       <section
         v-else-if="activeTab === 'Avaliação Completa'"
         class="panel panel-eval"
-        :class="{ 'panel-reliability': isReliabilityMacro }"
+        :class="{ 'panel-reliability': isReliabilityMacro, 'panel-route': isTrRotaMacro }"
       >
         <div class="eval-left-stack">
         <article class="tile eval-card-1" :class="{ 'eval-collapsed': !evalCardOpen['1'] }">
@@ -5797,11 +5797,13 @@ watch([activeTab, selectedId], async () => {
           </template>
           </template>
         </article>
+        </div>
+        <div class="eval-right-stack">
         <article class="tile eval-card-2" :class="{ 'eval-collapsed': !evalCardOpen['2'] }">
           <div class="tile-head-actions eval-card-head-actions">
             <h4>2 - Avaliação do Especialista</h4>
             <div class="eval-card-action-group">
-              <button type="button" class="edit-specialist-btn" @click="openSpecialistModal">
+              <button v-if="evalCardOpen['2']" type="button" class="edit-specialist-btn" @click="openSpecialistModal">
                 <svg class="edit-icon" viewBox="0 0 24 24" aria-hidden="true">
                   <path d="M3 17.25V21h3.75L17.8 9.94l-3.75-3.75L3 17.25zm2.92 2.33H5v-.92l8.06-8.06.92.92L5.92 19.58zM20.71 7.04a1.003 1.003 0 0 0 0-1.42l-2.34-2.34a1.003 1.003 0 0 0-1.42 0l-1.83 1.83 3.75 3.75 1.84-1.82z"/>
                 </svg>
@@ -5826,7 +5828,6 @@ watch([activeTab, selectedId], async () => {
           </p>
           </template>
         </article>
-        </div>
         <article class="tile eval-card-3" :class="{ 'eval-collapsed': !evalCardOpen['3'] }">
           <div class="eval-card-head">
             <h4>{{ isReliabilityMacro ? '3 - Gestão de Reserva' : '3 - Última Coleta' }}</h4>
@@ -6005,6 +6006,25 @@ watch([activeTab, selectedId], async () => {
           </template>
           </template>
         </article>
+        <article
+          v-if="isReliabilityMacro"
+          class="tile eval-card-7"
+          :class="{ 'eval-collapsed': !evalCardOpen['7'] }"
+        >
+          <div class="eval-card-head">
+            <h4>4 - Custo da falha estimado</h4>
+            <button type="button" class="eval-collapse-btn" @click="toggleEvalCard('7')">
+              {{ evalCardOpen['7'] ? '−' : '+' }}
+            </button>
+          </div>
+          <template v-if="evalCardOpen['7']">
+          <p>
+            <b>Custo da falha estimado:</b>
+            <span class="pill eval-status tone-danger">R$ 1.250.000,00</span>
+          </p>
+          </template>
+        </article>
+        </div>
         <article class="tile eval-card-4" :class="{ 'eval-collapsed': !evalCardOpen['4'] }">
           <div class="eval-card-head">
             <h4>{{
@@ -6164,24 +6184,6 @@ watch([activeTab, selectedId], async () => {
             </div>
           </div>
           </template>
-          </template>
-        </article>
-        <article
-          v-if="isReliabilityMacro"
-          class="tile eval-card-7"
-          :class="{ 'eval-collapsed': !evalCardOpen['7'] }"
-        >
-          <div class="eval-card-head">
-            <h4>4 - Custo da falha estimado</h4>
-            <button type="button" class="eval-collapse-btn" @click="toggleEvalCard('7')">
-              {{ evalCardOpen['7'] ? '−' : '+' }}
-            </button>
-          </div>
-          <template v-if="evalCardOpen['7']">
-          <p>
-            <b>Custo da falha estimado:</b>
-            <span class="pill eval-status tone-danger">R$ 1.250.000,00</span>
-          </p>
           </template>
         </article>
       </section>
@@ -8749,56 +8751,60 @@ watch([activeTab, selectedId], async () => {
 
 .panel-eval .eval-left-stack{
   grid-column: 1;
-  grid-row: 1 / span 2;
+  grid-row: 1;
+  display: grid;
+  min-width: 0;
+  align-self: stretch;
+}
+
+.panel-eval .eval-right-stack{
+  grid-column: 2;
+  grid-row: 1;
   display: grid;
   gap: 10px;
   align-content: start;
+  align-self: start;
   min-width: 0;
-  max-width: 100%;
 }
 
-.panel-eval .eval-card-3{
-  grid-column: 2;
-  grid-row: 1 / span 2;
+.panel-eval .eval-card-1{
+  height: 100%;
+  min-height: 100%;
+  align-self: stretch;
+}
+
+.panel-eval .eval-card-1.eval-collapsed{
+  height: fit-content;
+  min-height: 0;
+  align-self: start;
 }
 
 .panel-eval .eval-card-4{
   grid-column: 1 / -1;
-  grid-row: 4;
+  grid-row: 3;
 }
 
 .panel-eval .eval-card-5{
   grid-column: 1 / -1;
-  grid-row: 3;
+  grid-row: 2;
+}
+
+.panel-eval.panel-route .eval-card-4,
+.panel-eval.panel-reliability .eval-card-4{
+  grid-row: 2;
 }
 
 .panel-eval.panel-reliability .eval-card-4{
   grid-column: 1 / -1;
-  grid-row: 4;
   min-height: 245px;
 }
 
-.panel-eval.panel-reliability .eval-left-stack{
-  display: contents;
-}
-
 .panel-eval.panel-reliability .eval-card-1{
-  grid-column: 1;
-  grid-row: 1 / span 3;
   height: 100%;
   align-self: stretch;
 }
 
-.panel-eval.panel-reliability .eval-card-2{
-  grid-column: 2;
-  grid-row: 1;
-  height: auto;
-  align-self: stretch;
-}
-
 .panel-eval.panel-reliability .eval-card-3{
-  grid-column: 2;
-  grid-row: 2;
   height: auto;
   align-self: stretch;
 }
@@ -8808,8 +8814,6 @@ watch([activeTab, selectedId], async () => {
 }
 
 .panel-eval.panel-reliability .eval-card-7{
-  grid-column: 2;
-  grid-row: 3;
   height: auto;
   align-self: stretch;
 }
@@ -8844,7 +8848,6 @@ watch([activeTab, selectedId], async () => {
 }
 
 .panel-eval .eval-card-3.eval-collapsed{
-  grid-row: 1;
   align-self: start;
 }
 
@@ -11082,7 +11085,8 @@ watch([activeTab, selectedId], async () => {
     grid-column: auto;
     grid-row: auto;
   }
-  .panel-eval .eval-left-stack{
+  .panel-eval .eval-left-stack,
+  .panel-eval .eval-right-stack{
     grid-column: auto;
     grid-row: auto;
   }
