@@ -433,7 +433,7 @@ const transformerOptions = computed<Transformer[]>(() => {
       operating: '-',
       sealed: '-',
       analyst: 'alex.fabiano@axol.eng.br',
-      analystNote: 'Descricao do analista',
+      analystNote: 'Descricao do especialista',
       failureMode: '-',
       latitude: '-19.8945',
       longitude: '-44.1377',
@@ -781,6 +781,17 @@ function closeReportViewerModal() {
 const specialistEdits = ref<Record<string, SpecialistOverride>>({})
 const specialistModalOpen = ref(false)
 const analystStatusOptions = ['Normal', 'Alerta', 'Crítico', 'Pendente']
+const reliabilitySeverityOptions = [
+  'Catastrófico',
+  'Crítico',
+  'Marginal',
+  'Mínimo',
+  'Insignificante',
+] as const
+type ReliabilitySeverity = (typeof reliabilitySeverityOptions)[number]
+const reliabilitySeverityEdits = ref<Record<string, ReliabilitySeverity>>({})
+const reliabilitySeverityPickerRef = ref<HTMLElement | null>(null)
+const reliabilitySeverityMenuOpen = ref(false)
 const failureModeOptions = [
   'Degradação por pirólise do Óleo Isolante do Transformador',
   'Descargas parciais',
@@ -1026,6 +1037,29 @@ function saveSpecialistModal() {
       specialistForm.value.failureMode || 'Degradação por pirólise do Óleo Isolante do Transformador',
   }
   specialistModalOpen.value = false
+}
+
+const reliabilitySeverityValue = computed<ReliabilitySeverity>(() => {
+  if (!selectedId.value) return 'Catastrófico'
+  return reliabilitySeverityEdits.value[selectedId.value] || 'Catastrófico'
+})
+
+function updateReliabilitySeverity(value: string) {
+  if (!selectedId.value) return
+  reliabilitySeverityEdits.value[selectedId.value] = value as ReliabilitySeverity
+}
+
+function toggleReliabilitySeverityMenu() {
+  reliabilitySeverityMenuOpen.value = !reliabilitySeverityMenuOpen.value
+}
+
+function closeReliabilitySeverityMenu() {
+  reliabilitySeverityMenuOpen.value = false
+}
+
+function selectReliabilitySeverity(value: ReliabilitySeverity) {
+  updateReliabilitySeverity(value)
+  closeReliabilitySeverityMenu()
 }
 
 function openAnalysisModal() {
@@ -2221,12 +2255,15 @@ const routeAnalysisSortDirection = ref<'asc' | 'desc'>('desc')
 const routeAnalysisModalOpen = ref(false)
 const routeAnalysisModalStep = ref(0)
 const manualRouteInspectionRows = ref<RouteInspectionSource[]>([])
-const evalCardOpen = ref<Record<'1' | '2' | '3' | '4' | '5', boolean>>({
+type EvalCardKey = '1' | '2' | '3' | '4' | '5' | '7'
+
+const evalCardOpen = ref<Record<EvalCardKey, boolean>>({
   '1': true,
   '2': true,
   '3': true,
   '4': true,
   '5': true,
+  '7': true,
 })
 const ieeeCardOpen = ref<Record<'2008' | '2019', boolean>>({
   '2008': true,
@@ -2301,7 +2338,7 @@ const routeAnalysisModalTabs = [
   'Sistema de ativo',
 ] as const
 
-function toggleEvalCard(card: '1' | '2' | '3' | '4' | '5') {
+function toggleEvalCard(card: EvalCardKey) {
   evalCardOpen.value[card] = !evalCardOpen.value[card]
 }
 
@@ -2749,7 +2786,8 @@ function closeAnalysisColumnsOnOutsideClick(event: MouseEvent) {
     coletasSortWrapRef.value?.contains(target) ||
     treatmentColumnsWrapRef.value?.contains(target) ||
     treatmentSortWrapRef.value?.contains(target) ||
-    treatmentNewWrapRef.value?.contains(target)
+    treatmentNewWrapRef.value?.contains(target) ||
+    reliabilitySeverityPickerRef.value?.contains(target)
   ) {
     return
   }
@@ -2764,6 +2802,7 @@ function closeAnalysisColumnsOnOutsideClick(event: MouseEvent) {
   coletasExportMenuOpen.value = false
   treatmentColumnsMenuOpen.value = false
   treatmentNewMenuOpen.value = false
+  reliabilitySeverityMenuOpen.value = false
   transformerPickerOpen.value = false
   transformerPickerSearch.value = ''
   transformerPickerFocusedIndex.value = -1
@@ -2946,6 +2985,7 @@ function buildGeneratedReportHtml() {
     sections: reportSectionSelections.value,
     supplementalSections: buildReportSupplementalSections(),
     macroTab: activeMacroTab.value,
+    reliabilitySeverity: reliabilitySeverityValue.value,
     routeInspectionDate: latestRouteInspectionSnapshot.value?.date,
     routeInspectionSections: latestRouteInspectionSnapshot.value?.sections.map((section) => ({
       title: section.title,
@@ -3021,7 +3061,7 @@ function buildSharedReportHeaderFooter(html: string) {
             <div style="width:44px;display:flex;justify-content:flex-start;">${qr}</div>
             <div style="flex:1;text-align:center;">
               <div>SIARO - Axol Engenharia</div>
-              ${analyst ? `<div style="font-size:8px;color:#64748b;margin-top:2px;">Analista: ${escapeSharedReportHtml(analyst)}</div>` : ''}
+              ${analyst ? `<div style="font-size:8px;color:#64748b;margin-top:2px;">Especialista: ${escapeSharedReportHtml(analyst)}</div>` : ''}
               ${validationUrl ? `<div style="font-size:8px;color:#64748b;margin-top:2px;">${escapeSharedReportHtml(validationUrl)}</div>` : ''}
             </div>
             <div style="width:120px;text-align:right;font-size:8px;">Documento compartilhado</div>
@@ -3502,7 +3542,7 @@ const summaryPrimaryStatusValue = computed(() => {
     const oltcStatus = normalizeCell(selectedOltcMeta.value?.ESTADO)
     return oltcStatus !== '-' ? oltcStatus : selectedTransformer.value.status
   }
-  if (activeMacroTab.value === 'TR-Confiabilidade') return 'Severo'
+  if (activeMacroTab.value === 'TR-Confiabilidade') return 'Alerta'
   return selectedTransformer.value.status
 })
 
@@ -4866,6 +4906,14 @@ function statusOptionStyle(value: string) {
   return { color: '#0b5f0b', backgroundColor: 'rgba(0, 255, 0, 0.16)', fontWeight: '700' }
 }
 
+function reliabilitySeverityClass(value: string) {
+  if (value === 'Catastrófico') return 'severity-catastrophic'
+  if (value === 'Crítico') return 'severity-critical'
+  if (value === 'Marginal') return 'severity-marginal'
+  if (value === 'Mínimo') return 'severity-minimal'
+  return 'severity-insignificant'
+}
+
 function enhanceMobileTables() {
   if (typeof window === 'undefined') return
   const tables = Array.from(document.querySelectorAll('.report-shell table.table')) as HTMLTableElement[]
@@ -5623,7 +5671,7 @@ watch([activeTab, selectedId], async () => {
       <section
         v-else-if="activeTab === 'Avaliação Completa'"
         class="panel panel-eval"
-        :class="{ 'panel-reliability': isReliabilityMacro }"
+        :class="{ 'panel-reliability': isReliabilityMacro, 'panel-route': isTrRotaMacro }"
       >
         <div class="eval-left-stack">
         <article class="tile eval-card-1" :class="{ 'eval-collapsed': !evalCardOpen['1'] }">
@@ -5634,7 +5682,7 @@ watch([activeTab, selectedId], async () => {
             </button>
           </div>
           <template v-if="evalCardOpen['1']">
-          <p><b>Avaliação do risco operacional do transformador:</b></p>
+          <p><b>{{ isReliabilityMacro || isTrRotaMacro || isOltcMacro ? '1.1 Avaliação do risco operacional do transformador:' : 'Avaliação do risco operacional do transformador:' }}</b></p>
           <p>
             Transformador encontra-se com status de normal conforme avaliações realizadas nos históricos das variáveis
             de entrada da plataforma.
@@ -5645,8 +5693,91 @@ watch([activeTab, selectedId], async () => {
             normal estabelecida pela tabela de condições definida no documento de requisitos funcionais da plataforma e
             continuar o monitoramento.
           </p>
+          <template v-if="isReliabilityMacro">
+            <p><b>1.2 Vida regulatória:</b> 20 anos</p>
+            <p><b>1.3 Ranqueamento em ordem de criticidade:</b></p>
+            <ul class="reliability-subitems">
+              <li><b>Índices de saúde:</b> posição 23º de 1200</li>
+              <li><b>Prejuízo probabilizado:</b> posição 103 de 1200</li>
+            </ul>
+            <div class="reliability-severity-row">
+              <b>1.4 Impacto em caso de falha (Severidade):</b>
+              <div ref="reliabilitySeverityPickerRef" class="reliability-severity-picker">
+                <button
+                  type="button"
+                  class="reliability-severity-trigger"
+                  :aria-expanded="reliabilitySeverityMenuOpen"
+                  aria-haspopup="listbox"
+                  @click="toggleReliabilitySeverityMenu"
+                  @keydown.esc.stop.prevent="closeReliabilitySeverityMenu"
+                >
+                  <span :class="['reliability-severity-text', reliabilitySeverityClass(reliabilitySeverityValue)]">
+                    {{ reliabilitySeverityValue }}
+                  </span>
+                  <i class="reliability-severity-caret" :class="{ open: reliabilitySeverityMenuOpen }" aria-hidden="true">
+                    {{ reliabilitySeverityMenuOpen ? '▴' : '▾' }}
+                  </i>
+                </button>
+                <div
+                  v-if="reliabilitySeverityMenuOpen"
+                  class="reliability-severity-menu"
+                  role="listbox"
+                >
+                  <button
+                    v-for="item in reliabilitySeverityOptions"
+                    :key="item"
+                    type="button"
+                    class="reliability-severity-option"
+                    :class="{ active: item === reliabilitySeverityValue }"
+                    role="option"
+                    :aria-selected="item === reliabilitySeverityValue"
+                    @click="selectReliabilitySeverity(item)"
+                  >
+                    <span :class="['reliability-severity-dot', reliabilitySeverityClass(item)]"></span>
+                    <span :class="['reliability-severity-text', reliabilitySeverityClass(item)]">
+                      {{ item }}
+                    </span>
+                  </button>
+                </div>
+              </div>
+            </div>
+          </template>
+          <template v-else-if="isTrRotaMacro">
+            <p><b>1.2 Inspeções de Rota:</b></p>
+            <p>
+              A inspeção sensitiva (plano de inspeção de rota ou ronda) está inserida dentro do contexto e definição de
+              inspeção preditiva, pois busca prevenir falhas e minimizar interferências humanas no equipamento a ser
+              inspecionado.
+            </p>
+            <p><b>1.3 Observações:</b></p>
+            <p>
+              As equipes têm a possibilidade de aproveitar qualquer registro histórico de inspeções de campo que esteja
+              disponível. Com isso, dados obtidos a partir de medições realizadas em campo (por exemplo, temperatura)
+              podem ser transformados em informações sensitivas e incorporados ao gêmeo digital SIARO.
+            </p>
+          </template>
+          <template v-else-if="isOltcMacro">
+            <p><b>1.2 Inspeções no óleo isolante dos OLTCs:</b></p>
+            <p>
+              Os ensaios no óleo isolante dos comutadores de derivação em carga (OLTC) são realizadas conforme a norma
+              NBR-XXXXXX e as recomendações da brochura do Cigré 443. Os ensaios devem estar contidos nas rotinas de
+              manutenção preditiva do OLTC.
+            </p>
+            <p><b>1.3 Observações:</b></p>
+            <p>
+              As equipes têm a possibilidade de monitorar a condição do fluido isolante do do OLTC juntamente com as
+              análises do fluido isolante do tanque principal. Isso permite uma mudança nas estimativas de criticidade
+              dos transformadores que contenham OLTC, trazendo uma análise mais detalhada.
+            </p>
+          </template>
           <p class="preventive-reliability-title">
-            <b>Indicadores de desempenho de operação em risco do transformador:</b>
+            <b>{{
+              isReliabilityMacro
+                ? '1.5 Indicadores de desempenho de operação em risco do transformador:'
+                : isTrRotaMacro || isOltcMacro
+                  ? '1.4 Indicadores de desempenho de operação em risco do transformador:'
+                  : 'Indicadores de desempenho de operação em risco do transformador:'
+            }}</b>
           </p>
           <p class="preventive-reliability-subtitle">
             A seguir é apresentado uma tabela com os índices de confiabilidade calculados para a avaliação de risco
@@ -5681,6 +5812,8 @@ watch([activeTab, selectedId], async () => {
               Esta avaliação, permite estimar as probabilidades de ocorrências dos estados de risco do transformador,
               indo de N1, mais brando, até N5, mais crítico.
             </p>
+          </template>
+          <template v-if="!isReliabilityMacro && !isTrRotaMacro && !isOltcMacro">
             <p><b>Resultado da concentração de gases combustíveis (TGC) segundo o Guia IEEE Std C57.104™- 2008:</b></p>
             <p>
               “Condição 02: Quando o total de gases combustíveis (TGC) está fora do normal. Se há algum gás excedendo
@@ -5700,11 +5833,13 @@ watch([activeTab, selectedId], async () => {
           </template>
           </template>
         </article>
+        </div>
+        <div class="eval-right-stack">
         <article class="tile eval-card-2" :class="{ 'eval-collapsed': !evalCardOpen['2'] }">
           <div class="tile-head-actions eval-card-head-actions">
             <h4>2 - Avaliação do Especialista</h4>
             <div class="eval-card-action-group">
-              <button type="button" class="edit-specialist-btn" @click="openSpecialistModal">
+              <button v-if="evalCardOpen['2']" type="button" class="edit-specialist-btn" @click="openSpecialistModal">
                 <svg class="edit-icon" viewBox="0 0 24 24" aria-hidden="true">
                   <path d="M3 17.25V21h3.75L17.8 9.94l-3.75-3.75L3 17.25zm2.92 2.33H5v-.92l8.06-8.06.92.92L5.92 19.58zM20.71 7.04a1.003 1.003 0 0 0 0-1.42l-2.34-2.34a1.003 1.003 0 0 0-1.42 0l-1.83 1.83 3.75 3.75 1.84-1.82z"/>
                 </svg>
@@ -5724,34 +5859,32 @@ watch([activeTab, selectedId], async () => {
           </p>
           <p><b>Observações:</b> {{ specialistView.analystNote }}</p>
           <p>
-            <b>Modo de falha selecionado:</b>
+            <b>Modo de falha mais provável:</b>
             {{ specialistView.failureMode }}
           </p>
           </template>
         </article>
-        </div>
         <article class="tile eval-card-3" :class="{ 'eval-collapsed': !evalCardOpen['3'] }">
           <div class="eval-card-head">
-            <h4>{{ isReliabilityMacro ? '3 - Ranqueamento em ordem de criticidade' : '3 - Última Coleta' }}</h4>
+            <h4>{{ isReliabilityMacro ? '3 - Gestão de Reserva' : '3 - Última Coleta' }}</h4>
             <button type="button" class="eval-collapse-btn" @click="toggleEvalCard('3')">
               {{ evalCardOpen['3'] ? '−' : '+' }}
             </button>
           </div>
           <template v-if="evalCardOpen['3']">
           <template v-if="isReliabilityMacro">
-            <p><b>Vida Regulatória e Impacto em Falha:</b></p>
-            <ul class="reliability-subitems">
-              <li><b>Vida Regulatória:</b> 20 anos</li>
-              <li>
-                <b>Impacto em caso de falha:</b>
-                <span class="pill eval-status" :class="statusClass('Crítico')">Severo</span>
-              </li>
-            </ul>
-            <p><b>Ranqueamento do ativo no parque:</b></p>
-            <ul class="reliability-subitems">
-              <li><b>Índices de saúde:</b> posição 23º de 1200</li>
-              <li><b>Prejuízo probabilizado:</b> posição 103 de 1200</li>
-            </ul>
+            <p>
+              <b>Reserva Institucional (Compartilhado):</b>
+              <span class="pill eval-status tone-normal">SIM</span>
+            </p>
+            <p>
+              <b>Reserva Local:</b>
+              <span class="pill eval-status tone-danger">Não</span>
+            </p>
+            <p><b>Equipamento reserva:</b> Transformador</p>
+            <p><b>Número de série:</b> 6398-123</p>
+            <p><b>Localização:</b> Montes Claros, SE Zé Bedeu</p>
+            <p><b>Tempo de reposição estimado:</b> 7 dias úteis</p>
           </template>
           <template v-else>
           <p>
@@ -5909,11 +6042,32 @@ watch([activeTab, selectedId], async () => {
           </template>
           </template>
         </article>
+        <article
+          v-if="isReliabilityMacro"
+          class="tile eval-card-7"
+          :class="{ 'eval-collapsed': !evalCardOpen['7'] }"
+        >
+          <div class="eval-card-head">
+            <h4>4 - Custo da falha estimado</h4>
+            <button type="button" class="eval-collapse-btn" @click="toggleEvalCard('7')">
+              {{ evalCardOpen['7'] ? '−' : '+' }}
+            </button>
+          </div>
+          <template v-if="evalCardOpen['7']">
+          <p>
+            <b>Custo da falha estimado:</b>
+            <span class="pill eval-status tone-danger">R$ 1.250.000,00</span>
+          </p>
+          </template>
+        </article>
+        </div>
         <article class="tile eval-card-4" :class="{ 'eval-collapsed': !evalCardOpen['4'] }">
           <div class="eval-card-head">
             <h4>{{
               isTrRotaMacro || isReliabilityMacro
-                ? '4 - Avaliação do risco operacional do transformador'
+                ? isReliabilityMacro
+                  ? '5 - Avaliação do risco operacional do transformador'
+                  : '4 - Avaliação do risco operacional do transformador'
                 : '5 - Avaliação do risco operacional do transformador'
             }}</h4>
             <button type="button" class="eval-collapse-btn" @click="toggleEvalCard('4')">
@@ -5994,12 +6148,12 @@ watch([activeTab, selectedId], async () => {
           </template>
         </article>
         <article
-          v-if="!isTrRotaMacro"
+          v-if="!isTrRotaMacro && !isReliabilityMacro"
           class="tile eval-card-5"
           :class="{ 'eval-collapsed': !evalCardOpen['5'] }"
         >
           <div class="eval-card-head">
-            <h4>{{ isReliabilityMacro ? '5 - Gestão de Reserva' : '4 - Tratamentos no óleo isolante' }}</h4>
+            <h4>{{ isReliabilityMacro ? '6 - Gestão de Reserva' : '4 - Tratamentos no óleo isolante' }}</h4>
             <button type="button" class="eval-collapse-btn" @click="toggleEvalCard('5')">
               {{ evalCardOpen['5'] ? '−' : '+' }}
             </button>
@@ -6018,10 +6172,6 @@ watch([activeTab, selectedId], async () => {
             <p><b>Número de série:</b> 6398-123</p>
             <p><b>Localização:</b> Montes Claros, SE Zé Bedeu</p>
             <p><b>Tempo de reposição estimado:</b> 7 dias úteis</p>
-            <p>
-              <b>Custo da falha estimado:</b>
-              <span class="pill eval-status tone-danger">R$ 1.250.000,00</span>
-            </p>
           </template>
           <template v-else>
           <p>
@@ -8637,36 +8787,75 @@ watch([activeTab, selectedId], async () => {
 
 .panel-eval .eval-left-stack{
   grid-column: 1;
-  grid-row: 1 / span 2;
+  grid-row: 1;
+  display: grid;
+  min-width: 0;
+  align-self: stretch;
+}
+
+.panel-eval .eval-right-stack{
+  grid-column: 2;
+  grid-row: 1;
   display: grid;
   gap: 10px;
   align-content: start;
+  align-self: start;
   min-width: 0;
-  max-width: 100%;
 }
 
-.panel-eval .eval-card-3{
-  grid-column: 2;
-  grid-row: 1 / span 2;
+.panel-eval .eval-card-1{
+  height: 100%;
+  min-height: 100%;
+  align-self: stretch;
+}
+
+.panel-eval .eval-card-1.eval-collapsed{
+  height: fit-content;
+  min-height: 0;
+  align-self: start;
 }
 
 .panel-eval .eval-card-4{
   grid-column: 1 / -1;
-  grid-row: 4;
+  grid-row: 3;
 }
 
 .panel-eval .eval-card-5{
   grid-column: 1 / -1;
-  grid-row: 3;
+  grid-row: 2;
+}
+
+.panel-eval.panel-route .eval-card-4,
+.panel-eval.panel-reliability .eval-card-4{
+  grid-row: 2;
 }
 
 .panel-eval.panel-reliability .eval-card-4{
-  grid-row: 3;
+  grid-column: 1 / -1;
   min-height: 245px;
 }
 
-.panel-eval.panel-reliability .eval-card-5{
-  grid-row: 4;
+.panel-eval.panel-reliability .eval-card-1{
+  height: 100%;
+  align-self: stretch;
+}
+
+.panel-eval.panel-reliability .eval-card-3{
+  height: auto;
+  align-self: stretch;
+}
+
+.panel-eval.panel-reliability .eval-card-3.eval-collapsed{
+  align-self: start;
+}
+
+.panel-eval.panel-reliability .eval-card-7{
+  height: auto;
+  align-self: stretch;
+}
+
+.panel-eval.panel-reliability .eval-card-7.eval-collapsed{
+  align-self: start;
 }
 
 .panel-eval.panel-reliability .eval-card-4 .risk-grid-shell{
@@ -8695,7 +8884,6 @@ watch([activeTab, selectedId], async () => {
 }
 
 .panel-eval .eval-card-3.eval-collapsed{
-  grid-row: 1;
   align-self: start;
 }
 
@@ -9483,6 +9671,151 @@ watch([activeTab, selectedId], async () => {
   padding: 4px 10px;
   font-size: 12px;
   font-weight: 700;
+}
+
+.reliability-severity-row{
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin: 6px 0;
+  font-size: 13px;
+  color: rgba(15, 23, 42, 0.82);
+}
+
+.reliability-severity-row > b{
+  color: #123a6d;
+  font-weight: 700;
+}
+
+.reliability-severity-picker{
+  position: relative;
+  min-width: 176px;
+}
+
+.reliability-severity-trigger{
+  width: 100%;
+  height: 34px;
+  border-radius: 12px;
+  border: 1px solid rgba(15, 23, 42, 0.12);
+  background: #fff;
+  padding: 0 10px 0 12px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  cursor: pointer;
+  box-shadow: 0 8px 18px rgba(15, 23, 42, 0.04);
+}
+
+.reliability-severity-trigger:focus-visible{
+  outline: 2px solid rgba(30, 78, 139, 0.4);
+  outline-offset: 1px;
+}
+
+.reliability-severity-caret{
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 16px;
+  height: 16px;
+  color: rgba(15, 23, 42, 0.62);
+  font-style: normal;
+  font-size: 12px;
+  line-height: 1;
+  transition: transform 0.18s ease, color 0.18s ease;
+}
+
+.reliability-severity-caret.open{
+  color: rgba(15, 23, 42, 0.82);
+  transform: translateY(-1px);
+}
+
+.reliability-severity-menu{
+  position: absolute;
+  top: calc(100% + 6px);
+  left: 0;
+  z-index: 56;
+  width: 220px;
+  border-radius: 12px;
+  border: 1px solid rgba(15, 23, 42, 0.12);
+  background: #fff;
+  box-shadow: 0 12px 28px rgba(15, 23, 42, 0.14);
+  padding: 6px;
+  display: grid;
+  gap: 3px;
+}
+
+.reliability-severity-option{
+  width: 100%;
+  border: 0;
+  border-radius: 10px;
+  background: transparent;
+  padding: 8px 9px;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  text-align: left;
+  cursor: pointer;
+  font-size: 13px;
+  font-weight: 700;
+}
+
+.reliability-severity-option:hover,
+.reliability-severity-option.active{
+  background: rgba(30, 78, 139, 0.08);
+}
+
+.reliability-severity-dot{
+  width: 8px;
+  height: 8px;
+  border-radius: 999px;
+  flex: 0 0 auto;
+}
+
+.reliability-severity-text{
+  font-size: 13px;
+  font-weight: 700;
+}
+
+.reliability-severity-text.severity-catastrophic{
+  color: #ff0000;
+}
+
+.reliability-severity-text.severity-critical{
+  color: #ff7a00;
+}
+
+.reliability-severity-text.severity-marginal{
+  color: #ffd400;
+}
+
+.reliability-severity-text.severity-minimal{
+  color: #22c55e;
+}
+
+.reliability-severity-text.severity-insignificant{
+  color: #008000;
+}
+
+.reliability-severity-dot.severity-catastrophic{
+  background: #ff0000;
+}
+
+.reliability-severity-dot.severity-critical{
+  background: #ff7a00;
+}
+
+.reliability-severity-dot.severity-marginal{
+  background: #ffd400;
+}
+
+.reliability-severity-dot.severity-minimal{
+  background: #22c55e;
+}
+
+.reliability-severity-dot.severity-insignificant{
+  background: #008000;
 }
 
 .edit-specialist-btn{
@@ -10788,11 +11121,13 @@ watch([activeTab, selectedId], async () => {
   .panel-eval .eval-card-2,
   .panel-eval .eval-card-3,
   .panel-eval .eval-card-4,
-  .panel-eval .eval-card-5{
+  .panel-eval .eval-card-5,
+  .panel-eval .eval-card-7{
     grid-column: auto;
     grid-row: auto;
   }
-  .panel-eval .eval-left-stack{
+  .panel-eval .eval-left-stack,
+  .panel-eval .eval-right-stack{
     grid-column: auto;
     grid-row: auto;
   }
