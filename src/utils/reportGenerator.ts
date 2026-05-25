@@ -79,6 +79,7 @@ export interface CompleteReportOptions {
   sections?: ReportSectionName[]
   supplementalSections?: ReportSupplementalSection[]
   macroTab?: 'TR-Óleo' | 'TR-OLTC' | 'TR-Rota' | 'TR-Confiabilidade'
+  reliabilitySeverity?: string
   routeInspectionDate?: string
   routeInspectionSections?: ReportRouteInspectionSection[]
 }
@@ -86,15 +87,21 @@ export interface CompleteReportOptions {
 // ─── Helpers ────────────────────────────────────────────────────────────────
 
 function statusColor(s: string) {
+  if (s === 'Catastrófico' || s === 'Catastrófico.') return '#ff0000'
   if (s === 'Severo') return '#dc2626'
-  if (s === 'Crítico') return '#dc2626'
-  if (s === 'Alerta') return '#d97706'
+  if (s === 'Crítico' || s === 'Crítico.') return '#ff7a00'
+  if (s === 'Alerta' || s === 'Marginal' || s === 'Marginal.') return '#ffd400'
+  if (s === 'Mínimo' || s === 'Mínimo.') return '#22c55e'
+  if (s === 'Insignificante' || s === 'Insignificante.') return '#008000'
   return '#16a34a'
 }
 function statusBg(s: string) {
+  if (s === 'Catastrófico' || s === 'Catastrófico.') return '#fee2e2'
   if (s === 'Severo') return '#fee2e2'
-  if (s === 'Crítico') return '#fee2e2'
-  if (s === 'Alerta') return '#fef3c7'
+  if (s === 'Crítico' || s === 'Crítico.') return '#ffedd5'
+  if (s === 'Alerta' || s === 'Marginal' || s === 'Marginal.') return '#fef3c7'
+  if (s === 'Mínimo' || s === 'Mínimo.') return '#dcfce7'
+  if (s === 'Insignificante' || s === 'Insignificante.') return '#bbf7d0'
   return '#dcfce7'
 }
 function fmt(d: Date) {
@@ -730,7 +737,7 @@ export function generateCompleteReport(
   const isRouteReport = options.macroTab === 'TR-Rota'
   const isReliabilityReport = reportSubject === 'TR-Confiabilidade'
   const primaryStatusLabel = isReliabilityReport ? 'Impacto em caso de falha (Severidade)' : 'Sistema'
-  const primaryStatusValue = isReliabilityReport ? 'Severo' : trafo.status
+  const primaryStatusValue = isReliabilityReport ? options.reliabilitySeverity || 'Catastrófico' : trafo.status
   const secondaryStatusLabel = isReliabilityReport ? 'Vida regulatória' : 'Especialista'
   const secondaryStatusValue = isReliabilityReport ? '20 anos' : ev.specialistStatus
   const secondaryStatusColor = isReliabilityReport ? '#1e4e8b' : sFg
