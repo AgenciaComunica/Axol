@@ -5682,7 +5682,7 @@ watch([activeTab, selectedId], async () => {
             </button>
           </div>
           <template v-if="evalCardOpen['1']">
-          <p><b>{{ isReliabilityMacro || isTrRotaMacro ? '1.1 Avaliação do risco operacional do transformador:' : 'Avaliação do risco operacional do transformador:' }}</b></p>
+          <p><b>{{ isReliabilityMacro || isTrRotaMacro || isOltcMacro ? '1.1 Avaliação do risco operacional do transformador:' : 'Avaliação do risco operacional do transformador:' }}</b></p>
           <p>
             Transformador encontra-se com status de normal conforme avaliações realizadas nos históricos das variáveis
             de entrada da plataforma.
@@ -5756,11 +5756,25 @@ watch([activeTab, selectedId], async () => {
               podem ser transformados em informações sensitivas e incorporados ao gêmeo digital SIARO.
             </p>
           </template>
+          <template v-else-if="isOltcMacro">
+            <p><b>1.2 Inspeções no óleo isolante dos OLTCs:</b></p>
+            <p>
+              Os ensaios no óleo isolante dos comutadores de derivação em carga (OLTC) são realizadas conforme a norma
+              NBR-XXXXXX e as recomendações da brochura do Cigré 443. Os ensaios devem estar contidos nas rotinas de
+              manutenção preditiva do OLTC.
+            </p>
+            <p><b>1.3 Observações:</b></p>
+            <p>
+              As equipes têm a possibilidade de monitorar a condição do fluido isolante do do OLTC juntamente com as
+              análises do fluido isolante do tanque principal. Isso permite uma mudança nas estimativas de criticidade
+              dos transformadores que contenham OLTC, trazendo uma análise mais detalhada.
+            </p>
+          </template>
           <p class="preventive-reliability-title">
             <b>{{
               isReliabilityMacro
                 ? '1.5 Indicadores de desempenho de operação em risco do transformador:'
-                : isTrRotaMacro
+                : isTrRotaMacro || isOltcMacro
                   ? '1.4 Indicadores de desempenho de operação em risco do transformador:'
                   : 'Indicadores de desempenho de operação em risco do transformador:'
             }}</b>
@@ -5799,7 +5813,7 @@ watch([activeTab, selectedId], async () => {
               indo de N1, mais brando, até N5, mais crítico.
             </p>
           </template>
-          <template v-if="!isReliabilityMacro && !isTrRotaMacro">
+          <template v-if="!isReliabilityMacro && !isTrRotaMacro && !isOltcMacro">
             <p><b>Resultado da concentração de gases combustíveis (TGC) segundo o Guia IEEE Std C57.104™- 2008:</b></p>
             <p>
               “Condição 02: Quando o total de gases combustíveis (TGC) está fora do normal. Se há algum gás excedendo
