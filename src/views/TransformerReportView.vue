@@ -5682,7 +5682,7 @@ watch([activeTab, selectedId], async () => {
             </button>
           </div>
           <template v-if="evalCardOpen['1']">
-          <p><b>{{ isReliabilityMacro ? '1.1 Avaliação do risco operacional do transformador:' : 'Avaliação do risco operacional do transformador:' }}</b></p>
+          <p><b>{{ isReliabilityMacro || isTrRotaMacro ? '1.1 Avaliação do risco operacional do transformador:' : 'Avaliação do risco operacional do transformador:' }}</b></p>
           <p>
             Transformador encontra-se com status de normal conforme avaliações realizadas nos históricos das variáveis
             de entrada da plataforma.
@@ -5742,8 +5742,28 @@ watch([activeTab, selectedId], async () => {
               </div>
             </div>
           </template>
+          <template v-else-if="isTrRotaMacro">
+            <p><b>1.2 Inspeções de Rota:</b></p>
+            <p>
+              A inspeção sensitiva (plano de inspeção de rota ou ronda) está inserida dentro do contexto e definição de
+              inspeção preditiva, pois busca prevenir falhas e minimizar interferências humanas no equipamento a ser
+              inspecionado.
+            </p>
+            <p><b>1.3 Observações:</b></p>
+            <p>
+              As equipes têm a possibilidade de aproveitar qualquer registro histórico de inspeções de campo que esteja
+              disponível. Com isso, dados obtidos a partir de medições realizadas em campo (por exemplo, temperatura)
+              podem ser transformados em informações sensitivas e incorporados ao gêmeo digital SIARO.
+            </p>
+          </template>
           <p class="preventive-reliability-title">
-            <b>{{ isReliabilityMacro ? '1.5 Indicadores de desempenho de operação em risco do transformador:' : 'Indicadores de desempenho de operação em risco do transformador:' }}</b>
+            <b>{{
+              isReliabilityMacro
+                ? '1.5 Indicadores de desempenho de operação em risco do transformador:'
+                : isTrRotaMacro
+                  ? '1.4 Indicadores de desempenho de operação em risco do transformador:'
+                  : 'Indicadores de desempenho de operação em risco do transformador:'
+            }}</b>
           </p>
           <p class="preventive-reliability-subtitle">
             A seguir é apresentado uma tabela com os índices de confiabilidade calculados para a avaliação de risco
@@ -5778,6 +5798,8 @@ watch([activeTab, selectedId], async () => {
               Esta avaliação, permite estimar as probabilidades de ocorrências dos estados de risco do transformador,
               indo de N1, mais brando, até N5, mais crítico.
             </p>
+          </template>
+          <template v-if="!isReliabilityMacro && !isTrRotaMacro">
             <p><b>Resultado da concentração de gases combustíveis (TGC) segundo o Guia IEEE Std C57.104™- 2008:</b></p>
             <p>
               “Condição 02: Quando o total de gases combustíveis (TGC) está fora do normal. Se há algum gás excedendo
