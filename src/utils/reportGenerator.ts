@@ -973,6 +973,11 @@ ${reportMetaTags({
   .sbar-subject { font-size:12px; color:#0f172a; margin-top:7px; font-weight:700; }
   .sbar-subject span { color:#64748b; font-weight:600; }
   .sbar-badges { display:flex; gap:8px; flex-wrap:wrap; }
+  .sbar-reliability { align-items:flex-start; }
+  .sbar-reliability .sbar-main { flex:1 1 auto; min-width:0; }
+  .sbar-reliability .sbar-subject { white-space:nowrap; }
+  .sbar-reliability .sbar-badges { flex:0 0 340px; flex-direction:column; align-items:flex-end; gap:8px; }
+  .sbar-reliability .badge { max-width:100%; white-space:nowrap; }
   .badge { display:inline-flex; align-items:center; gap:5px; padding:4px 12px; border-radius:999px; font-size:12px; font-weight:700; }
   .badge-dot { width:6px; height:6px; border-radius:50%; background:currentColor; flex-shrink:0; }
 
@@ -1121,7 +1126,7 @@ ${reportMetaTags({
     </div>
 
     <!-- STATUS BAR -->
-    <div class="sbar">
+    <div class="sbar${isReliabilityReport ? ' sbar-reliability' : ''}">
       <div class="sbar-main">
         <div class="sbar-accent"></div>
         <div>
