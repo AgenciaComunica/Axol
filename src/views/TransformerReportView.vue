@@ -271,6 +271,15 @@ const preventiveReliabilityRows = [
   { indicator: 'Frequência (ocorrências por ano)', n1: '0.00', n2: '10.80', n3: '18.25', n4: '7.37', n5: '0.00' },
   { indicator: 'Duração média (dias)', n1: '0.00', n2: '1.74', n3: '10.68', n4: '20.51', n5: '0.00' },
 ]
+const reliabilityRiskMatrixPoints = [
+  { impact: 1, label: 'Muito Baixo', probability: 16.4, risk: 36.4, color: '#00B050' },
+  { impact: 2, label: 'Baixo', probability: 58.2, risk: 132.2, color: '#92D050' },
+  { impact: 3, label: 'Médio', probability: 38.6, risk: 116.6, color: '#FFFF00' },
+  { impact: 4, label: 'Alto', probability: 28.4, risk: 94.4, color: '#FFC000' },
+  { impact: 5, label: 'Muito Alto', probability: 48.8, risk: 148.8, color: '#FF0000' },
+]
+const formatRiskPercent = (value: number) =>
+  `${value.toLocaleString('pt-BR', { maximumFractionDigits: 0 })}%`
 const generateReportMenuOpen = ref(false)
 const generateReportWrapRef = ref<HTMLElement | null>(null)
 const reportSectionSelections = ref<ReportSectionName[]>(['Avaliação Completa'])
@@ -2121,6 +2130,88 @@ const historyChartOptions = computed<ApexOptions>(() => ({
       },
     },
   ],
+}))
+
+const reliabilityRiskMatrixSeries = computed(() =>
+  reliabilityRiskMatrixPoints.map((point) => ({
+    name: point.label,
+    data: [
+      {
+        x: point.impact,
+        y: point.probability,
+        z: point.risk,
+        impact: point.impact,
+        label: point.label,
+        probability: point.probability,
+        risk: point.risk,
+      },
+    ],
+  }))
+)
+
+const reliabilityRiskMatrixOptions = computed<ApexOptions>(() => ({
+  chart: {
+    type: 'bubble',
+    animations: { enabled: true },
+    toolbar: { show: false },
+    zoom: { enabled: false },
+    foreColor: '#334155',
+    redrawOnParentResize: true,
+    redrawOnWindowResize: true,
+  },
+  colors: reliabilityRiskMatrixPoints.map((point) => point.color),
+  dataLabels: { enabled: false },
+  fill: { opacity: 0.9 },
+  grid: {
+    borderColor: 'rgba(15, 23, 42, 0.14)',
+    strokeDashArray: 0,
+    xaxis: { lines: { show: true } },
+    yaxis: { lines: { show: true } },
+  },
+  legend: { show: false },
+  stroke: { width: 1, colors: ['#ffffff'] },
+  xaxis: {
+    min: 0,
+    max: 6,
+    tickAmount: 6,
+    title: {
+      text: 'Impacto',
+      style: { color: '#334155', fontSize: '12px', fontWeight: 600 },
+    },
+    labels: {
+      formatter: (value: string) => {
+        const numericValue = Number(value)
+        if (numericValue === 0 || numericValue === 6) return ''
+        return `${numericValue.toLocaleString('pt-BR')}`
+      },
+    },
+  },
+  yaxis: {
+    min: 0,
+    max: 100,
+    tickAmount: 10,
+    title: {
+      text: 'Probabilidade (P)',
+      style: { color: '#334155', fontSize: '12px', fontWeight: 600 },
+    },
+    labels: {
+      formatter: (value: number) => formatRiskPercent(value),
+    },
+  },
+  tooltip: {
+    custom: ({ seriesIndex, dataPointIndex, w }) => {
+      const point = w.config.series?.[seriesIndex]?.data?.[dataPointIndex]
+      if (!point) return ''
+      return `
+        <div class="reliability-risk-tooltip">
+          <strong>${point.label}</strong>
+          <span>Impacto: ${point.impact}</span>
+          <span>Probabilidade: ${formatRiskPercent(point.probability)}</span>
+          <span>Risco: ${formatRiskPercent(point.risk)}</span>
+        </div>
+      `
+    },
+  },
 }))
 
 const historyChartKey = computed(() => {
@@ -5779,17 +5870,30 @@ watch([activeTab, selectedId], async () => {
           <p class="preventive-reliability-title">
             <b>{{
               isReliabilityMacro
-                ? '1.5 Indicadores de desempenho de operação em risco do transformador:'
+                ? '1.5 Matriz de risco'
                 : isTrRotaMacro || isOltcMacro
                   ? '1.4 Indicadores de desempenho de operação em risco do transformador:'
                   : 'Indicadores de desempenho de operação em risco do transformador:'
             }}</b>
           </p>
           <p class="preventive-reliability-subtitle">
-            A seguir é apresentado uma tabela com os índices de confiabilidade calculados para a avaliação de risco
-            operacional dos transformadores.
+            {{
+              isReliabilityMacro
+                ? 'A seguir é apresentada a matriz de risco calculada para a avaliação de confiabilidade do transformador.'
+                : 'A seguir é apresentado uma tabela com os índices de confiabilidade calculados para a avaliação de risco operacional dos transformadores.'
+            }}
           </p>
-          <div class="mini-table-wrap preventive-reliability-table-wrap">
+          <div v-if="isReliabilityMacro" class="reliability-risk-matrix">
+            <div class="reliability-bubble-chart">
+              <VueApexCharts
+                type="bubble"
+                height="100%"
+                :options="reliabilityRiskMatrixOptions"
+                :series="reliabilityRiskMatrixSeries"
+              />
+            </div>
+          </div>
+          <div v-else class="mini-table-wrap preventive-reliability-table-wrap">
             <table class="table compact mini-table preventive-reliability-table">
               <thead>
                 <tr>
@@ -9244,6 +9348,47 @@ watch([activeTab, selectedId], async () => {
 
 .preventive-reliability-note{
   margin-top: 8px !important;
+}
+
+.reliability-risk-matrix{
+  margin-top: 10px;
+  display: grid;
+  justify-items: center;
+  gap: 8px;
+}
+
+.reliability-bubble-chart{
+  width: min(100%, 520px);
+  height: 280px;
+  border: 1px solid rgba(15, 23, 42, 0.12);
+  background: #fff;
+  padding: 8px 10px 2px;
+}
+
+.reliability-bubble-chart :deep(.apexcharts-canvas){
+  margin: 0 auto;
+}
+
+.reliability-bubble-chart :deep(.apexcharts-svg){
+  width: 100%;
+}
+
+.reliability-bubble-chart :deep(.apexcharts-tooltip){
+  border: 1px solid rgba(15, 23, 42, 0.12);
+  box-shadow: 0 12px 28px rgba(15, 23, 42, 0.14);
+}
+
+.reliability-risk-tooltip{
+  display: grid;
+  gap: 3px;
+  padding: 8px 10px;
+  font-size: 12px;
+  color: #0f172a;
+}
+
+.reliability-risk-tooltip strong{
+  color: #123a6d;
+  font-size: 12px;
 }
 
 .tile p.table-legend{
