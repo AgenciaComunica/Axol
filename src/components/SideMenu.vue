@@ -62,6 +62,16 @@ function goToColetasView() {
   open.value = false
 }
 
+function goToDataExtractorAdmin() {
+  router.push({ name: 'data-extractor-admin' })
+  open.value = false
+}
+
+function goToDataExtractions() {
+  router.push({ name: 'data-extractions' })
+  open.value = false
+}
+
 function updateBodyLock(isOpen: boolean) {
   if (typeof window === 'undefined') return
   if (window.innerWidth > 900) return
@@ -135,6 +145,12 @@ onBeforeUnmount(() => {
             </svg>
             Análises
           </button>
+          <button class="submenu-item" type="button" @click.stop="goToDataExtractions">
+            <svg class="submenu-icon" viewBox="0 0 24 24" aria-hidden="true">
+              <path d="M4 4h16v5H4V4zm2 2v1h12V6H6zm-2 5h16v9H4v-9zm2 2v5h12v-5H6zm2 1h3v2H8v-2z"></path>
+            </svg>
+            Dados Extraídos
+          </button>
           <button class="submenu-item" type="button" @click.stop="goToTratamentoOleoView">
             <svg class="submenu-icon" viewBox="0 0 24 24" aria-hidden="true">
               <path d="M12 2.5c2.7 3.1 6.5 7.8 6.5 11.1a6.5 6.5 0 1 1-13 0C5.5 10.3 9.3 5.6 12 2.5zm0 4.7c-1.8 2.3-4 5.4-4 6.9a4 4 0 0 0 8 0c0-1.5-2.2-4.6-4-6.9z"></path>
@@ -188,6 +204,12 @@ onBeforeUnmount(() => {
             </svg>
             Logs do sistema
           </div>
+          <button class="submenu-item" type="button" @click.stop="goToDataExtractorAdmin">
+            <svg class="submenu-icon" viewBox="0 0 24 24" aria-hidden="true">
+              <path d="M5 3h9l5 5v13H5V3zm8 1.5V9h4.5L13 4.5zM8 12h8v2H8v-2zm0 4h8v2H8v-2z"></path>
+            </svg>
+            Extrator de Dados
+          </button>
         </div>
       </button>
       <button class="item item-danger" type="button">

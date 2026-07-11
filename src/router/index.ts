@@ -28,6 +28,16 @@ const router = createRouter({
       component: () => import('../views/TransformerReportView.vue'),
     },
     {
+      path: '/analises/extracoes',
+      name: 'data-extractions',
+      component: () => import('../views/DataExtractionView.vue'),
+    },
+    {
+      path: '/configuracoes/extrator-dados',
+      name: 'data-extractor-admin',
+      component: () => import('../views/DataExtractorAdminView.vue'),
+    },
+    {
       path: '/tratamento-oleo',
       name: 'tratamento-oleo-view',
       component: () => import('../views/TransformerReportView.vue'),

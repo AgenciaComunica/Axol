@@ -5678,7 +5678,7 @@ watch([activeTab, selectedId], async () => {
                 </button>
                 <div v-if="analysisNewMenuOpen" class="history-actions-menu">
                   <button type="button" @click="openAnalysisModal">Nova Análise</button>
-                  <button type="button">Importar Análises</button>
+                  <button type="button" @click="router.push({ name: 'data-extractions' })">Importar Análises</button>
                 </div>
               </div>
               <div ref="analysisExportWrapRef" class="history-actions-wrap">
