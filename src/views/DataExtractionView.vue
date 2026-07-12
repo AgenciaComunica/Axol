@@ -355,40 +355,52 @@ async function executeExtraction() {
   newModalOpen.value = false
 
   try {
-    const batch = await createExtractionBatch(
-      { apiBaseUrl: config.value.apiBaseUrl, apiKey: config.value.apiKey },
-      {
-        files,
-        fields: schema,
-        analysisPackage: resolveApiPackage(pkg.id, pkg.name),
-        useLlm: config.value.useLlm,
-      },
-    )
-    const batchLogs = uploadLogs.map((log, index) => {
-      const batchItem = batch.items?.[index] || batch.items?.find((item) => item.file_name === log.fileName)
-      return {
-        ...log,
-        batchId: batch.batch_id,
-        batchItemId: batchItem?.item_id,
-        status: 'Processando',
-        createdAt: batchItem?.created_at || log.createdAt,
-      } satisfies ExtractionLog
-    })
-    logs.value = logs.value.map((log) => batchLogs.find((batchLog) => batchLog.id === log.id) || log)
-    persistLogs()
+    let nextUploadIndex = 0
+    const uploadNextFile = async () => {
+      while (nextUploadIndex < files.length) {
+        const index = nextUploadIndex++
+        const file = files[index]
+        const uploadLog = uploadLogs[index]
+        if (!file || !uploadLog) continue
+        try {
+          const batch = await createExtractionBatch(
+            { apiBaseUrl: config.value.apiBaseUrl, apiKey: config.value.apiKey },
+            {
+              files: [file],
+              fields: schema,
+              analysisPackage: resolveApiPackage(pkg.id, pkg.name),
+              useLlm: config.value.useLlm,
+            },
+          )
+          const batchItem = batch.items?.[0] || batch.items?.find((item) => item.file_name === file.name)
+          updateLog(uploadLog.id, {
+            batchId: batch.batch_id,
+            batchItemId: batchItem?.item_id,
+            status: 'Processando',
+            createdAt: batchItem?.created_at || uploadLog.createdAt,
+            errorMessage: undefined,
+          })
+          void pollBatch(batch.batch_id)
+        } catch (error) {
+          updateLog(uploadLog.id, {
+            status: 'Erro',
+            errorMessage: extractionRequestErrorMessage(error, file),
+            rawResponse: error instanceof ExtractorApiError ? error.responseBody : undefined,
+          })
+        }
+      }
+    }
+    await Promise.all(Array.from({ length: Math.min(2, files.length) }, () => uploadNextFile()))
     selectedFiles.value = []
-    void pollBatch(batch.batch_id)
-  } catch (error) {
-    const errorMessage = error instanceof Error ? error.message : 'Erro inesperado ao enviar os arquivos.'
-    const rawResponse = error instanceof ExtractorApiError ? error.responseBody : undefined
-    const uploadLogIds = new Set(uploadLogs.map((log) => log.id))
-    logs.value = logs.value.map((log) => uploadLogIds.has(log.id)
-      ? { ...log, status: 'Erro', errorMessage, rawResponse }
-      : log)
-    persistLogs()
   } finally {
     isSubmitting.value = false
   }
+}
+
+function extractionRequestErrorMessage(error: unknown, file: File) {
+  if (error instanceof ExtractorApiError && error.responseBody) return error.message
+  const message = error instanceof Error ? error.message : 'Falha de rede.'
+  return `${message} ao enviar ${file.name}. A API pode ter encerrado a requisição com erro 5xx sem headers CORS.`
 }
 
 function resumePendingBatches() {

@@ -26,6 +26,7 @@ type SchemaBlockDraft = Omit<ExtractorFieldSchema, 'aliases' | 'item_schema'> & 
 const router = useRouter()
 const config = ref<ExtractorConfig>(defaultExtractorConfig())
 const showApiKey = ref(false)
+const isTestingConnection = ref(false)
 const saveMessage = ref('')
 const validationErrors = ref<string[]>([])
 const healthState = ref<{ status: 'idle' | 'online' | 'offline' | 'unauthorized'; application?: string; latency?: number; message?: string }>({ status: 'idle' })
@@ -101,6 +102,7 @@ function saveConfig() {
   config.value = normalizeExtractorConfig(config.value)
   saveJson(extractorConfigKey, config.value)
   showSaveMessage('Configurações salvas com sucesso.')
+  void testConnection()
 }
 
 function saveModule() {
@@ -139,6 +141,8 @@ function showSaveMessage(message: string) {
 }
 
 async function testConnection() {
+  if (isTestingConnection.value) return
+  isTestingConnection.value = true
   healthState.value = { status: 'idle', message: 'Testando...' }
   const started = performance.now()
   const baseUrl = config.value.apiBaseUrl.trim().replace(/\/$/, '')
@@ -181,6 +185,8 @@ async function testConnection() {
       latency: Math.round(performance.now() - started),
       message: error instanceof Error ? error.message : 'Falha no teste de conexão.',
     }
+  } finally {
+    isTestingConnection.value = false
   }
 }
 
@@ -350,10 +356,12 @@ function moduleSchemaStatus(pkg: AnalysisPackage) {
               <button type="button" @click="copyApiKey">Copiar</button>
             </div>
           </label>
-          <label class="switch-row"><input v-model="config.useLlm" type="checkbox" /> Usar Agente LLM por padrão</label>
         </div>
         <div class="admin-actions">
-          <button class="secondary-btn" type="button" @click="testConnection">Testar conexão</button>
+          <button class="secondary-btn test-connection-btn" type="button" :disabled="isTestingConnection" @click="testConnection">
+            <span v-if="isTestingConnection" class="button-spinner" aria-hidden="true"></span>
+            {{ isTestingConnection ? 'Testando' : 'Testar conexão' }}
+          </button>
           <div class="connection-actions">
             <span v-if="healthState.status !== 'idle'" class="health-pill" :class="healthState.status">
               {{ healthState.status === 'online' ? 'Online' : healthState.status === 'unauthorized' ? 'Não autorizado' : 'Offline' }}
@@ -369,7 +377,14 @@ function moduleSchemaStatus(pkg: AnalysisPackage) {
       <article v-if="selectedModuleIndex === null" class="admin-card">
         <div class="section-head">
           <div><h2>Módulos de Documento</h2><p>Módulos locais usados pela tela de extração para definir parâmetros esperados.</p></div>
-          <button class="primary-btn" type="button" @click="addPackage">+ Módulo</button>
+          <div class="document-module-actions">
+            <label class="ai-switch">
+              <span>Extrair com IA</span>
+              <input v-model="config.useLlm" type="checkbox" />
+              <span class="ai-switch-track" aria-hidden="true"><span></span></span>
+            </label>
+            <button class="primary-btn" type="button" @click="addPackage">+ Módulo</button>
+          </div>
         </div>
         <div class="document-module-grid">
           <button
@@ -575,10 +590,23 @@ label{ display:grid; gap:6px; color:#123a6d; font-weight:700; font-size:12px; }
 input,textarea,select{ border:1px solid #dbe3ee; border-radius:10px; padding:10px; font:inherit; color:#0f172a; background:#fff; }
 textarea{ font-family:ui-monospace,SFMono-Regular,Menlo,monospace; font-size:12px; }
 .switch-row{ display:flex; align-items:center; gap:8px; }
+.ai-switch{ display:inline-flex; grid-template-columns:none; align-items:center; gap:8px; color:#123a6d; font-size:12px; font-weight:700; cursor:pointer; }
+.ai-switch input{ position:absolute; width:1px; height:1px; padding:0; overflow:hidden; clip:rect(0,0,0,0); white-space:nowrap; border:0; }
+.ai-switch-track{ width:38px; height:22px; flex:0 0 38px; display:flex; align-items:center; border-radius:999px; padding:3px; box-sizing:border-box; background:#cbd5e1; transition:background .18s ease,box-shadow .18s ease; }
+.ai-switch-track span{ width:16px; height:16px; border-radius:50%; background:#fff; box-shadow:0 1px 4px rgba(15,23,42,.2); transition:transform .18s ease; }
+.ai-switch input:checked + .ai-switch-track{ background:#86efac; }
+.ai-switch input:checked + .ai-switch-track span{ transform:translateX(16px); }
+.ai-switch input:focus-visible + .ai-switch-track{ box-shadow:0 0 0 3px rgba(30,78,139,.18); }
+.document-module-actions{ display:flex; align-items:center; justify-content:flex-end; gap:12px; flex-wrap:wrap; }
 .input-action{ display:grid; grid-template-columns:1fr auto auto; gap:8px; }
 button{ border-radius:999px; border:1px solid #dbe3ee; background:#fff; padding:8px 12px; cursor:pointer; font-weight:700; font-size:12px; }
 .primary-btn{ background:#1e4e8b; border-color:#1e4e8b; color:#fff; }.secondary-btn{ background:#fff; }.danger-btn{ color:#991b1b; background:#fee2e2; border-color:#fecaca; }
+.test-connection-btn{ min-width:116px; display:inline-flex; align-items:center; justify-content:center; gap:7px; }
+.test-connection-btn:disabled{ opacity:.65; cursor:not-allowed; }
+.button-spinner{ width:12px; height:12px; border:2px solid #bfdbfe; border-top-color:#1e4e8b; border-radius:50%; animation:admin-spin .7s linear infinite; }
+@keyframes admin-spin{ to{ transform:rotate(360deg); } }
 .admin-actions,.section-head,.package-head{ display:flex; align-items:center; justify-content:space-between; gap:12px; }
+.admin-actions{ margin-top:14px; }
 .connection-actions{ display:flex; align-items:center; justify-content:flex-end; gap:12px; min-width:0; }
 .health-pill{ display:inline-flex; border-radius:999px; padding:6px 10px; font-weight:700; font-size:12px; background:#f1f5f9; color:#334155; }
 .health-pill.online{ background:#dcfce7; color:#166534; }.health-pill.offline{ background:#fee2e2; color:#991b1b; }
@@ -670,5 +698,5 @@ button{ border-radius:999px; border:1px solid #dbe3ee; background:#fff; padding:
 .success-modal-enter-from,.success-modal-leave-to{ opacity:0; }
 .success-modal-enter-from .success-modal,.success-modal-leave-to .success-modal{ opacity:0; transform:translateY(8px) scale(.98); }
 @media(max-width:1100px){ .document-module-grid{ grid-template-columns:repeat(2,minmax(0,1fr)); }.schema-block-grid{ grid-template-columns:repeat(2,minmax(0,1fr)); } }
-@media(max-width:900px){ .admin-page{ padding:86px 14px 20px; }.form-grid,.form-grid.three,.document-module-grid,.rules-examples,.schema-block-grid{ grid-template-columns:1fr; }.section-head,.admin-actions,.module-editor-head,.schema-editor-head{ align-items:flex-start; flex-direction:column; }.schema-editor-tools{ width:100%; justify-content:space-between; }.schema-block-head{ grid-template-columns:minmax(0,1fr) auto; }.schema-block-actions{ grid-column:1/-1; justify-content:flex-end; }.connection-actions{ width:100%; justify-content:space-between; flex-wrap:wrap; } .module-editor-actions{ justify-content:flex-start; } }
+@media(max-width:900px){ .admin-page{ padding:86px 14px 20px; }.form-grid,.form-grid.three,.document-module-grid,.rules-examples,.schema-block-grid{ grid-template-columns:1fr; }.section-head,.admin-actions,.module-editor-head,.schema-editor-head{ align-items:flex-start; flex-direction:column; }.document-module-actions{ width:100%; justify-content:space-between; }.schema-editor-tools{ width:100%; justify-content:space-between; }.schema-block-head{ grid-template-columns:minmax(0,1fr) auto; }.schema-block-actions{ grid-column:1/-1; justify-content:flex-end; }.connection-actions{ width:100%; justify-content:space-between; flex-wrap:wrap; } .module-editor-actions{ justify-content:flex-start; } }
 </style>
