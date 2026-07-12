@@ -28,6 +28,7 @@ export type ExtractorConfig = {
 export type ExtractionStatus =
   | 'Enviando'
   | 'Processando'
+  | 'Erro de autenticação'
   | 'Pendente'
   | 'Revisão necessária'
   | 'Pronto para sincronizar'
@@ -52,6 +53,7 @@ export type ExtractionLog = {
   fields: ExtractedField[]
   missingFields: ExtractedField[]
   errorMessage?: string
+  apiErrorEndpoint?: string
 }
 
 export type ExtractedField = {
@@ -205,7 +207,7 @@ export function applyFallbackAliases(fields: ExtractorFieldSchema[], packageId: 
 }
 
 export function resolveExtractionStatus(log: Pick<ExtractionLog, 'fields' | 'qualityScore' | 'requiredFound' | 'requiredTotal' | 'status'>): ExtractionStatus {
-  if (log.status === 'Erro' || log.status === 'Enviando' || log.status === 'Processando' || log.status === 'Sincronizado') return log.status
+  if (log.status === 'Erro' || log.status === 'Erro de autenticação' || log.status === 'Enviando' || log.status === 'Processando' || log.status === 'Sincronizado') return log.status
   if (log.requiredFound < log.requiredTotal) return 'Revisão necessária'
   if (log.fields.some((fieldConfig) => Number(fieldConfig.confidence || 1) < 0.65)) return 'Revisão necessária'
   if (log.qualityScore < 0.65) return 'Revisão necessária'
