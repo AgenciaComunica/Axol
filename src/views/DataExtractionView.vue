@@ -41,6 +41,7 @@ const selectedPackageId = ref('')
 const schemaDraft = ref('')
 const submitError = ref('')
 const isSubmitting = ref(false)
+const activeUploadLogIds = ref<string[]>([])
 const fieldsExpanded = ref(false)
 const actionMenuLog = ref<ExtractionLog | null>(null)
 const actionMenuPosition = ref({ top: 0, left: 0 })
@@ -93,6 +94,10 @@ const selectedFilesLabel = computed(() => {
   if (selectedFiles.value.length === 1) return selectedFiles.value[0]?.name || '1 arquivo selecionado'
   return `${selectedFiles.value.length} arquivos selecionados`
 })
+const activeUploadLogs = computed(() => activeUploadLogIds.value
+  .map((id) => logs.value.find((log) => log.id === id))
+  .filter((log): log is ExtractionLog => Boolean(log)))
+const acceptedUploadCount = computed(() => activeUploadLogs.value.filter((log) => log.status === 'Processando').length)
 const canBulkSync = computed(() => {
   const selected = logs.value.filter((log) => selectedIds.value.includes(log.id))
   return selected.length > 0 && selected.every((log) => log.status === 'Pronto para sincronizar')
@@ -297,6 +302,7 @@ function scoreClass(score: number) {
 }
 
 function statusLabel(status: ExtractionLog['status']) {
+  if (status === 'Erro de autenticação') return 'Autenticação'
   if (status === 'Revisão necessária') return 'Revisar'
   if (status === 'Pronto para sincronizar') return 'Sincronizável'
   if (status === 'Erro') return 'Insuficiente'
@@ -304,6 +310,7 @@ function statusLabel(status: ExtractionLog['status']) {
 }
 
 function statusClass(status: ExtractionLog['status']) {
+  if (status === 'Erro de autenticação') return 'status-auth'
   if (status === 'Enviando') return 'status-sent'
   if (status === 'Revisão necessária') return 'status-review'
   if (status === 'Pronto para sincronizar') return 'status-syncable'
@@ -333,6 +340,12 @@ async function executeExtraction() {
 
   const files = [...selectedFiles.value]
   const pkg = selectedPackage.value
+  const apiOptions = {
+    apiBaseUrl: config.value.apiBaseUrl.trim(),
+    apiKey: config.value.apiKey.trim(),
+  }
+  const useLlm = config.value.useLlm
+  const analysisPackage = resolveApiPackage(pkg.id, pkg.name)
   const timestamp = Date.now()
   const uploadLogs = files.map((file, index) => ({
     id: `upload-${timestamp.toString(36)}-${index}`,
@@ -349,48 +362,45 @@ async function executeExtraction() {
     missingFields: [],
   } satisfies ExtractionLog))
   logs.value = [...uploadLogs, ...logs.value]
+  activeUploadLogIds.value = uploadLogs.map((log) => log.id)
   persistLogs()
   isSubmitting.value = true
   submitError.value = ''
   newModalOpen.value = false
 
   try {
-    let nextUploadIndex = 0
-    const uploadNextFile = async () => {
-      while (nextUploadIndex < files.length) {
-        const index = nextUploadIndex++
-        const file = files[index]
-        const uploadLog = uploadLogs[index]
-        if (!file || !uploadLog) continue
-        try {
-          const batch = await createExtractionBatch(
-            { apiBaseUrl: config.value.apiBaseUrl, apiKey: config.value.apiKey },
-            {
-              files: [file],
-              fields: schema,
-              analysisPackage: resolveApiPackage(pkg.id, pkg.name),
-              useLlm: config.value.useLlm,
-            },
-          )
-          const batchItem = batch.items?.[0] || batch.items?.find((item) => item.file_name === file.name)
-          updateLog(uploadLog.id, {
-            batchId: batch.batch_id,
-            batchItemId: batchItem?.item_id,
-            status: 'Processando',
-            createdAt: batchItem?.created_at || uploadLog.createdAt,
-            errorMessage: undefined,
-          })
-          void pollBatch(batch.batch_id)
-        } catch (error) {
-          updateLog(uploadLog.id, {
-            status: 'Erro',
-            errorMessage: extractionRequestErrorMessage(error, file),
-            rawResponse: error instanceof ExtractorApiError ? error.responseBody : undefined,
-          })
-        }
+    const acceptedBatchIds: string[] = []
+    for (let index = 0; index < files.length; index += 1) {
+      const file = files[index]
+      const uploadLog = uploadLogs[index]
+      if (!file || !uploadLog) continue
+      try {
+        const batch = await createExtractionBatch(apiOptions, {
+          files: [file],
+          fields: schema,
+          analysisPackage,
+          useLlm,
+        })
+        const batchItem = batch.items?.[0] || batch.items?.find((item) => item.file_name === file.name)
+        updateLog(uploadLog.id, {
+          batchId: batch.batch_id,
+          batchItemId: batchItem?.item_id,
+          status: 'Processando',
+          createdAt: batchItem?.created_at || uploadLog.createdAt,
+          errorMessage: undefined,
+          apiErrorEndpoint: undefined,
+        })
+        acceptedBatchIds.push(batch.batch_id)
+      } catch (error) {
+        updateLog(uploadLog.id, {
+          status: error instanceof ExtractorApiError && error.status === 401 ? 'Erro de autenticação' : 'Erro',
+          errorMessage: extractionRequestErrorMessage(error, file),
+          rawResponse: error instanceof ExtractorApiError ? error.responseBody : undefined,
+          apiErrorEndpoint: error instanceof ExtractorApiError ? error.endpoint : '/batches',
+        })
       }
     }
-    await Promise.all(Array.from({ length: Math.min(2, files.length) }, () => uploadNextFile()))
+    acceptedBatchIds.forEach((batchId) => void pollBatch(batchId))
     selectedFiles.value = []
   } finally {
     isSubmitting.value = false
@@ -398,6 +408,7 @@ async function executeExtraction() {
 }
 
 function extractionRequestErrorMessage(error: unknown, file: File) {
+  if (error instanceof ExtractorApiError && error.status === 401) return 'API Key ausente ou inválida.'
   if (error instanceof ExtractorApiError && error.responseBody) return error.message
   const message = error instanceof Error ? error.message : 'Falha de rede.'
   return `${message} ao enviar ${file.name}. A API pode ter encerrado a requisição com erro 5xx sem headers CORS.`
@@ -432,11 +443,11 @@ async function pollBatch(batchId: string) {
           const log = logs.value.find((entry) => entry.batchId === batchId && entry.batchItemId === item.item_id)
           if (!log || log.status !== 'Processando') continue
           if (item.status === 'queued') {
-            updateLog(log.id, { status: 'Processando', errorMessage: undefined })
+            updateLog(log.id, { status: 'Processando', errorMessage: undefined, apiErrorEndpoint: undefined })
             continue
           }
           if (item.status === 'processing') {
-            updateLog(log.id, { status: 'Processando', errorMessage: undefined })
+            updateLog(log.id, { status: 'Processando', errorMessage: undefined, apiErrorEndpoint: undefined })
             continue
           }
           if (item.status === 'failed') {
@@ -448,11 +459,20 @@ async function pollBatch(batchId: string) {
             try {
               response = await getExtractionBatchItemResult(apiOptions, batchId, item.item_id)
             } catch (error) {
+              if (error instanceof ExtractorApiError && error.status === 401) {
+                updateLog(log.id, {
+                  errorMessage: 'API Key ausente ou inválida.',
+                  apiErrorEndpoint: error.endpoint,
+                  rawResponse: error.responseBody,
+                })
+                continue
+              }
               if (error instanceof ExtractorApiError && error.responseBody) {
                 updateLog(log.id, {
                   status: 'Erro',
                   errorMessage: error.message,
                   rawResponse: error.responseBody,
+                  apiErrorEndpoint: error.endpoint,
                 })
                 continue
               }
@@ -469,6 +489,7 @@ async function pollBatch(batchId: string) {
               ...normalized,
               rawResponse: response,
               errorMessage: undefined,
+              apiErrorEndpoint: undefined,
               status: resolveExtractionStatus({ ...log, ...normalized, status: 'Pendente' }),
             })
           }
@@ -477,9 +498,14 @@ async function pollBatch(batchId: string) {
         const stillProcessing = logs.value.some((log) => log.batchId === batchId && log.status === 'Processando')
         if (terminal && !stillProcessing) return
       } catch (error) {
-        const message = error instanceof Error ? error.message : 'Falha ao consultar o lote.'
+        const isAuthenticationError = error instanceof ExtractorApiError && error.status === 401
+        const message = isAuthenticationError ? 'API Key ausente ou inválida.' : error instanceof Error ? error.message : 'Falha ao consultar o lote.'
         logs.value = logs.value.map((log) => log.batchId === batchId && log.status === 'Processando'
-          ? { ...log, errorMessage: `Aguardando reconexão: ${message}` }
+          ? {
+              ...log,
+              errorMessage: isAuthenticationError ? message : `Aguardando reconexão: ${message}`,
+              apiErrorEndpoint: error instanceof ExtractorApiError ? error.endpoint : `/batches/${batchId}`,
+            }
           : log)
         persistLogs()
       }
@@ -755,7 +781,11 @@ function syncSelected() {
           <tbody>
             <tr v-for="log in visibleLogs" :key="log.id">
               <td><input type="checkbox" :checked="selectedIds.includes(log.id)" @change="toggleSelected(log.id)" /></td>
-              <td><strong>{{ log.fileName }}</strong><small v-if="log.errorMessage">{{ log.errorMessage }}</small></td>
+              <td>
+                <strong>{{ log.fileName }}</strong>
+                <small v-if="log.status !== 'Processando' && log.errorMessage">{{ log.errorMessage }}</small>
+                <small v-if="log.status !== 'Processando' && log.apiErrorEndpoint" class="api-error-endpoint">Endpoint: {{ log.apiErrorEndpoint }}</small>
+              </td>
               <td>{{ log.packageName }}</td>
               <td><span class="status-pill" :class="statusClass(log.status)"><span v-if="log.status === 'Enviando' || log.status === 'Processando'" class="loading-spinner" aria-hidden="true"></span>{{ statusLabel(log.status) }}</span></td>
               <td>{{ log.extractionPercent }}%</td>
@@ -1014,6 +1044,31 @@ function syncSelected() {
       </section>
     </div>
 
+    <Teleport to="body">
+      <div v-if="isSubmitting" class="upload-lock-backdrop" role="alertdialog" aria-modal="true" aria-labelledby="upload-lock-title">
+        <section class="upload-lock-modal">
+          <span class="upload-lock-spinner" aria-hidden="true"></span>
+          <div class="upload-lock-content">
+            <h3 id="upload-lock-title">Enviando PDFs</h3>
+            <p>Não saia desta tela nem feche o navegador enquanto os arquivos estão sendo enviados.</p>
+            <small>Após o envio, o processamento continuará em segundo plano.</small>
+            <div class="upload-lock-progress">
+              <strong>{{ acceptedUploadCount }} de {{ activeUploadLogs.length }} enviados</strong>
+              <ul>
+                <li v-for="log in activeUploadLogs" :key="log.id">
+                  <span class="upload-file-name" :title="log.fileName">{{ log.fileName }}</span>
+                  <span class="upload-file-status" :class="statusClass(log.status)">
+                    <span v-if="log.status === 'Enviando' || log.status === 'Processando'" class="loading-spinner" aria-hidden="true"></span>
+                    {{ statusLabel(log.status) }}
+                  </span>
+                </li>
+              </ul>
+            </div>
+          </div>
+        </section>
+      </div>
+    </Teleport>
+
   </main>
 </template>
 
@@ -1052,6 +1107,7 @@ h2{ margin:0; color:#123a6d; font-size:18px; } p{ margin:4px 0 0; color:#64748b;
 .extractor-table td:nth-child(3){ color:#475569; }
 .extractor-table td:nth-child(6),.extractor-table td:nth-child(7),.extractor-table td:nth-child(8){ color:#475569; }
 .extractor-table small{ display:block; color:#dc2626; margin-top:4px; }
+.extractor-table .api-error-endpoint{ color:#64748b; font-family:ui-monospace,SFMono-Regular,Menlo,monospace; font-size:10px; }
 .status-pill,.score-pill{ display:inline-flex; align-items:center; gap:6px; border-radius:999px; padding:4px 9px; font-weight:700; background:#f1f5f9; color:#334155; white-space:nowrap; }
 .status-pill.status-processing{ background:#e2e8f0; color:#475569; }
 .status-pill.status-sent{ background:#ede9fe; color:#6d28d9; }
@@ -1059,6 +1115,7 @@ h2{ margin:0; color:#123a6d; font-size:18px; } p{ margin:4px 0 0; color:#64748b;
 .status-pill.status-syncable{ background:#dbeafe; color:#1d4ed8; }
 .status-pill.status-synced{ background:#dcfce7; color:#166534; }
 .status-pill.status-insufficient{ background:#fee2e2; color:#b91c1c; }
+.status-pill.status-auth{ background:#ffedd5; color:#c2410c; }
 .loading-spinner{ width:10px; height:10px; border:2px solid #bfdbfe; border-top-color:#1e4e8b; border-radius:50%; animation:extractor-spin .7s linear infinite; }
 @keyframes extractor-spin{ to{ transform:rotate(360deg); } }
 .tone-good{ background:#dcfce7; color:#166534; }.tone-warn{ background:#fef3c7; color:#854d0e; }.tone-bad{ background:#fee2e2; color:#991b1b; }
@@ -1080,6 +1137,22 @@ h2{ margin:0; color:#123a6d; font-size:18px; } p{ margin:4px 0 0; color:#64748b;
 .delete-btn{ border-color:#dc2626; background:#dc2626; color:#fff; }
 .empty-cell{ text-align:center; color:#64748b; padding:28px!important; }
 .modal-backdrop{ position:fixed; inset:0; background:rgba(15,23,42,.42); display:grid; place-items:center; padding:20px; z-index:80; }
+.upload-lock-backdrop{ position:fixed; inset:0; z-index:1200; display:grid; place-items:center; padding:20px; background:rgba(15,23,42,.38); backdrop-filter:blur(6px); }
+.upload-lock-modal{ width:min(620px,calc(100vw - 32px)); display:flex; align-items:flex-start; gap:16px; box-sizing:border-box; border:1px solid rgba(30,78,139,.14); border-radius:14px; padding:20px; background:#fff; box-shadow:0 24px 70px rgba(15,23,42,.25); }
+.upload-lock-content{ min-width:0; flex:1; }
+.upload-lock-modal h3{ margin:0 0 6px; color:#123a6d; font-size:18px; }
+.upload-lock-modal p{ margin:0; color:#334155; font-size:14px; line-height:1.5; }
+.upload-lock-modal small{ display:block; margin-top:8px; color:#64748b; font-size:12px; }
+.upload-lock-spinner{ width:30px; height:30px; flex:0 0 30px; border:3px solid #dbeafe; border-top-color:#1e4e8b; border-radius:50%; animation:extractor-spin .75s linear infinite; }
+.upload-lock-progress{ margin-top:16px; }
+.upload-lock-progress>strong{ color:#123a6d; font-size:12px; }
+.upload-lock-progress ul{ max-height:240px; display:grid; gap:7px; margin:9px 0 0; padding:0; overflow:auto; list-style:none; }
+.upload-lock-progress li{ min-width:0; display:flex; align-items:center; justify-content:space-between; gap:12px; border:1px solid #e2e8f0; border-radius:8px; padding:8px 10px; background:#f8fafc; }
+.upload-file-name{ min-width:0; overflow:hidden; color:#334155; font-size:12px; font-weight:700; text-overflow:ellipsis; white-space:nowrap; }
+.upload-file-status{ flex:0 0 auto; display:inline-flex; align-items:center; gap:5px; border-radius:999px; padding:4px 8px; background:#e2e8f0; color:#475569; font-size:10px; font-weight:800; }
+.upload-file-status.status-sent{ background:#ede9fe; color:#6d28d9; }
+.upload-file-status.status-auth{ background:#ffedd5; color:#c2410c; }
+.upload-file-status.status-insufficient{ background:#fee2e2; color:#b91c1c; }
 .extractor-modal{ width:min(720px,96vw); max-height:88vh; overflow:auto; background:#fff; border-radius:16px; padding:16px; box-shadow:0 24px 70px rgba(15,23,42,.22); }
 .extractor-modal.wide{ width:min(960px,96vw); }
 .extractor-modal.confirm-modal{ width:min(440px,96vw); }

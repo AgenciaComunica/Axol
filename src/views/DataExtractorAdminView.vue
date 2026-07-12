@@ -3,6 +3,7 @@ import { computed, onBeforeUnmount, onMounted, ref, watch } from 'vue'
 import { useRouter } from 'vue-router'
 import AppHeader from '@/components/AppHeader.vue'
 import SideMenu from '@/components/SideMenu.vue'
+import { ExtractorApiError, testExtractorApiConnection } from '@/utils/smartDocExtractorApi'
 import {
   defaultExtractorConfig,
   extractorConfigKey,
@@ -148,23 +149,11 @@ async function testConnection() {
   const baseUrl = config.value.apiBaseUrl.trim().replace(/\/$/, '')
   const apiKey = config.value.apiKey.trim()
   try {
-    const healthResponse = await fetch(`${baseUrl}/health`)
-    if (!healthResponse.ok) throw new Error(`HTTP ${healthResponse.status}`)
-    const data = await healthResponse.json().catch(() => ({}))
-
-    const authForm = new FormData()
-    authForm.append('file', new File(['%PDF-1.4\n%%EOF'], 'auth-check.pdf', { type: 'application/pdf' }))
-    authForm.append('fields', '[]')
-    authForm.append('analysis_package', 'quimico')
-    authForm.append('use_llm', 'false')
-    const authResponse = await fetch(`${baseUrl}/extract-pdf`, {
-      method: 'POST',
-      headers: { 'X-API-Key': apiKey },
-      body: authForm,
-    })
+    const { healthBody, authResponse, authBody } = await testExtractorApiConnection({ apiBaseUrl: baseUrl, apiKey })
+    const data = healthBody as Record<string, any> || {}
     const latency = Math.round(performance.now() - started)
     if (authResponse.status === 401 || authResponse.status === 403) {
-      const errorBody = await authResponse.json().catch(() => ({}))
+      const errorBody = authBody as Record<string, any> || {}
       healthState.value = {
         status: 'unauthorized',
         application: data.application || data.app || 'Smart Doc Extractor',
@@ -181,9 +170,11 @@ async function testConnection() {
     }
   } catch (error) {
     healthState.value = {
-      status: 'offline',
+      status: error instanceof ExtractorApiError && error.status === 401 ? 'unauthorized' : 'offline',
       latency: Math.round(performance.now() - started),
-      message: error instanceof Error ? error.message : 'Falha no teste de conexão.',
+      message: error instanceof ExtractorApiError && error.status === 401
+        ? 'API Key ausente ou inválida.'
+        : error instanceof Error ? error.message : 'Falha no teste de conexão.',
     }
   } finally {
     isTestingConnection.value = false
