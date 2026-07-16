@@ -985,10 +985,9 @@ function syncSelected() {
             <div class="review-value-row">
               <input :id="`review-${field.key}`" v-model="field.manualValue" />
               <button
-                v-if="isMissingReviewField(field)"
                 class="fallback-edit-btn"
                 type="button"
-                title="Configurar nomes alternativos"
+                title="Configurar nomes alternativos para este parâmetro"
                 :aria-label="`Configurar nomes alternativos para ${field.label}`"
                 @click="openFallbackEditor(field)"
               >✎</button>
@@ -1192,8 +1191,7 @@ pre{ background:#0f172a; color:#e2e8f0; border-radius:12px; padding:14px; overfl
 .review-field-state-icon.complete{ background:#dcfce7; color:#15803d; }
 .review-field-state-icon.missing{ background:#fef3c7; color:#a16207; }
 .review-field-state-icon.required-missing{ background:#fee2e2; color:#dc2626; }
-.review-value-row{ display:grid; grid-template-columns:minmax(0,1fr); gap:8px; align-items:center; }
-.review-field.missing .review-value-row,.review-field.required-missing .review-value-row{ grid-template-columns:minmax(0,1fr) 34px; }
+.review-value-row{ display:grid; grid-template-columns:minmax(0,1fr) 34px; gap:8px; align-items:center; }
 .review-value-row input{ width:100%; min-width:0; box-sizing:border-box; }
 .fallback-edit-btn{ width:34px; height:34px; display:grid; place-items:center; border:1px solid #bfdbfe; border-radius:9px; background:#eff6ff; color:#1e4e8b; font-size:14px; cursor:pointer; }
 .fallback-edit-btn:hover{ border-color:#1e4e8b; background:#dbeafe; }
