@@ -789,7 +789,10 @@ function syncSelected() {
               <td>{{ log.packageName }}</td>
               <td><span class="status-pill" :class="statusClass(log.status)"><span v-if="log.status === 'Enviando' || log.status === 'Processando'" class="loading-spinner" aria-hidden="true"></span>{{ statusLabel(log.status) }}</span></td>
               <td>{{ log.extractionPercent }}%</td>
-              <td><span class="score-pill" :class="scoreClass(log.qualityScore)">{{ scoreLabel(log.qualityScore) }} {{ Math.round(log.qualityScore * 100) }}%</span></td>
+              <td>
+                <span v-if="log.status === 'Enviando' || log.status === 'Processando'" class="score-pill">-</span>
+                <span v-else class="score-pill" :class="scoreClass(log.qualityScore)">{{ scoreLabel(log.qualityScore) }} {{ Math.round(log.qualityScore * 100) }}%</span>
+              </td>
               <td>{{ log.requiredFound }}/{{ log.requiredTotal }}</td>
               <td>{{ new Date(log.createdAt).toLocaleString('pt-BR') }}</td>
               <td class="actions-column">
